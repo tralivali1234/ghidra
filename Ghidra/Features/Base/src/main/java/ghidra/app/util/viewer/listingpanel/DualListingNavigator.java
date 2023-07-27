@@ -15,18 +15,15 @@
  */
 package ghidra.app.util.viewer.listingpanel;
 
+import javax.swing.Icon;
+
 import ghidra.app.nav.*;
 import ghidra.app.services.GoToService;
-import ghidra.app.util.HighlightProvider;
+import ghidra.app.util.ListingHighlightProvider;
 import ghidra.program.model.listing.Program;
 import ghidra.program.util.ProgramLocation;
 import ghidra.program.util.ProgramSelection;
 import ghidra.util.UniversalIdGenerator;
-
-import java.util.ArrayList;
-import java.util.List;
-
-import javax.swing.Icon;
 
 /**
  * Navigator for the listings contained in a ListingCodeComparisonPanel.
@@ -34,8 +31,6 @@ import javax.swing.Icon;
 class DualListingNavigator implements Navigatable {
 
 	private final ListingPanel listingPanel;
-	private List<NavigatableRemovalListener> listeners =
-		new ArrayList<NavigatableRemovalListener>();
 	private long id;
 	private GoToService goToService;
 
@@ -55,12 +50,27 @@ class DualListingNavigator implements Navigatable {
 
 	@Override
 	public void addNavigatableListener(NavigatableRemovalListener listener) {
-		listeners.add(listener);
+		// not used
+	}
+
+	@Override
+	public void removeNavigatableListener(NavigatableRemovalListener listener) {
+		// not used
+	}
+
+	@Override
+	public ProgramSelection getSelection() {
+		return listingPanel.getProgramSelection();
 	}
 
 	@Override
 	public ProgramSelection getHighlight() {
 		return listingPanel.getProgramHighlight();
+	}
+
+	@Override
+	public String getTextSelection() {
+		return listingPanel.getTextSelection();
 	}
 
 	@Override
@@ -86,11 +96,6 @@ class DualListingNavigator implements Navigatable {
 	@Override
 	public Program getProgram() {
 		return listingPanel.getProgram();
-	}
-
-	@Override
-	public ProgramSelection getSelection() {
-		return listingPanel.getProgramSelection();
 	}
 
 	@Override
@@ -122,11 +127,6 @@ class DualListingNavigator implements Navigatable {
 	}
 
 	@Override
-	public void removeNavigatableListener(NavigatableRemovalListener listener) {
-		listeners.remove(listener);
-	}
-
-	@Override
 	public void requestFocus() {
 		listingPanel.requestFocus();
 	}
@@ -152,12 +152,12 @@ class DualListingNavigator implements Navigatable {
 	}
 
 	@Override
-	public void removeHighlightProvider(HighlightProvider highlightProvider, Program program) {
+	public void removeHighlightProvider(ListingHighlightProvider highlightProvider, Program program) {
 		// currently unsupported
 	}
 
 	@Override
-	public void setHighlightProvider(HighlightProvider highlightProvider, Program program) {
+	public void setHighlightProvider(ListingHighlightProvider highlightProvider, Program program) {
 		// currently unsupported
 	}
 }

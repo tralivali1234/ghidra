@@ -44,6 +44,8 @@ public class AddToProgramDialog extends ImporterDialog {
 	 * @param fsrl the FileSystemURL for where the imported data can be read.
 	 * @param loaderMap the loaders and their corresponding load specifications
 	 * @param byteProvider the ByteProvider from which the bytes from the source can be read.
+	 *        The dialog takes ownership of the ByteProvider and it will be closed when
+	 *        the dialog is closed
 	 * @param addToProgram the program to which the newly imported data will be added
 	 */
 	protected AddToProgramDialog(PluginTool tool, FSRL fsrl, LoaderMap loaderMap,
@@ -51,13 +53,13 @@ public class AddToProgramDialog extends ImporterDialog {
 		super("Add To Program:  " + fsrl.getPath(), tool, loaderMap, byteProvider, null);
 		this.addToProgram = addToProgram;
 		folderNameTextField.setText(getFolderName(addToProgram));
-		filenameTextField.setText(addToProgram.getName());
+		nameTextField.setText(addToProgram.getName());
 		setSelectedLanguage(getLanguageSpec());
 		languageTextField.setEnabled(false);
 		folderNameTextField.setEnabled(false);
 		folderButton.setEnabled(false);
 		languageButton.setEnabled(false);
-		filenameTextField.setEnabled(false);
+		nameTextField.setEnabled(false);
 		validateFormInput();
 	}
 

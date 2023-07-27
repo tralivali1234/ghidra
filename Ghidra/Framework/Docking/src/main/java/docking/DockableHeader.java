@@ -23,16 +23,17 @@ import java.util.*;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import javax.swing.*;
+import javax.swing.JFrame;
+import javax.swing.SwingUtilities;
 
 import org.jdesktop.animation.timing.Animator;
 import org.jdesktop.animation.timing.Animator.RepeatBehavior;
 import org.jdesktop.animation.timing.TimingTargetAdapter;
 import org.jdesktop.animation.timing.interpolation.PropertySetter;
 
-import docking.help.Help;
-import docking.help.HelpService;
 import docking.util.AnimationUtils;
+import generic.theme.GIcon;
+import generic.theme.GThemeDefaults.Colors.Palette;
 import generic.util.WindowUtilities;
 import generic.util.image.ImageUtils;
 import ghidra.framework.OperatingSystem;
@@ -41,7 +42,8 @@ import ghidra.util.HelpLocation;
 import ghidra.util.Msg;
 import ghidra.util.bean.GGlassPane;
 import ghidra.util.bean.GGlassPanePainter;
-import resources.ResourceManager;
+import help.Help;
+import help.HelpService;
 
 /**
  * Component for providing component titles and toolbar. Also provides Drag
@@ -77,6 +79,7 @@ public class DockableHeader extends GenericHeader
 		setTitle(info.getFullTitle());
 		setIcon(info.getIcon());
 
+		toolBarMgr.dispose(); // reset the default manager before we create our own
 		toolBarMgr = new DockableToolBarManager(dockableComp, this);
 
 		dragSource.createDefaultDragGestureRecognizer(titlePanel.getDragComponent(),
@@ -166,6 +169,10 @@ public class DockableHeader extends GenericHeader
 	}
 
 	private Animator emphasizeDockableComponent() {
+
+		if (!AnimationUtils.isAnimationEnabled()) {
+			return null;
+		}
 
 		ComponentPlaceholder placeholder = dockComp.getComponentWindowingPlaceholder();
 		ComponentNode node = placeholder.getNode();
@@ -485,6 +492,7 @@ public class DockableHeader extends GenericHeader
 
 	private static class EmphasizeDockableComponentPainter implements GGlassPanePainter {
 
+		private static final GIcon DRAGON_ICON = new GIcon("icon.dragon.256");
 		private Set<ComponentPaintInfo> otherComponentInfos = new HashSet<>();
 		private Image image;
 
@@ -533,7 +541,7 @@ public class DockableHeader extends GenericHeader
 			g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
 				RenderingHints.VALUE_INTERPOLATION_BILINEAR);
 
-			Color background = new Color(218, 232, 250);
+			Color background = Palette.getColor("aliceblue");
 			g.setColor(background);
 
 			Rectangle othersBounds = null;
@@ -562,8 +570,7 @@ public class DockableHeader extends GenericHeader
 
 			g2d.fillRect(othersBounds.x, othersBounds.y, othersBounds.width, othersBounds.height);
 
-			ImageIcon ghidra = ResourceManager.loadImage("images/GhidraIcon256.png");
-			Image ghidraImage = ghidra.getImage();
+			Image ghidraImage = DRAGON_ICON.getImageIcon().getImage();
 
 			double scale = percentComplete * 7;
 			int gw = ghidraImage.getWidth(null);

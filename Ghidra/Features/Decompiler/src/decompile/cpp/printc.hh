@@ -16,11 +16,13 @@
 /// \file printc.hh
 /// \brief Classes to support the c-language back-end of the decompiler
 
-#ifndef __PRINTC__
-#define __PRINTC__
+#ifndef __PRINTC_HH__
+#define __PRINTC_HH__
 
 #include "printlanguage.hh"
 #include "comment.hh"
+
+namespace ghidra {
 
 class FuncProto;
 class JumpTable;
@@ -47,7 +49,7 @@ struct PartialSymbolEntry {
   const TypeField *field;	///< The component object describing the field
   const Datatype *parent;	///< The parent data-type owning the field
   string fieldname;		///< The name of the field
-  EmitXml::syntax_highlight hilite;	///< Highlight information for the field token
+  EmitMarkup::syntax_highlight hilite;	///< Highlight information for the field token
 };
 
 /// \brief The c-language token emitter
@@ -113,6 +115,33 @@ protected:
   static OpToken ptr_expr;		///< Pointer adornment for a type declaration
   static OpToken array_expr;		///< Array adornment for a type declaration
   static OpToken enum_cat;		///< The \e concatenation operator for enumerated values
+public:
+  static const string EMPTY_STRING;	///< An empty token
+  static const string OPEN_CURLY;	///< "{" token
+  static const string CLOSE_CURLY;	///< "}" token
+  static const string SEMICOLON;	///< ";" token
+  static const string COLON;		///< ":" token
+  static const string EQUALSIGN;	///< "=" token
+  static const string COMMA;		///< "," token
+  static const string DOTDOTDOT;	///< "..." token
+  static const string KEYWORD_VOID;	///< "void" keyword
+  static const string KEYWORD_TRUE;	///< "true" keyword
+  static const string KEYWORD_FALSE;	///< "false" keyword
+  static const string KEYWORD_IF;	///< "if" keyword
+  static const string KEYWORD_ELSE;	///< "else" keyword
+  static const string KEYWORD_DO;	///< "do" keyword
+  static const string KEYWORD_WHILE;	///< "while" keyword
+  static const string KEYWORD_FOR;	///< "for" keyword
+  static const string KEYWORD_GOTO;	///< "goto" keyword
+  static const string KEYWORD_BREAK;	///< "break" keyword
+  static const string KEYWORD_CONTINUE;	///< "continue" keyword
+  static const string KEYWORD_CASE;	///< "case" keyword
+  static const string KEYWORD_SWITCH;	///< "switch" keyword
+  static const string KEYWORD_DEFAULT;	///< "default" keyword
+  static const string KEYWORD_RETURN;	///< "return" keyword
+  static const string KEYWORD_NEW;	///< "new" keyword
+  static const string typePointerRelToken;	///< The token to print indicating PTRSUB relative to a TypePointerRel
+protected:
   bool option_NULL;		///< Set to \b true if we should emit NULL keyword
   bool option_inplace_ops;	///< Set to \b true if we should use '+=' '&=' etc.
   bool option_convention;	///< Set to \b true if we should print calling convention
@@ -120,6 +149,7 @@ protected:
   bool option_unplaced;		///< Set to \b true if we should display unplaced comments
   bool option_hide_exts;	///< Set to \b true if we should hide implied extension operations
   string nullToken;		///< Token to use for 'null'
+  string sizeSuffix;		///< Characters to print to indicate a \e long integer token
   CommentSorter commsorter;	///< Container/organizer for comments in the current function
 
   // Routines that are specific to C/C++
@@ -131,7 +161,7 @@ protected:
   virtual void pushTypeEnd(const Datatype *ct);			///< Push the tail ends of a data-type declaration onto the RPN stack
   void pushBoolConstant(uintb val,const TypeBase *ct,const Varnode *vn,
 			  const PcodeOp *op);
-  void pushCharConstant(uintb val,const TypeChar *ct,const Varnode *vn,
+  void pushCharConstant(uintb val,const Datatype *ct,const Varnode *vn,
 			  const PcodeOp *op);
   void pushEnumConstant(uintb val,const TypeEnum *ct,const Varnode *vn,
 			  const PcodeOp *op);
@@ -146,7 +176,7 @@ protected:
   void emitEnumDefinition(const TypeEnum *ct);		///< Emit the definition of an \e enumeration data-type
   void emitPrototypeOutput(const FuncProto *proto,const Funcdata *fd);	///< Emit the output data-type of a function prototype
   void emitPrototypeInputs(const FuncProto *proto);	///< Emit the input data-types of a function prototype
-  void emitGlobalVarDeclsRecursive(Scope *scope);	///< Emit variable declarations for all global symbols under given scope
+  void emitGlobalVarDeclsRecursive(Scope *symScope);	///< Emit variable declarations for all global symbols under given scope
   void emitLocalVarDecls(const Funcdata *fd);		///< Emit variable declarations for a function
   void emitStatement(const PcodeOp *inst);		///< Emit a statement in the body of a function
   bool emitInplaceOp(const PcodeOp *op);		///< Attempt to emit an expression rooted at an \e in-place operator
@@ -156,10 +186,13 @@ protected:
   void emitLabelStatement(const FlowBlock *bl);		///< Emit any required label statement for a given basic block
   void emitAnyLabelStatement(const FlowBlock *bl);	///< Emit any required label statement for a given control-flow block
   void emitCommentGroup(const PcodeOp *inst);		///< Emit comments associated with a given statement
+  void emitCommentBlockTree(const FlowBlock *bl);	///< Emit any comments under the given control-flow subtree
   void emitCommentFuncHeader(const Funcdata *fd);	///< Emit comments in the given function's header
+  void emitForLoop(const BlockWhileDo *bl);		///< Emit block as a \e for loop
   void opFunc(const PcodeOp *op);			///< Push a \e functional expression based on the given p-code op to the RPN stack
   void opTypeCast(const PcodeOp *op);			///< Push the given p-code op using type-cast syntax to the RPN stack
   void opHiddenFunc(const PcodeOp *op);			///< Push the given p-code op as a hidden token
+  static void printCharHexEscape(ostream &s,int4 val);	///< Print value as an escaped hex sequence
   bool printCharacterConstant(ostream &s,const Address &addr,Datatype *charType) const;
   int4 getHiddenThisSlot(const PcodeOp *op,FuncProto *fc);	///< Get position of "this" pointer needing to be hidden
   void resetDefaultsPrintC(void);			///< Set default values for options specific to PrintC
@@ -168,14 +201,14 @@ protected:
   virtual bool pushEquate(uintb val,int4 sz,const EquateSymbol *sym,
 			    const Varnode *vn,const PcodeOp *op);
   virtual void pushAnnotation(const Varnode *vn,const PcodeOp *op);
-  virtual void pushSymbol(const Symbol *sym,const Varnode *vn,
-			  const PcodeOp *op);
+  virtual void pushSymbol(const Symbol *sym,const Varnode *vn,const PcodeOp *op);
   virtual void pushUnnamedLocation(const Address &addr,
 				   const Varnode *vn,const PcodeOp *op);
   virtual void pushPartialSymbol(const Symbol *sym,int4 off,int4 sz,
-				 const Varnode *vn,const PcodeOp *op,Datatype *outtype);
+				 const Varnode *vn,const PcodeOp *op,int4 inslot);
   virtual void pushMismatchSymbol(const Symbol *sym,int4 off,int4 sz,
 				  const Varnode *vn,const PcodeOp *op);
+  virtual void pushImpliedField(const Varnode *vn,const PcodeOp *op);
   virtual void push_integer(uintb val,int4 sz,bool sign,
 			    const Varnode *vn,
 			    const PcodeOp *op);
@@ -189,10 +222,11 @@ protected:
   virtual void emitExpression(const PcodeOp *op);
   virtual void emitVarDecl(const Symbol *sym);
   virtual void emitVarDeclStatement(const Symbol *sym);
-  virtual bool emitScopeVarDecls(const Scope *scope,int4 cat);
+  virtual bool emitScopeVarDecls(const Scope *symScope,int4 cat);
   virtual void emitFunctionDeclaration(const Funcdata *fd);
   virtual void emitTypeDefinition(const Datatype *ct);
   virtual bool checkPrintNegation(const Varnode *vn);
+  void pushTypePointerRel(const PcodeOp *op);
 public:
   PrintC(Architecture *g,const string &nm="c-language");	///< Constructor
   void setNULLPrinting(bool val) { option_NULL = val; }		///< Toggle the printing of a 'NULL' token
@@ -205,6 +239,7 @@ public:
   void setHideImpliedExts(bool val) { option_hide_exts = val; }	///< Toggle whether implied extensions are hidden
   virtual ~PrintC(void) {}
   virtual void resetDefaults(void);
+  virtual void initializeFromArchitecture(void);
   virtual void adjustTypeOperators(void);
   virtual void setCommentStyle(const string &nm);
   virtual void docTypeDefinitions(const TypeFactory *typegrp);
@@ -296,6 +331,32 @@ public:
   virtual void opInsertOp(const PcodeOp *op);
   virtual void opExtractOp(const PcodeOp *op);
   virtual void opPopcountOp(const PcodeOp *op) { opFunc(op); }
+  virtual void opLzcountOp(const PcodeOp *op) { opFunc(op); }
 };
 
+/// \brief Set of print commands for displaying an open brace '{' and setting a new indent level
+///
+/// These are the print commands sent to the emitter prior to printing and \e else block.
+/// The open brace can be canceled if the block decides it wants to use "else if" syntax.
+class PendingBrace : public PendPrint {
+  int4 indentId;		///< Id associated with the new indent level
+public:
+  PendingBrace(void) { indentId = -1; }			///< Constructor
+  int4 getIndentId(void) const { return indentId; }	///< If commands have been issued, returns the new indent level id.
+  virtual void callback(Emit *emit);
+};
+
+/// \brief Push a token indicating a PTRSUB (a -> operator) is acting at an offset from the original pointer
+///
+/// When a variable has TypePointerRel as its data-type, PTRSUB acts relative to the \e parent
+/// data-type.  We print a specific token to indicate this relative shift is happening.
+/// \param op is is the PTRSUB op
+inline void PrintC::pushTypePointerRel(const PcodeOp *op)
+
+{
+  pushOp(&function_call,op);
+  pushAtom(Atom(typePointerRelToken,optoken,EmitMarkup::funcname_color,op));
+}
+
+} // End namespace ghidra
 #endif

@@ -40,7 +40,8 @@ import docking.widgets.fieldpanel.support.FieldSelection;
 
 import ghidra.program.model.data.*;
 import ghidra.program.model.lang.InsufficientBytesException;
-import ghidra.util.exception.*;
+import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.UsrException;
 import ghidra.util.task.TaskMonitor;
 
 class UnionEditorModel extends CompEditorModel {
@@ -186,8 +187,7 @@ class UnionEditorModel extends CompEditorModel {
 	}
 
 	@Override
-	protected void createArray(int numElements)
-			throws InvalidDataTypeException, DataTypeConflictException, UsrException {
+	protected void createArray(int numElements) throws InvalidDataTypeException, UsrException {
 		if (getNumSelectedComponentRows() != 1) {
 			throw new UsrException("Select an individual component to create an array.");
 		}
@@ -293,7 +293,7 @@ class UnionEditorModel extends CompEditorModel {
 			if (currentIndex < 0 || currentIndex > getNumComponents()) {
 				return false;
 			}
-			checkIsAllowableDataType(dataType, true);
+			checkIsAllowableDataType(dataType);
 		}
 		catch (InvalidDataTypeException e) {
 			return false;
@@ -361,11 +361,10 @@ class UnionEditorModel extends CompEditorModel {
 	 *
 	 * @throws InvalidDataTypeException if the union being edited is part
 	 *         of the data type being inserted or if inserting isn't allowed.
-	 * @throws DataTypeConflictException if creating the data type or one of
-	 *         its sub-parts conflicted with an existing data type.
 	 */
 	@Override
-	public DataTypeComponent insert(int rowIndex, DataType dt, int dtLength) throws UsrException {
+	public DataTypeComponent insert(int rowIndex, DataType dt, int dtLength)
+			throws InvalidDataTypeException, UsrException {
 		if (dt.equals(DataType.DEFAULT)) {
 			throw new InvalidDataTypeException(
 				"Inserting undefined bytes is not allowed in a union.");
@@ -377,7 +376,7 @@ class UnionEditorModel extends CompEditorModel {
 	@Override
 	public DataTypeComponent insert(int rowIndex, DataType dataType, int length, String name,
 			String comment) throws InvalidDataTypeException {
-		checkIsAllowableDataType(dataType, true);
+		checkIsAllowableDataType(dataType);
 		try {
 			DataTypeComponent dtc =
 				((Union) viewComposite).insert(rowIndex, dataType, length, name, comment);
@@ -399,7 +398,7 @@ class UnionEditorModel extends CompEditorModel {
 
 		monitor.initialize(numCopies);
 		for (int i = 0; i < numCopies; i++) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			insert(rowIndex + i, dataType, length, null, null);
 			monitor.incrementProgress(1);
 		}
@@ -408,7 +407,7 @@ class UnionEditorModel extends CompEditorModel {
 	@Override
 	public DataTypeComponent replace(int rowIndex, DataType dataType, int length, String name,
 			String comment) throws InvalidDataTypeException {
-		checkIsAllowableDataType(dataType, true);
+		checkIsAllowableDataType(dataType);
 		try {
 			boolean isSelected = selection.containsEntirely(BigInteger.valueOf(rowIndex));
 			((Union) viewComposite).delete(rowIndex);
@@ -500,16 +499,6 @@ class UnionEditorModel extends CompEditorModel {
 				}
 			}
 		}
-	}
-
-	@Override
-	public void setAlignment(int minAlignment) throws InvalidInputException {
-		long currentViewAlignment = viewComposite.getMinimumAlignment();
-		if (currentViewAlignment == minAlignment) {
-			return;
-		}
-		viewComposite.setMinimumAlignment(minAlignment);
-		notifyCompositeChanged();
 	}
 
 	/**

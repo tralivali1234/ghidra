@@ -16,13 +16,13 @@
 package ghidra.program.model.data;
 
 import java.math.BigInteger;
+import java.util.*;
 
 import ghidra.docking.settings.*;
 import ghidra.program.model.mem.MemBuffer;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.util.DataConverter;
 import ghidra.util.exception.AssertException;
-import utilities.util.ArrayUtilities;
 
 /**
  * <code>BitFieldDataType</code> provides a means of defining a minimally sized bit-field
@@ -92,12 +92,9 @@ public class BitFieldDataType extends AbstractDataType {
 	protected BitFieldDataType(DataType baseDataType, int bitSize) throws InvalidDataTypeException {
 		this(baseDataType, bitSize, 0);
 	}
-
-	/**
-	 * Determine if this bit-field has a zero length (i.e., alignment field)
-	 * @return true if this bit-field has a zero length 
-	 */
-	public boolean isZeroLengthField() {
+	
+	@Override
+	public boolean isZeroLength() {
 		return bitSize == 0;
 	}
 
@@ -254,7 +251,11 @@ public class BitFieldDataType extends AbstractDataType {
 	 */
 	@Override
 	public final SettingsDefinition[] getSettingsDefinitions() {
-		return baseDataType.getSettingsDefinitions();
+		// exclude any ENDIAN setting that the base data type might support
+		List<SettingsDefinition> baseDTSettings =
+			new ArrayList<>(Arrays.asList(baseDataType.getSettingsDefinitions()));
+		baseDTSettings.remove(EndianSettingsDefinition.DEF);
+		return baseDTSettings.toArray(SettingsDefinition[]::new);
 	}
 
 	@Override
@@ -335,6 +336,11 @@ public class BitFieldDataType extends AbstractDataType {
 	}
 
 	@Override
+	public int getAlignedLength() {
+		return getLength();
+	}
+
+	@Override
 	public String getDescription() {
 		StringBuffer sbuf = new StringBuffer();
 		sbuf.append(Integer.toString(effectiveBitSize));
@@ -355,37 +361,28 @@ public class BitFieldDataType extends AbstractDataType {
 		if (effectiveBitSize == 0) {
 			return new Scalar(0, 0);
 		}
-		BigInteger big = getBigIntegerValue(buf, settings);
+		AbstractIntegerDataType primitiveBaseDataType = getPrimitiveBaseDataType();
+		boolean isSigned = primitiveBaseDataType.isSigned();
+		BigInteger big = getBigIntegerValue(buf, isSigned, settings);
 		if (big == null) {
 			return null;
 		}
 		if (effectiveBitSize <= 64) {
-			return new Scalar(effectiveBitSize, big.longValue(),
-				getPrimitiveBaseDataType().isSigned());
+			return new Scalar(effectiveBitSize, big.longValue(), isSigned);
 		}
 		return big;
 	}
 
-	private BigInteger getBigIntegerValue(MemBuffer buf, Settings settings) {
+	private BigInteger getBigIntegerValue(MemBuffer buf, boolean isSigned, Settings settings) {
 		if (effectiveBitSize == 0) {
 			return BigInteger.ZERO;
 		}
 		try {
-
-			byte[] bytes = new byte[storageSize];
-			if (buf.getBytes(bytes, 0) != storageSize) {
-				return null;
-			}
-
-			if (!EndianSettingsDefinition.ENDIAN.isBigEndian(settings, buf)) {
-				bytes = ArrayUtilities.reverse(bytes);
-			}
-
 			BigInteger big = buf.getBigInteger(0, storageSize, false);
 			BigInteger pow = BigInteger.valueOf(2).pow(effectiveBitSize);
 			BigInteger mask = pow.subtract(BigInteger.ONE);
 			big = big.shiftRight(bitOffset).and(mask);
-			if (big.testBit(effectiveBitSize - 1)) {
+			if (isSigned && big.testBit(effectiveBitSize - 1)) {
 				big = big.subtract(pow);
 			}
 			return big;
@@ -406,7 +403,9 @@ public class BitFieldDataType extends AbstractDataType {
 		if (bitSize == 0) {
 			return "";
 		}
-		BigInteger big = getBigIntegerValue(buf, settings);
+		AbstractIntegerDataType primitiveBaseDataType = getPrimitiveBaseDataType();
+		boolean isSigned = primitiveBaseDataType.isSigned();
+		BigInteger big = getBigIntegerValue(buf, isSigned, settings);
 		if (big == null) {
 			return "??";
 		}
@@ -430,11 +429,6 @@ public class BitFieldDataType extends AbstractDataType {
 		}
 
 		return intDT.getRepresentation(big, settings, effectiveBitSize);
-	}
-
-	@Override
-	public void setDefaultSettings(Settings settings) {
-		this.defaultSettings = settings;
 	}
 
 	@Override

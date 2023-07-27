@@ -21,8 +21,7 @@ import java.util.*;
 import db.DBConstants;
 import db.DBHandle;
 import db.buffers.BufferFile;
-import generic.test.AbstractGTest;
-import generic.test.AbstractGenericTest;
+import generic.test.*;
 import ghidra.app.util.xml.*;
 import ghidra.framework.data.DomainObjectAdapterDB;
 import ghidra.framework.model.*;
@@ -33,7 +32,8 @@ import ghidra.program.model.listing.Program;
 import ghidra.program.util.DefaultLanguageService;
 import ghidra.util.*;
 import ghidra.util.exception.*;
-import ghidra.util.task.*;
+import ghidra.util.task.ConsoleTaskMonitor;
+import ghidra.util.task.TaskMonitor;
 import utilities.util.FileUtilities;
 
 /**
@@ -123,11 +123,14 @@ public class TestProgramManager {
 	/**
 	 * Save a program to the cached program store.  A SaveAs will be performed on the
 	 * program to its cached storage location.
+	 * 
 	 * @param progName program name
 	 * @param program program object
 	 * @param replace if true any existing cached database with the same name will be replaced
 	 * @param monitor task monitor
+	 * @throws IOException if the database cannot be created
 	 * @throws DuplicateNameException if already cached
+	 * @throws CancelledException if the save operation is cancelled
 	 */
 	public void saveToCache(String progName, ProgramDB program, boolean replace,
 			TaskMonitor monitor) throws IOException, DuplicateNameException, CancelledException {
@@ -205,7 +208,9 @@ public class TestProgramManager {
 	 * the only reason to use this method vice openProgram().
 	 *
 	 * @param project the project into which the file will be restored
-	 * @param programName the name of the program zip file without the ".gzf" extension.
+	 * @param programName the name of the program zip file without the ".gzf" extension
+	 * @return the file
+	 * @throws FileNotFoundException if the file cannot be found 
 	 */
 	public DomainFile addProgramToProject(Project project, String programName)
 			throws FileNotFoundException {
@@ -221,6 +226,8 @@ public class TestProgramManager {
 	 *
 	 * @param folder the folder into which the domain file will be inserted
 	 * @param programName the name of the program zip file without the ".gzf" extension.
+	 * @return the file
+	 * @throws FileNotFoundException if the file cannot be found 
 	 */
 	public DomainFile addProgramToProject(DomainFolder folder, String programName)
 			throws FileNotFoundException {
@@ -234,8 +241,8 @@ public class TestProgramManager {
 		int oneUp = 0;
 		while (true) {
 			try {
-				DomainFile df = folder.createFile(name, gzf, TaskMonitorAdapter.DUMMY_MONITOR);
-				AbstractGenericTest.waitForPostedSwingRunnables();
+				DomainFile df = folder.createFile(name, gzf, TaskMonitor.DUMMY);
+				AbstractGuiTest.waitForSwing();
 				DomainObject dobj = df.getDomainObject(this, true, false, null);
 				try {
 					if (dobj.isChanged()) {
@@ -281,7 +288,7 @@ public class TestProgramManager {
 		DBHandle dbh = null;
 		boolean success = false;
 		try {
-			dbh = db.open(TaskMonitorAdapter.DUMMY_MONITOR);
+			dbh = db.open(TaskMonitor.DUMMY);
 			program = new ProgramDB(dbh, DBConstants.UPDATE, null, this);
 			success = true;
 		}
@@ -312,7 +319,7 @@ public class TestProgramManager {
 			}
 
 			Msg.info(this, message + (endTime - startTime));
-			dbh = db.open(TaskMonitorAdapter.DUMMY_MONITOR);
+			dbh = db.open(TaskMonitor.DUMMY);
 			program = new ProgramDB(dbh, DBConstants.UPDATE, null, this);
 			dbh = null;
 			success = true;
@@ -341,7 +348,7 @@ public class TestProgramManager {
 		File gzf = AbstractGenericTest.findTestDataFile(programName + ".gzf");
 		if (gzf != null && gzf.exists()) {
 			Msg.info(this, "Unpacking: " + gzf);
-			db = new PrivateDatabase(dbDir, gzf, TaskMonitorAdapter.DUMMY_MONITOR);
+			db = new PrivateDatabase(dbDir, gzf, TaskMonitor.DUMMY);
 			testPrograms.put(programName, db);
 			return db;
 		}
@@ -423,6 +430,12 @@ public class TestProgramManager {
 		return dbTestDir;
 	}
 
+	public static void cleanDbTestDir() {
+		File dir = getDbTestDir();
+		Msg.debug(TestProgramManager.class, "Deleting test db cache dir: " + dir);
+		FileUtilities.deleteDir(dir);
+	}
+
 	private static File getTestDBDirectory() {
 		String testDirPath = AbstractGTest.getTestDirectoryPath();
 		File dir = new File(testDirPath, DB_DIR_NAME);
@@ -451,12 +464,12 @@ public class TestProgramManager {
 
 	private void upgradeDatabase(PrivateDatabase db) throws Exception {
 
-		DBHandle dbh = db.openForUpdate(TaskMonitorAdapter.DUMMY_MONITOR);
+		DBHandle dbh = db.openForUpdate(TaskMonitor.DUMMY);
 		try {
 			ProgramDB program =
-				new ProgramDB(dbh, DBConstants.UPGRADE, TaskMonitorAdapter.DUMMY_MONITOR, this);
+				new ProgramDB(dbh, DBConstants.UPGRADE, TaskMonitor.DUMMY, this);
 			if (dbh != null) {
-				dbh.save(null, null, TaskMonitorAdapter.DUMMY_MONITOR);
+				dbh.save(null, null, TaskMonitor.DUMMY);
 			}
 			dbh = null;
 			program.release(this);

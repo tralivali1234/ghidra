@@ -1,6 +1,5 @@
 /* ###
  * IP: GHIDRA
- * REVIEWED: YES
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +15,7 @@
  */
 package ghidra.app.plugin.debug.dbtable;
 
-import db.Record;
+import db.DBRecord;
 import db.ShortField;
 
 public class ShortColumnAdapter extends AbstractColumnAdapter {
@@ -27,13 +26,13 @@ public class ShortColumnAdapter extends AbstractColumnAdapter {
 	}
 
 	@Override
-	Object getKeyValue(Record rec) {
-		return new Short(((ShortField) rec.getKeyField()).getShortValue());
+	Object getKeyValue(DBRecord rec) {
+		return Short.valueOf(((ShortField) rec.getKeyField()).getShortValue());
 	}
 
 	@Override
-	Object getValue(Record rec, int col) {
-		return new Short(rec.getShortValue(col));
+	Object getValue(DBRecord rec, int col) {
+		return Short.valueOf(rec.getShortValue(col));
 	}
 
 }

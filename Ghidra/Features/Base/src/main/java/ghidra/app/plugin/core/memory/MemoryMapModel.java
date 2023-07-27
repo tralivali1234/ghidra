@@ -37,7 +37,6 @@ import ghidra.program.model.address.*;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.*;
 import ghidra.util.Msg;
-import ghidra.util.exception.DuplicateNameException;
 
 class MemoryMapModel extends AbstractSortedTableModel<MemoryBlock> {
 
@@ -267,14 +266,9 @@ class MemoryMapModel extends AbstractSortedTableModel<MemoryBlock> {
 					if (name.equals(block.getName())) {
 						break;
 					}
-					if (!Memory.isValidAddressSpaceName(name)) {
+					if (!Memory.isValidMemoryBlockName(name)) {
 						Msg.showError(this, provider.getComponent(), "Invalid Name",
 							"Invalid Memory Block Name: " + name);
-						break;
-					}
-					if (provider.getMemoryMapManager().isDuplicateName(name)) {
-						Msg.showError(this, provider.getComponent(), "Duplicate Name",
-							"Address space/overlay named " + name + " already exists.");
 						break;
 					}
 					if (!name.equals(block.getName())) {
@@ -284,11 +278,6 @@ class MemoryMapModel extends AbstractSortedTableModel<MemoryBlock> {
 							program.endTransaction(id, true);
 						}
 						catch (LockException e) {
-							program.endTransaction(id, false);
-							this.provider.setStatusText(e.getMessage());
-							return;
-						}
-						catch (DuplicateNameException e) {
 							program.endTransaction(id, false);
 							this.provider.setStatusText(e.getMessage());
 							return;
@@ -369,7 +358,7 @@ class MemoryMapModel extends AbstractSortedTableModel<MemoryBlock> {
 						initializeBlock(block);
 					}
 					else {
-						revertBlockToUnitialized(block);
+						revertBlockToUninitialized(block);
 					}
 					return;
 
@@ -403,9 +392,9 @@ class MemoryMapModel extends AbstractSortedTableModel<MemoryBlock> {
 		}
 	}
 
-	private void revertBlockToUnitialized(MemoryBlock block) {
+	private void revertBlockToUninitialized(MemoryBlock block) {
 		int result = OptionDialog.showYesNoDialog(provider.getComponent(),
-			"Confirm Setting Block To Unitialized",
+			"Confirm Setting Block To Uninitialized",
 			"Are you sure you want to remove the bytes from this block? \n\n" +
 				"This will result in removing all functions, instructions, data,\n" +
 				"and outgoing references from the block!");
@@ -546,6 +535,9 @@ class MemoryMapModel extends AbstractSortedTableModel<MemoryBlock> {
 
 	@Override
 	protected Comparator<MemoryBlock> createSortComparator(int columnIndex) {
+		if (columnIndex == BYTE_SOURCE) {
+			return super.createSortComparator(columnIndex);
+		}
 		return new MemoryMapComparator(columnIndex);
 	}
 
@@ -592,6 +584,9 @@ class MemoryMapModel extends AbstractSortedTableModel<MemoryBlock> {
 					int b1init = (b1.isInitialized() ? 1 : -1);
 					int b2init = (b2.isInitialized() ? 1 : -1);
 					return (b1init - b2init);
+
+				//case BYTE_SOURCE: - handled by default comparator
+
 				case SOURCE:
 					String b1src = b1.getSourceName();
 					String b2src = b2.getSourceName();
@@ -619,7 +614,7 @@ class MemoryMapModel extends AbstractSortedTableModel<MemoryBlock> {
 					String bt2 = b2.getType().toString();
 					return bt1.compareToIgnoreCase(bt2);
 				default:
-					return 0;
+					throw new RuntimeException("Unimplemented column comparator: " + sortColumn);
 			}
 		}
 	}

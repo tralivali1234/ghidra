@@ -26,17 +26,14 @@ import docking.ActionContext;
 import docking.action.DockingAction;
 import docking.action.ToolBarData;
 import docking.widgets.OptionDialog;
+import generic.theme.GIcon;
 import ghidra.framework.plugintool.ComponentProviderAdapter;
 import ghidra.util.HelpLocation;
 import resources.Icons;
-import resources.ResourceManager;
 import utility.function.Callback;
 
 public class InterpreterComponentProvider extends ComponentProviderAdapter
 		implements InterpreterConsole {
-
-	private static final String CONSOLE_GIF = "images/monitor.png";
-	private static final String CLEAR_GIF = "images/erase16.png";
 
 	private InterpreterPanel panel;
 	private InterpreterConnection interpreter;
@@ -57,7 +54,7 @@ public class InterpreterComponentProvider extends ComponentProviderAdapter
 
 		Icon icon = interpreter.getIcon();
 		if (icon == null) {
-			icon = ResourceManager.loadImage(CONSOLE_GIF);
+			icon = new GIcon("icon.plugin.interpreter.provider");
 		}
 		setIcon(icon);
 
@@ -73,7 +70,7 @@ public class InterpreterComponentProvider extends ComponentProviderAdapter
 			}
 		};
 		clearAction.setDescription("Clear Interpreter");
-		clearAction.setToolBarData(new ToolBarData(ResourceManager.loadImage(CLEAR_GIF), null));
+		clearAction.setToolBarData(new ToolBarData(Icons.CLEAR_ICON, null));
 		clearAction.setEnabled(true);
 
 		addLocalAction(clearAction);
@@ -158,6 +155,15 @@ public class InterpreterComponentProvider extends ComponentProviderAdapter
 		return panel.getErrWriter();
 	}
 
+	/**
+	 * For testing purposes, but should probably be promoted to InterpreterConsole interface
+	 * 
+	 * @return the prompt;
+	 */
+	public String getPrompt() {
+		return panel.getPrompt();
+	}
+
 	@Override
 	public void setPrompt(String prompt) {
 		panel.setPrompt(prompt);
@@ -185,5 +191,34 @@ public class InterpreterComponentProvider extends ComponentProviderAdapter
 	@Override
 	public void addFirstActivationCallback(Callback activationCallback) {
 		firstActivationCallbacks.add(activationCallback);
+	}
+
+	@Override
+	public boolean isInputPermitted() {
+		return panel.isInputPermitted();
+	}
+
+	@Override
+	public void setInputPermitted(boolean permitted) {
+		panel.setInputPermitted(permitted);
+	}
+
+	@Override
+	public void show() {
+		tool.showComponentProvider(this, true);
+	}
+
+	@Override
+	public void updateTitle() {
+		tool.updateTitle(this);
+	}
+
+	/**
+	 * For testing purposes only
+	 * 
+	 * @return the text in the output buffer
+	 */
+	public String getOutputText() {
+		return panel.getOutputText();
 	}
 }

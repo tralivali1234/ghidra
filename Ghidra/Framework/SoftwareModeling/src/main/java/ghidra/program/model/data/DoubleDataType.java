@@ -1,6 +1,5 @@
 /* ###
  * IP: GHIDRA
- * REVIEWED: YES
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +14,6 @@
  * limitations under the License.
  */
 package ghidra.program.model.data;
-
 
 /**
  * Provides a definition of a Double within a program.
@@ -32,7 +30,12 @@ public class DoubleDataType extends AbstractFloatDataType {
 	}
 
 	public DoubleDataType(DataTypeManager dtm) {
-		super("double", dtm);
+		super("double", getDataOrganization(dtm).getDoubleSize(), dtm);
+	}
+
+	@Override
+	protected String buildDescription() {
+		return "Compiler-defined 'double' " + super.buildDescription();
 	}
 
 	public DataType clone(DataTypeManager dtm) {
@@ -43,13 +46,8 @@ public class DoubleDataType extends AbstractFloatDataType {
 	}
 
 	@Override
-	public boolean isDynamicallySized() {
+	public boolean hasLanguageDependantLength() {
 		return true;
-	}
-
-	@Override
-	public int getLength() {
-		return getDataOrganization().getDoubleSize();
 	}
 
 }

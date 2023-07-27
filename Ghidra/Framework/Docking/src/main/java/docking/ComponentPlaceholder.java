@@ -22,15 +22,25 @@ import java.util.List;
 
 import javax.swing.*;
 
+import org.apache.commons.lang3.StringUtils;
+
 import docking.action.DockingAction;
 import docking.action.DockingActionIf;
+import ghidra.util.Msg;
 import ghidra.util.Swing;
 import ghidra.util.exception.AssertException;
+import utilities.util.reflection.ReflectionUtilities;
 
 /**
  * Class to hold information about a dockable component with respect to its position within the
  * windowing system.  It also holds identification information about the provider so that its
  * location can be reused when the provider is re-opened.
+ * <p>
+ * The placeholder will be used to link previously saved position information.  The tool will
+ * initially construct plugins and their component providers with default position information.
+ * Then, any existing xml data will be restored, which may have provider position information.
+ * The restoring of the xml will create placeholders with this saved information.  Finally, the
+ * restored placeholders will be linked with existing component providers.
  */
 public class ComponentPlaceholder {
 	private String name;
@@ -55,8 +65,7 @@ public class ComponentPlaceholder {
 		this.componentProvider = provider;
 		updateInfo(provider);
 		this.actions = new ArrayList<>();
-
-		instanceID = provider.getInstanceID();
+		this.instanceID = provider.getInstanceID();
 	}
 
 	/**
@@ -65,7 +74,7 @@ public class ComponentPlaceholder {
 	 * @param name the name of the component
 	 * @param owner the owner of the component
 	 * @param group the window group
-	 * @param title the title 
+	 * @param title the title
 	 * @param show whether or not the component is showing
 	 * @param node componentNode that has this placeholder
 	 * @param instanceID the instance ID
@@ -109,6 +118,16 @@ public class ComponentPlaceholder {
 	 * @param node the component node containing this placeholder.
 	 */
 	void setNode(ComponentNode node) {
+
+		if (node != null && disposed) {
+			//
+			// TODO Hack Alert!  (When this is removed, also update ComponentNode)
+			//
+			// This should not happen!  We have seen this bug recently
+			Msg.debug(this, "Found disposed component that was not removed from the hierarchy " +
+				"list: " + this, ReflectionUtilities.createJavaFilteredThrowable());
+		}
+
 		compNode = node;
 	}
 
@@ -146,11 +165,22 @@ public class ComponentPlaceholder {
 		return group;
 	}
 
-	DetachedWindowNode getWindowNode() {
+	DetachedWindowNode getDetachedWindowNode() {
 		Node node = compNode.parent;
 		while (node != null) {
 			if (node instanceof DetachedWindowNode) {
 				return (DetachedWindowNode) node;
+			}
+			node = node.parent;
+		}
+		return null;
+	}
+
+	WindowNode getWindowNode() {
+		Node node = compNode.parent;
+		while (node != null) {
+			if (node instanceof WindowNode) {
+				return (WindowNode) node;
 			}
 			node = node.parent;
 		}
@@ -201,7 +231,12 @@ public class ComponentPlaceholder {
 		}
 	}
 
+	public boolean isDisposed() {
+		return disposed;
+	}
+
 	void dispose() {
+
 		disposed = true;
 
 		if (comp != null) {
@@ -219,6 +254,7 @@ public class ComponentPlaceholder {
 		}
 
 		compNode.remove(this);
+		compNode = null;
 	}
 
 	private void disposeComponent() {
@@ -260,9 +296,9 @@ public class ComponentPlaceholder {
 
 	// makes sure that the given window is not in an iconified state
 	private void activateWindow() {
-		DetachedWindowNode windowNode = getWindowNode();
+		DetachedWindowNode windowNode = getDetachedWindowNode();
 		if (windowNode != null) {
-			Window window = getWindowNode().getWindow();
+			Window window = getDetachedWindowNode().getWindow();
 			if (window instanceof Frame) {
 				Frame frame = (Frame) window;
 				frame.setState(Frame.NORMAL);
@@ -288,8 +324,9 @@ public class ComponentPlaceholder {
 	public DockableComponent getComponent() {
 		if (disposed) {
 			throw new AssertException(
-				"Attempted to get a component for a disposed component placeholder");
+				"Attempted to get a component for a disposed placeholder - " + this);
 		}
+
 		boolean isDocking = true;
 		if (compNode != null) {
 			isDocking = compNode.winMgr.isDocking();
@@ -494,7 +531,7 @@ public class ComponentPlaceholder {
 
 		ActionContext actionContext = componentProvider.getActionContext(null);
 		if (actionContext == null) {
-			actionContext = new ActionContext(componentProvider, null);
+			actionContext = new DefaultActionContext(componentProvider, null);
 		}
 		for (DockingActionIf action : actions) {
 			action.setEnabled(
@@ -553,7 +590,7 @@ public class ComponentPlaceholder {
 	 */
 	public String getFullTitle() {
 		String text = title;
-		if (subTitle != null && !subTitle.isEmpty()) {
+		if (!StringUtils.isBlank(subTitle)) {
 			text += " - " + subTitle;
 		}
 		return text;

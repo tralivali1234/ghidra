@@ -21,24 +21,23 @@ import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
+import java.net.URL;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
-import javax.swing.ImageIcon;
-import javax.swing.JComponent;
+import javax.swing.*;
 
 import org.jdom.Element;
 
 import docking.*;
 import docking.action.*;
+import docking.action.builder.ActionBuilder;
 import docking.actions.PopupActionProvider;
 import docking.actions.ToolActions;
 import docking.framework.AboutDialog;
 import docking.framework.ApplicationInformationDisplayFactory;
-import docking.framework.SplashScreen;
-import docking.help.Help;
-import docking.help.HelpService;
+import docking.options.OptionsService;
 import docking.tool.ToolConstants;
 import docking.tool.util.DockingToolConstants;
 import docking.util.image.ToolIconURL;
@@ -57,19 +56,22 @@ import ghidra.framework.plugintool.mgr.*;
 import ghidra.framework.plugintool.util.*;
 import ghidra.framework.project.ProjectDataService;
 import ghidra.util.*;
+import ghidra.util.exception.CancelledException;
 import ghidra.util.task.*;
+import help.Help;
+import help.HelpService;
 
 /**
- * Base class that is a container to manage plugins and their actions, and to coordinate the 
+ * Base class that is a container to manage plugins and their actions, and to coordinate the
  * firing of plugin events and tool events. A PluginTool may have visible components supplied by
- * <pre>ComponentProviders </pre>. These components may be docked within the tool, or moved 
+ * <pre>ComponentProviders </pre>. These components may be docked within the tool, or moved
  * out into their own windows.
  *
- * <p>Plugins normally add actions via {@link #addAction(DockingActionIf)}.   There is also 
+ * <p>Plugins normally add actions via {@link #addAction(DockingActionIf)}.   There is also
  * an alternate method for getting actions to appear in the popup context menu (see
  * {@link #addPopupActionProvider(PopupActionProvider)}).   The popup listener mechanism is generally not
  * needed and should only be used in special circumstances (see {@link PopupActionProvider}).
- * 
+ *
  * <p>The PluginTool also manages tasks that run in the background, and options used by the plugins.
  *
  */
@@ -114,7 +116,6 @@ public abstract class PluginTool extends AbstractDockingTool {
 
 	private OptionsChangeListener optionsListener = new ToolOptionsListener();
 	protected ManagePluginsDialog manageDialog;
-	protected ExtensionTableProvider extensionTableProvider;
 
 	protected ToolIconURL iconURL = new ToolIconURL("view_detailed.png");
 
@@ -122,6 +123,7 @@ public abstract class PluginTool extends AbstractDockingTool {
 
 	private boolean isConfigurable = true;
 	protected boolean isDisposed = false;
+	private boolean restoringDataState;
 
 	/**
 	 * Construct a new PluginTool.
@@ -137,7 +139,7 @@ public abstract class PluginTool extends AbstractDockingTool {
 
 		boolean hasErrors = restoreFromXml(template.getToolElement());
 		if (!hasErrors) {
-			configChangedFlag = false;
+			setConfigChanged(false);
 		}
 		optionsMgr.validateOptions();
 	}
@@ -162,7 +164,8 @@ public abstract class PluginTool extends AbstractDockingTool {
 			String name, boolean isDockable, boolean hasStatus, boolean isModal) {
 		this.project = project;
 		this.projectManager = projectManager;
-		this.toolServices = toolServices;
+		this.toolServices = toolServices == null ? new ToolServicesAdapter() : toolServices;
+
 		propertyChangeMgr = new PropertyChangeSupport(this);
 		optionsMgr = new OptionsManager(this);
 		winMgr = createDockingWindowManager(isDockable, hasStatus, isModal);
@@ -174,7 +177,7 @@ public abstract class PluginTool extends AbstractDockingTool {
 		eventMgr = new EventManager(this);
 		serviceMgr = new ServiceManager();
 		installServices();
-		pluginMgr = new PluginManager(this, serviceMgr);
+		pluginMgr = new PluginManager(this, serviceMgr, createPluginsConfigurations());
 		dialogMgr = new DialogManager(this);
 		initActions();
 		initOptions();
@@ -191,7 +194,13 @@ public abstract class PluginTool extends AbstractDockingTool {
 		// non-public constructor for stub subclasses
 	}
 
-	public abstract PluginClassManager getPluginClassManager();
+	protected PluginsConfiguration createPluginsConfigurations() {
+		return new DefaultPluginsConfiguration();
+	}
+
+	protected PluginsConfiguration getPluginsConfiguration() {
+		return pluginMgr.getPluginsConfiguration();
+	}
 
 	/**
 	 * This method exists here, as opposed to inline in the constructor, so that subclasses can
@@ -215,7 +224,7 @@ public abstract class PluginTool extends AbstractDockingTool {
 
 	protected void installHomeButton() {
 
-		ImageIcon homeIcon = ApplicationInformationDisplayFactory.getHomeIcon();
+		Icon homeIcon = ApplicationInformationDisplayFactory.getHomeIcon();
 		if (homeIcon == null) {
 			Msg.debug(this,
 				"If you would like a button to show the Front End, then set the home icon");
@@ -224,6 +233,28 @@ public abstract class PluginTool extends AbstractDockingTool {
 
 		Runnable callback = ApplicationInformationDisplayFactory.getHomeCallback();
 		winMgr.setHomeButton(homeIcon, callback);
+	}
+
+	/**
+	 * Loads all application-level utility classes into this tool.   This should only be called
+	 * by tools that represent the global application tool and not for sub-tools.
+	 */
+	protected void installUtilityPlugins() {
+
+		try {
+			checkedRunSwingNow(() -> {
+				try {
+					pluginMgr.installUtilityPlugins();
+				}
+				finally {
+					setConfigChanged(true);
+				}
+			}, PluginException.class);
+		}
+		catch (PluginException e) {
+			Msg.showError(this, null, "Error Adding Utility Plugins",
+				"Unexpected exception adding application utility plugins", e);
+		}
 	}
 
 	/**
@@ -307,11 +338,7 @@ public abstract class PluginTool extends AbstractDockingTool {
 	 * Displays the extensions installation dialog.
 	 */
 	public void showExtensions() {
-		if (extensionTableProvider != null) {
-			extensionTableProvider.close();
-		}
-		extensionTableProvider = new ExtensionTableProvider(this);
-		showDialog(extensionTableProvider);
+		showDialog(new ExtensionTableProvider(this));
 	}
 
 	/**
@@ -389,6 +416,31 @@ public abstract class PluginTool extends AbstractDockingTool {
 		winMgr.setDefaultComponent(provider);
 	}
 
+	/**
+	 * Registers an action context provider as the default provider for a specific action
+	 * context type. Note that this registers a default provider for exactly
+	 * that type and not a subclass of that type. If the provider want to support a hierarchy of
+	 * types, then it must register separately for each type. See {@link ActionContext} for details
+	 * on how the action context system works.
+	 * @param type the ActionContext class to register a default provider for
+	 * @param provider the ActionContextProvider that provides default tool context for actions
+	 * that consume the given ActionContext type
+	 */
+	public void registerDefaultContextProvider(Class<? extends ActionContext> type,
+			ActionContextProvider provider) {
+		winMgr.registerDefaultContextProvider(type, provider);
+	}
+
+	/**
+	 * Removes the default provider for the given ActionContext type.
+	 * @param type the subclass of ActionContext to remove a provider for
+	 * @param provider the ActionContextProvider to remove for the given ActionContext type
+	 */
+	public void unregisterDefaultContextProvider(Class<? extends ActionContext> type,
+			ActionContextProvider provider) {
+		winMgr.unregisterDefaultContextProvider(type, provider);
+	}
+
 	public ToolTemplate getToolTemplate(boolean includeConfigState) {
 		throw new UnsupportedOperationException(
 			"You cannot create templates for generic tools: " + getClass().getName());
@@ -405,13 +457,25 @@ public abstract class PluginTool extends AbstractDockingTool {
 			"You cannot persist generic tools: " + getClass().getName());
 	}
 
-	public void restoreWindowingDataFromXml(Element windowData) {
+	public void restoreWindowingDataFromXml(Element element) {
 		throw new UnsupportedOperationException(
 			"You cannot persist generic tools: " + getClass().getName());
 	}
 
 	public boolean acceptDomainFiles(DomainFile[] data) {
 		return pluginMgr.acceptData(data);
+	}
+
+	/**
+	 * Request tool to accept specified URL.  Acceptance of URL depends greatly on the plugins
+	 * configured into tool.  If no plugin accepts URL it will be rejected and false returned.
+	 * If a plugin can accept the specified URL it will attempt to process and return true if
+	 * successful.  The user may be prompted if connecting to the URL requires user authentication.
+	 * @param url read-only resource URL
+	 * @return true if URL accepted and processed else false
+	 */
+	public boolean accept(URL url) {
+		return pluginMgr.accept(url);
 	}
 
 	public void addPropertyChangeListener(PropertyChangeListener l) {
@@ -431,10 +495,6 @@ public abstract class PluginTool extends AbstractDockingTool {
 		return eventMgr.hasToolListeners();
 	}
 
-	public void exit() {
-		dispose();
-	}
-
 	protected void dispose() {
 		isDisposed = true;
 
@@ -450,7 +510,7 @@ public abstract class PluginTool extends AbstractDockingTool {
 		}
 
 		winMgr.setVisible(false);
-		eventMgr.clearLastEvents();
+		eventMgr.clear();
 		pluginMgr.dispose();
 
 		toolActions.removeActions(ToolConstants.TOOL_OWNER);
@@ -464,6 +524,7 @@ public abstract class PluginTool extends AbstractDockingTool {
 
 		disposeManagers();
 		winMgr.dispose();
+		toolServices.closeTool(this);
 	}
 
 	private void disposeManagers() {
@@ -534,8 +595,14 @@ public abstract class PluginTool extends AbstractDockingTool {
 	}
 
 	public void restoreDataStateFromXml(Element root) {
-		pluginMgr.restoreDataStateFromXml(root);
-		setConfigChanged(false);
+		restoringDataState = true;
+		try {
+			pluginMgr.restoreDataStateFromXml(root);
+			setConfigChanged(false);
+		}
+		finally {
+			restoringDataState = false;
+		}
 	}
 
 	public Element saveDataStateToXml(boolean savingProject) {
@@ -552,9 +619,9 @@ public abstract class PluginTool extends AbstractDockingTool {
 		else {
 			fullName = toolName + "(" + instanceName + ")";
 		}
-		SplashScreen.updateSplashScreenStatus("Loading " + fullName + " ...");
 
 		restoreOptionsFromXml(root);
+		winMgr.restorePreferencesFromXML(root);
 		setDefaultOptionValues();
 		boolean hasErrors = false;
 		try {
@@ -562,10 +629,10 @@ public abstract class PluginTool extends AbstractDockingTool {
 		}
 		catch (PluginException e) {
 			hasErrors = true;
-			Msg.showError(this, getToolFrame(), "Error Restoring Plugins", e.getMessage());
+			Msg.showError(this, getToolFrame(), "Error Restoring Plugins", e.getMessage(), e);
 		}
 
-		winMgr.restoreFromXML(root);
+		winMgr.restoreWindowDataFromXml(root);
 		winMgr.setToolName(fullName);
 		return hasErrors;
 	}
@@ -674,14 +741,6 @@ public abstract class PluginTool extends AbstractDockingTool {
 	}
 
 	/**
-	 * Cancel any running command and clear the command queue.
-	 * @param wait if true wait for current task to cancel cleanly
-	 */
-	public void terminateBackgroundCommands(boolean wait) {
-		taskMgr.stop(wait);
-	}
-
-	/**
 	 * Add the given background command to a queue that is processed after the
 	 * main background command completes.
 	 * @param cmd background command to submit
@@ -709,11 +768,6 @@ public abstract class PluginTool extends AbstractDockingTool {
 		task.addTaskListener(new TaskBusyListener());
 		new TaskLauncher(task, winMgr.getActiveWindow());
 	}
-
-	/**
-	 * Get the options for the given category name; if no options exist with
-	 * the given name, then one is created.
-	 */
 
 	@Override
 	public ToolOptions getOptions(String categoryName) {
@@ -801,9 +855,7 @@ public abstract class PluginTool extends AbstractDockingTool {
 	 * class already exists in the tool
 	 */
 	public void addPlugin(String className) throws PluginException {
-		checkedRunSwingNow(() -> {
-			addPlugins(new String[] { className });
-		}, PluginException.class);
+		addPlugins(List.of(className));
 	}
 
 	/**
@@ -812,31 +864,54 @@ public abstract class PluginTool extends AbstractDockingTool {
 	 * @throws PluginException if a plugin could not be constructed, or
 	 * there was problem executing its init() method, or if a plugin of this
 	 * class already exists in the tool
+	 * @deprecated use {@link #addPlugins(Collection)}
 	 */
+	@Deprecated(since = "10.2", forRemoval = true)
 	public void addPlugins(String[] classNames) throws PluginException {
-		try {
-			pluginMgr.addPlugins(classNames);
-		}
-		finally {
-			setConfigChanged(true);
-		}
+		addPlugins(Arrays.asList(classNames));
+	}
+
+	/**
+	 * Add plugins to the tool.
+	 * @param classNames collection of plugin class names
+	 * @throws PluginException if a plugin could not be constructed, or
+	 * there was problem executing its init() method, or if a plugin of this
+	 * class already exists in the tool
+	 */
+	public void addPlugins(Collection<String> classNames) throws PluginException {
+		checkedRunSwingNow(() -> {
+			try {
+				pluginMgr.addPlugins(classNames);
+			}
+			finally {
+				setConfigChanged(true);
+			}
+		}, PluginException.class);
 	}
 
 	public void addPlugin(Plugin p) throws PluginException {
-		pluginMgr.addPlugin(p);
-		setConfigChanged(true);
+		checkedRunSwingNow(() -> {
+			pluginMgr.addPlugin(p);
+			setConfigChanged(true);
+		}, PluginException.class);
 	}
 
-	public boolean hasUnsavedData() {
-		return pluginMgr.hasUnsavedData();
+	/**
+	 * Remove the array of plugins from the tool.
+	 * @param plugins array of plugins to remove
+	 * @deprecated use {@link #removePlugins(List)}
+	 */
+	@Deprecated(since = "10.2", forRemoval = true)
+	public void removePlugins(Plugin[] plugins) {
+		removePlugins(Arrays.asList(plugins));
 	}
 
 	/**
 	 * Remove the array of plugins from the tool.
 	 * @param plugins array of plugins to remove
 	 */
-	public void removePlugins(Plugin[] plugins) {
-		SystemUtilities.runSwingNow(() -> {
+	public void removePlugins(List<Plugin> plugins) {
+		Swing.runNow(() -> {
 			try {
 				pluginMgr.removePlugins(plugins);
 			}
@@ -844,6 +919,10 @@ public abstract class PluginTool extends AbstractDockingTool {
 				setConfigChanged(true);
 			}
 		});
+	}
+
+	public boolean hasUnsavedData() {
+		return pluginMgr.hasUnsavedData();
 	}
 
 	/**
@@ -922,16 +1001,12 @@ public abstract class PluginTool extends AbstractDockingTool {
 				optionsMgr.editOptions();
 			}
 
-			@Override
-			public boolean shouldAddToWindow(boolean isMainWindow, Set<Class<?>> contextTypes) {
-				return isMainWindow || !contextTypes.isEmpty();
-			}
 		};
+		optionsAction.setAddToAllWindows(true);
 		optionsAction.setHelpLocation(
 			new HelpLocation(ToolConstants.FRONT_END_HELP_TOPIC, "Tool Options"));
-		MenuData menuData =
-			new MenuData(new String[] { ToolConstants.MENU_EDIT, "&Tool Options..." }, null,
-				ToolConstants.TOOL_OPTIONS_MENU_GROUP);
+		MenuData menuData = new MenuData(new String[] { ToolConstants.MENU_EDIT, "&Tool Options" },
+			null, ToolConstants.TOOL_OPTIONS_MENU_GROUP);
 		menuData.setMenuSubGroup(ToolConstants.TOOL_OPTIONS_MENU_GROUP);
 		optionsAction.setMenuBarData(menuData);
 
@@ -1017,90 +1092,43 @@ public abstract class PluginTool extends AbstractDockingTool {
 	}
 
 	protected void addHelpActions() {
+		new ActionBuilder("About Ghidra", ToolConstants.TOOL_OWNER)
+				.menuPath(ToolConstants.MENU_HELP, "&About Ghidra")
+				.menuGroup("ZZA")
+				.helpLocation(new HelpLocation(ToolConstants.ABOUT_HELP_TOPIC, "About_Ghidra"))
+				.inWindow(ActionBuilder.When.ALWAYS)
+				.onAction(c -> DockingWindowManager.showDialog(new AboutDialog()))
+				.buildAndInstall(this);
 
-		DockingAction action = new DockingAction("About Ghidra", ToolConstants.TOOL_OWNER) {
-
-			@Override
-			public void actionPerformed(ActionContext context) {
-				DockingWindowManager.showDialog(new AboutDialog());
-			}
-
-			@Override
-			public boolean shouldAddToWindow(boolean isMainWindow, Set<Class<?>> contextTypes) {
-				return true;
-			}
-		};
-		action.setMenuBarData(
-			new MenuData(new String[] { ToolConstants.MENU_HELP, "&About Ghidra" }, null, "ZZA"));
-
-		action.setHelpLocation(new HelpLocation(ToolConstants.ABOUT_HELP_TOPIC, "About_Ghidra"));
-		action.setEnabled(true);
-		addAction(action);
-
-		DockingAction userAgreementAction = new DockingAction("User Agreement",
-			ToolConstants.TOOL_OWNER, KeyBindingType.UNSUPPORTED) {
-
-			@Override
-			public void actionPerformed(ActionContext context) {
-				DockingWindowManager.showDialog(new UserAgreementDialog(false, false));
-			}
-
-			@Override
-			public boolean shouldAddToWindow(boolean isMainWindow, Set<Class<?>> contextTypes) {
-				return true;
-			}
-		};
-		userAgreementAction.setMenuBarData(
-			new MenuData(new String[] { ToolConstants.MENU_HELP, "&User Agreement" }, null,
-				ToolConstants.HELP_CONTENTS_MENU_GROUP));
-		userAgreementAction.setHelpLocation(
-			new HelpLocation(ToolConstants.ABOUT_HELP_TOPIC, "User_Agreement"));
-
-		userAgreementAction.setEnabled(true);
-		addAction(userAgreementAction);
+		new ActionBuilder("User Agreement", ToolConstants.TOOL_OWNER)
+				.menuPath(ToolConstants.MENU_HELP, "&User Agreement")
+				.menuGroup(ToolConstants.HELP_CONTENTS_MENU_GROUP)
+				.helpLocation(new HelpLocation(ToolConstants.ABOUT_HELP_TOPIC, "User_Agreement"))
+				.inWindow(ActionBuilder.When.ALWAYS)
+				.onAction(
+					c -> DockingWindowManager.showDialog(new UserAgreementDialog(false, false)))
+				.buildAndInstall(this);
 
 		final ErrorReporter reporter = ErrLogDialog.getErrorReporter();
 		if (reporter != null) {
-			action = new DockingAction("Report Bug", ToolConstants.TOOL_OWNER) {
-
-				@Override
-				public void actionPerformed(ActionContext context) {
-					reporter.report(getToolFrame(), "User Bug Report", null);
-				}
-
-				@Override
-				public boolean shouldAddToWindow(boolean isMainWindow, Set<Class<?>> contextTypes) {
-					return true;
-				}
-			};
-			action.setMenuBarData(new MenuData(
-				new String[] { ToolConstants.MENU_HELP, "&Report Bug..." }, null, "BBB"));
-
-			action.setHelpLocation(new HelpLocation("ErrorReporting", "Report_Bug"));
-			action.setEnabled(true);
-			addAction(action);
+			new ActionBuilder("Report Bug", ToolConstants.TOOL_OWNER)
+					.menuPath(ToolConstants.MENU_HELP, "&Report Bug...")
+					.menuGroup("BBB")
+					.helpLocation(new HelpLocation("ErrorReporting", "Report_Bug"))
+					.inWindow(ActionBuilder.When.ALWAYS)
+					.onAction(c -> reporter.report(getToolFrame(), "User Bug Report", null))
+					.buildAndInstall(this);
 		}
 
 		HelpService help = Help.getHelpService();
-		action = new DockingAction("Contents", ToolConstants.TOOL_OWNER) {
 
-			@Override
-			public void actionPerformed(ActionContext context) {
-				help.showHelp(null, false, getToolFrame());
-			}
-
-			@Override
-			public boolean shouldAddToWindow(boolean isMainWindow, Set<Class<?>> contextTypes) {
-				return true;
-			}
-		};
-		action.setMenuBarData(new MenuData(new String[] { ToolConstants.MENU_HELP, "&Contents" },
-			null, ToolConstants.HELP_CONTENTS_MENU_GROUP));
-
-		action.setEnabled(true);
-		action.setHelpLocation(new HelpLocation("Misc", "Welcome_to_Ghidra_Help"));
-
-		addAction(action);
+		new ActionBuilder("Contents", ToolConstants.TOOL_OWNER)
+				.menuPath(ToolConstants.MENU_HELP, "&Contents")
+				.menuGroup(ToolConstants.HELP_CONTENTS_MENU_GROUP)
+				.helpLocation(new HelpLocation("Misc", "Welcome_to_Ghidra_Help"))
+				.inWindow(ActionBuilder.When.ALWAYS)
+				.onAction(c -> help.showHelp(null, false, getToolFrame()))
+				.buildAndInstall(this);
 	}
 
 	/**
@@ -1112,48 +1140,94 @@ public abstract class PluginTool extends AbstractDockingTool {
 	}
 
 	/**
-	 * Close this tool:
+	 * Closes this tool, possibly with input from the user. The following conditions are checked
+	 * and can prompt the user for more info and allow them to cancel the close.
 	 * <OL>
-	 * 	<LI>if there are no tasks running.
-	 * 	<LI>resolve the state of any plugins so they can be closed.
-	 * 	<LI>Prompt the user to save any changes.
-	 * 	<LI>close all associated plugins (this closes the domain object if one is open).
-	 * 	<LI>pop up dialog to save the configuration if it has changed.
-	 * 	<LI>notify the project tool services that this tool is going away.
+	 * 	<LI>Running tasks. Closing with running tasks could lead to data loss.
+	 *  <LI>Plugins get asked if they can be closed. They may prompt the user to resolve
+	 *  some plugin specific state.
+	 * 	<LI>The user is prompted to save any data changes.
+	 * 	<LI>Tools are saved, possibly asking the user to resolve any conflicts caused by
+	 *  changing multiple instances of the same tool in different ways.
+	 * 	<LI>If all the above conditions passed, the tool is closed and disposed.
 	 * </OL>
 	 */
-
 	@Override
 	public void close() {
-		if (canClose(false) && pluginMgr.saveData()) {
-			doClose();
+		if (canClose()) {
+			dispose();
 		}
+	}
+
+	protected boolean canClose() {
+		if (!canStopTasks()) {
+			return false;
+		}
+		if (!canClosePlugins()) {
+			return false;
+		}
+		if (!pluginMgr.saveData()) {
+			return false;
+		}
+		return doSaveTool();
 	}
 
 	/**
-	 * Close this tool:
-	 * <OL>
-	 * 	<LI>if there are no tasks running.
-	 * 	<LI>close all associated plugins (this closes the domain object if one is open).
-	 * 	<LI>pop up dialog to save the configuration if it has changed;
-	 * 	<LI>notify the project tool services that this tool is going away.
-	 * </OL>
+	 * Normally, tools are not allowed to close while tasks are running in that tool as it
+	 * could leave the application in an unstable state. Tools that exit the application
+	 * (such as the FrontEndTool) can override this so that the user can terminate running tasks
+	 * and not have that prevent exiting the application.
+	 * @return whether the user is allowed to terminate tasks so that the tool can be closed.
 	 */
-	private void doClose() {
+	protected boolean allowTerminatingTasksWhenClosing() {
+		return false;
+	}
 
-		if (!doSaveTool()) {
-			return; // if cancelled, don't close
+	/**
+	 * Checks if this tool's plugins are in a state to be closed.
+	 * @return true if all the plugins in the tool can be closed without further user input.
+	 */
+	protected boolean canClosePlugins() {
+		return pluginMgr.canClose();
+	}
+
+	/**
+	 * Checks if this tool has running tasks, with optionally giving the user an
+	 * opportunity to cancel them.
+	 *
+	 * @return true if this tool has running tasks
+	 */
+	protected boolean canStopTasks() {
+		if (!taskMgr.isBusy()) {
+			return true;
 		}
 
-		exit();
-		toolServices.closeTool(this);
+		int result = OptionDialog.showYesNoDialog(getToolFrame(), "Tool Busy Executing Task",
+			"The tool is busy performing a background task.\n If you continue the" +
+				" task may be terminated and some work may be lost!\n\nContinue anyway?");
+		if (result != OptionDialog.YES_OPTION) {
+			return false;
+		}
+
+		Task task = new Task("Stopping Tasks", true, false, true) {
+			@Override
+			public void run(TaskMonitor monitor) throws CancelledException {
+				taskMgr.stop(monitor);
+			}
+		};
+		TaskLauncher.launch(task);
+		return !task.isCancelled();
 	}
 
+	/**
+	 * Returns true if this tool needs saving
+	 * @return true if this tool needs saving
+	 */
 	public boolean shouldSave() {
-		return configChangedFlag; // ignore the window layout changes
+		return hasConfigChanged(); // ignore the window layout changes
 	}
 
-	/** 
+	/**
 	 * Called when it is time to save the tool.  Handles auto-saving logic.
 	 * @return true if a save happened
 	 */
@@ -1161,63 +1235,26 @@ public abstract class PluginTool extends AbstractDockingTool {
 		if (toolServices.canAutoSave(this)) {
 			saveTool();
 		}
-		else {
-			if (configChangedFlag) {
-				int result = OptionDialog.showOptionDialog(getToolFrame(), SAVE_DIALOG_TITLE,
-					"This tool has changed.  There are/were multiple instances of this tool\n" +
-						"running and Ghidra cannot determine if this tool instance should\n" +
-						"automatically be saved.  Do you want to save the configuration of this tool\n" +
-						"instance?",
-					"Save", "Save As...", "Don't Save", OptionDialog.WARNING_MESSAGE);
-				if (result == OptionDialog.CANCEL_OPTION) {
-					return false;
-				}
-				if (result == OptionDialog.OPTION_ONE) {
-					saveTool();
-				}
-				else if (result == OptionDialog.OPTION_TWO) {
-					boolean didSave = saveToolAs();
-					if (!didSave) {
-						return doSaveTool();
-					}
-				}
-				// option 3 is don't save; just exit
-			}
-		}
-		return true;
-	}
-
-	/**
-	 * Can this tool be closed?
-	 * <br>Note: This forces plugins to terminate any tasks they have running and
-	 * apply any unsaved data to domain objects or files. If they can't do
-	 * this or the user cancels then this returns false.
-	 * 
-	 * @param isExiting whether the tool is exiting
-	 * @return false if this tool has tasks in progress or can't be closed
-	 * since the user has unfinished/unsaved changes.
-	 */
-	public boolean canClose(boolean isExiting) {
-		if (taskMgr.isBusy()) {
-			if (isExiting) {
-				int result = OptionDialog.showYesNoDialog(getToolFrame(),
-					"Tool Busy Executing Task",
-					"The tool is busy performing a background task.\n If you continue the" +
-						" task may be terminated and some work may be lost!\n\nContinue anyway?");
-				if (result == OptionDialog.NO_OPTION) {
-					return false;
-				}
-				taskMgr.stop(false);
-			}
-			else {
-				beep();
-				Msg.showInfo(getClass(), getToolFrame(), "Tool Busy",
-					"You must stop all background tasks before exiting.");
+		else if (hasConfigChanged()) {
+			int result = OptionDialog.showOptionDialog(getToolFrame(), SAVE_DIALOG_TITLE,
+				"This tool has changed.  There are/were multiple instances of this tool\n" +
+					"running and Ghidra cannot determine if this tool instance should\n" +
+					"automatically be saved.  Do you want to save the configuration of this tool\n" +
+					"instance?",
+				"Save", "Save As...", "Don't Save", OptionDialog.WARNING_MESSAGE);
+			if (result == OptionDialog.CANCEL_OPTION) {
 				return false;
 			}
-		}
-		if (!pluginMgr.canClose()) {
-			return false;
+			if (result == OptionDialog.OPTION_ONE) {
+				saveTool();
+			}
+			else if (result == OptionDialog.OPTION_TWO) {
+				boolean didSave = saveToolAs();
+				if (!didSave) {
+					return doSaveTool();
+				}
+			}
+			// option 3 is don't save; just exit
 		}
 		return true;
 	}
@@ -1227,7 +1264,7 @@ public abstract class PluginTool extends AbstractDockingTool {
 	 * <br>Note: This forces plugins to terminate any tasks they have running for the
 	 * indicated domain object and apply any unsaved data to the domain object. If they can't do
 	 * this or the user cancels then this returns false.
-	 * 
+	 *
 	 * @param domainObject the domain object to check
 	 * @return false any of the plugins reports that the domain object
 	 * should not be closed
@@ -1319,6 +1356,9 @@ public abstract class PluginTool extends AbstractDockingTool {
 		this.project = project;
 		if (project != null) {
 			toolServices = project.getToolServices();
+		}
+		else {
+			toolServices = new ToolServicesAdapter();
 		}
 	}
 
@@ -1418,9 +1458,12 @@ public abstract class PluginTool extends AbstractDockingTool {
 	 * time the dialog is shown.
 	 *
 	 * @param dialogComponent the DialogComponentProvider object to be shown in a dialog.
+	 *
+	 * @deprecated dialogs are now always shown over the active window when possible
 	 */
+	@Deprecated
 	public void showDialogOnActiveWindow(DialogComponentProvider dialogComponent) {
-		DockingWindowManager.showDialogOnActiveWindow(dialogComponent);
+		DockingWindowManager.showDialog(dialogComponent);
 	}
 
 	/**
@@ -1444,7 +1487,7 @@ public abstract class PluginTool extends AbstractDockingTool {
 	 * @param centeredOnComponent the component on which to center the dialog.
 	 */
 	public void showDialog(DialogComponentProvider dialogComponent, Component centeredOnComponent) {
-		DockingWindowManager.showDialog(getToolFrame(), dialogComponent, centeredOnComponent);
+		DockingWindowManager.showDialog(centeredOnComponent, dialogComponent);
 	}
 
 	public Window getActiveWindow() {
@@ -1473,16 +1516,15 @@ public abstract class PluginTool extends AbstractDockingTool {
 	}
 
 	@Override
-	public ActionContext getDefaultToolContext() {
-		return winMgr.getDefaultToolContext();
-	}
-
-	@Override
 	public void contextChanged(ComponentProvider provider) {
 		if (isDisposed) {
 			return;
 		}
 		super.contextChanged(provider);
+	}
+
+	public boolean isRestoringDataState() {
+		return restoringDataState;
 	}
 
 //==================================================================================================

@@ -15,20 +15,21 @@
  */
 package ghidra.app.plugin.core.strings;
 
-import javax.swing.ImageIcon;
+import javax.swing.Icon;
 
 import docking.ActionContext;
 import docking.action.*;
 import ghidra.app.CorePluginPackage;
-import ghidra.app.events.ProgramSelectionPluginEvent;
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.plugin.ProgramPlugin;
 import ghidra.app.plugin.core.data.DataSettingsDialog;
+import ghidra.app.plugin.core.data.DataTypeSettingsDialog;
 import ghidra.app.services.GoToService;
 import ghidra.framework.model.*;
 import ghidra.framework.plugintool.PluginInfo;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.framework.plugintool.util.PluginStatus;
+import ghidra.program.model.data.DataType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Program;
 import ghidra.program.util.*;
@@ -38,6 +39,7 @@ import ghidra.util.table.SelectionNavigationAction;
 import ghidra.util.table.actions.MakeProgramSelectionAction;
 import ghidra.util.task.SwingUpdateManager;
 import resources.Icons;
+import resources.ResourceManager;
 
 /**
  * Plugin that provides the "Defined Strings" table, where all the currently defined
@@ -57,15 +59,17 @@ import resources.Icons;
 //@formatter:on
 public class ViewStringsPlugin extends ProgramPlugin implements DomainObjectListener {
 
-	private DockingAction selectAction;
-	private DockingAction showSettingsAction;
-	private DockingAction showDefaultSettingsAction;
+	private static Icon REFRESH_ICON = Icons.REFRESH_ICON;
+	private static Icon REFRESH_NOT_NEEDED_ICON =
+		ResourceManager.getDisabledIcon(Icons.REFRESH_ICON, 60);
+
+	private DockingAction refreshAction;
 	private SelectionNavigationAction linkNavigationAction;
 	private ViewStringsProvider provider;
 	private SwingUpdateManager reloadUpdateMgr;
 
 	public ViewStringsPlugin(PluginTool tool) {
-		super(tool, false, false);
+		super(tool);
 	}
 
 	void doReload() {
@@ -82,7 +86,7 @@ public class ViewStringsPlugin extends ProgramPlugin implements DomainObjectList
 	}
 
 	private void createActions() {
-		DockingAction refreshAction = new DockingAction("Refresh Strings", getName()) {
+		refreshAction = new DockingAction("Refresh Strings", getName()) {
 
 			@Override
 			public boolean isEnabledForContext(ActionContext context) {
@@ -91,12 +95,14 @@ public class ViewStringsPlugin extends ProgramPlugin implements DomainObjectList
 
 			@Override
 			public void actionPerformed(ActionContext context) {
+				getToolBarData().setIcon(REFRESH_NOT_NEEDED_ICON);
 				reload();
 			}
 		};
-		ImageIcon refreshIcon = Icons.REFRESH_ICON;
-		refreshAction.setDescription("Reloads all string data from the program");
-		refreshAction.setToolBarData(new ToolBarData(refreshIcon));
+		refreshAction.setToolBarData(new ToolBarData(REFRESH_NOT_NEEDED_ICON));
+		refreshAction.setDescription(
+			"<html>Push at any time to refresh the current table of strings.<br>" +
+				"This button is highlighted when the data <i>may</i> be stale.<br>");
 		refreshAction.setHelpLocation(new HelpLocation("ViewStringsPlugin", "Refresh"));
 		tool.addLocalAction(provider, refreshAction);
 
@@ -105,13 +111,14 @@ public class ViewStringsPlugin extends ProgramPlugin implements DomainObjectList
 		linkNavigationAction = new SelectionNavigationAction(this, provider.getTable());
 		tool.addLocalAction(provider, linkNavigationAction);
 
-		showSettingsAction = new DockingAction("Settings", getName()) {
+		DockingAction editDataSettingsAction =
+			new DockingAction("Data Settings", getName(), KeyBindingType.SHARED) {
 			@Override
 			public void actionPerformed(ActionContext context) {
 				try {
 					DataSettingsDialog dialog = provider.getSelectedRowCount() == 1
-							? new DataSettingsDialog(currentProgram, provider.getSelectedData())
-							: new DataSettingsDialog(currentProgram, provider.selectData());
+							? new DataSettingsDialog(provider.getSelectedData())
+							: new DataSettingsDialog(currentProgram, provider.getProgramSelection());
 
 					tool.showDialog(dialog);
 					dialog.dispose();
@@ -122,41 +129,48 @@ public class ViewStringsPlugin extends ProgramPlugin implements DomainObjectList
 			}
 
 		};
-		showSettingsAction.setPopupMenuData(new MenuData(new String[] { "Settings..." }, "R"));
-		showSettingsAction.setDescription("Shows settings for the selected strings");
-		showSettingsAction.setHelpLocation(new HelpLocation("DataPlugin", "Data_Settings"));
-		showDefaultSettingsAction = new DockingAction("Default Settings", getName()) {
+		editDataSettingsAction.setPopupMenuData(new MenuData(new String[] { "Settings..." }, "R"));
+		editDataSettingsAction.setHelpLocation(new HelpLocation("DataPlugin", "Data_Settings"));
+
+		DockingAction editDefaultSettingsAction =
+			new DockingAction("Default Settings", getName(), KeyBindingType.SHARED) {
 			@Override
 			public void actionPerformed(ActionContext context) {
-				Data data = provider.getSelectedData();
-				DataSettingsDialog dataSettingsDialog =
-					new DataSettingsDialog(getCurrentProgram(), data.getDataType());
+				DataType dt = getSelectedDataType();
+				if (dt == null) {
+					return;
+				}
+				DataTypeSettingsDialog dataSettingsDialog =
+					new DataTypeSettingsDialog(dt, dt.getSettingsDefinitions());
 				tool.showDialog(dataSettingsDialog);
 				dataSettingsDialog.dispose();
 			}
 
 			@Override
 			public boolean isEnabledForContext(ActionContext context) {
-				return provider.getSelectedRowCount() == 1;
+				if (provider.getSelectedRowCount() != 1) {
+					return false;
+				}
+				DataType dt = getSelectedDataType();
+				if (dt == null) {
+					return false;
+				}
+				return dt.getSettingsDefinitions().length != 0;
+			}
+
+			private DataType getSelectedDataType() {
+				Data data = provider.getSelectedData();
+				return data != null ? data.getDataType() : null;
 			}
 		};
-		showDefaultSettingsAction.setPopupMenuData(
+		editDefaultSettingsAction.setPopupMenuData(
 			new MenuData(new String[] { "Default Settings..." }, "R"));
-		showDefaultSettingsAction.setDescription(
-			"Shows settings for the selected string data type");
-		showDefaultSettingsAction.setHelpLocation(
-			new HelpLocation("DataPlugin", "Default_Data_Settings"));
+		editDefaultSettingsAction.setHelpLocation(
+			new HelpLocation("DataPlugin", "Default_Settings"));
 
-		tool.addLocalAction(provider, showSettingsAction);
-		tool.addLocalAction(provider, showDefaultSettingsAction);
+		tool.addLocalAction(provider, editDataSettingsAction);
+		tool.addLocalAction(provider, editDefaultSettingsAction);
 
-	}
-
-	private void selectData(ProgramSelection selection) {
-		ProgramSelectionPluginEvent pspe =
-			new ProgramSelectionPluginEvent("Selection", selection, currentProgram);
-		firePluginEvent(pspe);
-		processEvent(pspe);
 	}
 
 	@Override
@@ -186,45 +200,50 @@ public class ViewStringsPlugin extends ProgramPlugin implements DomainObjectList
 		}
 	}
 
+	private void markDataAsStale() {
+		provider.getComponent().repaint();
+		refreshAction.getToolBarData().setIcon(REFRESH_ICON);
+	}
+
 	@Override
 	public void domainObjectChanged(DomainObjectChangedEvent ev) {
+
 		if (ev.containsEvent(DomainObject.DO_OBJECT_RESTORED) ||
 			ev.containsEvent(ChangeManager.DOCR_MEMORY_BLOCK_MOVED) ||
 			ev.containsEvent(ChangeManager.DOCR_MEMORY_BLOCK_REMOVED) ||
-			ev.containsEvent(ChangeManager.DOCR_CODE_REMOVED) ||
 			ev.containsEvent(ChangeManager.DOCR_DATA_TYPE_CHANGED)) {
-			reload();
-
+			markDataAsStale();
+			return;
 		}
-		else if (ev.containsEvent(ChangeManager.DOCR_CODE_ADDED)) {
-			for (int i = 0; i < ev.numRecords(); ++i) {
-				DomainObjectChangeRecord doRecord = ev.getChangeRecord(i);
-				Object newValue = doRecord.getNewValue();
-				switch (doRecord.getEventType()) {
-					case ChangeManager.DOCR_CODE_REMOVED:
-					case ChangeManager.DOCR_COMPOSITE_ADDED:
-						ProgramChangeRecord pcRec = (ProgramChangeRecord) doRecord;
-						provider.remove(pcRec.getStart(), pcRec.getEnd());
-						break;
-					case ChangeManager.DOCR_CODE_ADDED:
-						if (newValue instanceof Data) {
-							provider.add((Data) newValue);
-						}
-						break;
-					default:
-						//Msg.info(this, "Unhandled event type: " + doRecord.getEventType());
-						break;
-				}
+
+		for (int i = 0; i < ev.numRecords(); ++i) {
+
+			DomainObjectChangeRecord doRecord = ev.getChangeRecord(i);
+			Object newValue = doRecord.getNewValue();
+			switch (doRecord.getEventType()) {
+				case ChangeManager.DOCR_CODE_REMOVED:
+					ProgramChangeRecord pcRec = (ProgramChangeRecord) doRecord;
+					provider.remove(pcRec.getStart(), pcRec.getEnd());
+					break;
+				case ChangeManager.DOCR_CODE_ADDED:
+					if (newValue instanceof Data) {
+						provider.add((Data) newValue);
+					}
+					break;
+				default:
+					//Msg.info(this, "Unhandled event type: " + doRecord.getEventType());
+					break;
 			}
 		}
-		else if (ev.containsEvent(ChangeManager.DOCR_DATA_TYPE_SETTING_CHANGED)) {
+
+		if (ev.containsEvent(ChangeManager.DOCR_DATA_TYPE_SETTING_CHANGED)) {
 			// Unusual code: because the table model goes directly to the settings values
 			// during each repaint, we don't need to figure out which row was changed.
 			provider.getComponent().repaint();
 		}
 	}
 
-	void reload() {
+	private void reload() {
 		reloadUpdateMgr.update();
 	}
 }

@@ -44,17 +44,17 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 	private List<Event> events = Collections.synchronizedList(new ArrayList<Event>());
 
 	private int getEventCount() {
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		return events.size();
 	}
 
 	private Event getEvent(int index) {
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		return events.get(index);
 	}
 
 	private void clearEvents() {
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		events.clear();
 	}
 
@@ -85,7 +85,7 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 	 */
 	@After
 	public void tearDown() throws Exception {
-		waitForPostedSwingRunnables();// wait for leftover datatype events
+		waitForSwing();// wait for leftover datatype events
 
 		endTransaction();
 		program.release(this);
@@ -110,14 +110,10 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 		assertEquals("SubCat-B", sub2.getName());
 	}
 
-	@Test
+	@Test(expected = InvalidNameException.class)
 	public void testCreateCategoryBadName() throws Exception {
-		try {
-			root.createCategory("");
-			Assert.fail("Should not create category with empty name");
-		}
-		catch (InvalidNameException e) {
-		}
+		root.createCategory("");
+		Assert.fail("Should not create category with empty name");
 	}
 
 	@Test
@@ -151,7 +147,10 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 	@Test
 	public void testSetName() throws Exception {
 		Category sub1 = root.createCategory("SubCat-A");
+		assertEquals("/SubCat-A", sub1.getCategoryPath().getPath());
+
 		sub1.setName("MyCategory");
+		assertEquals("/MyCategory", sub1.getCategoryPath().getPath());
 
 		assertNotNull(root.getCategory("MyCategory"));
 		Category sub2 = root.createCategory("NewCategory");
@@ -160,16 +159,12 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 		assertNotNull(root.getCategory("new name"));
 	}
 
-	@Test
+	@Test(expected = InvalidNameException.class)
 	public void testSetBadName() throws Exception {
 
 		Category sub1 = root.createCategory("SubCat-A");
-		try {
-			sub1.setName(null);
-			Assert.fail("Should not have set name to null");
-		}
-		catch (InvalidNameException e) {
-		}
+		sub1.setName(null);
+		Assert.fail("Should not have set name to null");
 	}
 
 	@Test
@@ -223,8 +218,8 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 		cat5.addDataType(s2, DataTypeConflictHandler.DEFAULT_HANDLER);
 
 		// move c4 to c5
-		cat5.moveCategory(cat4, TaskMonitorAdapter.DUMMY_MONITOR);
-		waitForPostedSwingRunnables();
+		cat5.moveCategory(cat4, TaskMonitor.DUMMY);
+		waitForSwing();
 
 		assertEquals(new CategoryPath("/c1/c2/c5/c4"), cat4.getCategoryPath());
 		assertTrue(dataMgr.containsCategory(new CategoryPath("/c1/c2/c5/c4")));
@@ -248,7 +243,7 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 		Category c1 = root.createCategory("c1");
 		Category c2 = c1.createCategory("c2");
 
-		c2.moveCategory(myCat, TaskMonitorAdapter.DUMMY_MONITOR);
+		c2.moveCategory(myCat, TaskMonitor.DUMMY);
 
 		Category[] cats = c2.getCategories();
 		assertEquals(1, cats.length);
@@ -277,6 +272,18 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 	}
 
 	@Test
+	public void testCategoryPathUpdateAfterMoveParent() throws Exception {
+		Category catA = root.createCategory("A");
+		Category catB = catA.createCategory("B");
+		Category catC = catB.createCategory("C");
+		assertEquals("/A/B/C", catC.getCategoryPath().getPath());
+
+		root.moveCategory(catB, monitor);
+
+		assertEquals("/B/C", catC.getCategoryPath().getPath());
+	}
+
+	@Test
 	public void testMoveParentCategory() throws Exception {
 		Category catA = root.createCategory("A");
 		Category catB = catA.createCategory("B");
@@ -284,6 +291,8 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 		catC.createCategory("D");
 		long idB = catB.getID();
 		long idC = catC.getID();
+		assertEquals("/A/B/C", catC.getCategoryPath().getPath());
+
 		root.moveCategory(catB, monitor);
 
 		assertTrue(dataMgr.containsCategory(new CategoryPath("/B/C")));
@@ -439,7 +448,7 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 		Category sub2 = sub1.createCategory("sub2");
 		sub2.addDataType(str, null);
 
-		ArrayList<DataType> list = new ArrayList<DataType>();
+		ArrayList<DataType> list = new ArrayList<>();
 		dataMgr.findDataTypes(name, list);
 		assertEquals(3, list.size());
 
@@ -776,7 +785,7 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 		clearEvents();
 		DataType byteAdded = root.getDataType("Enum");
 		sub2.moveDataType(byteAdded, null);
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
 		assertEquals(1, getEventCount());
 		Event ev = getEvent(0);
@@ -897,6 +906,11 @@ public class CategoryTest extends AbstractGhidraHeadedIntegrationTest {
 		@Override
 		public void sourceArchiveChanged(DataTypeManager dataTypeManager,
 				SourceArchive dataTypeSource) {
+			// don't care
+		}
+
+		@Override
+		public void programArchitectureChanged(DataTypeManager dataTypeManager) {
 			// don't care
 		}
 	}

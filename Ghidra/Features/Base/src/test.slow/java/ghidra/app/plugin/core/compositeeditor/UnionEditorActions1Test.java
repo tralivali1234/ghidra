@@ -26,8 +26,6 @@ import org.junit.Test;
 
 import docking.widgets.dialogs.NumberInputDialog;
 import ghidra.program.model.data.*;
-import ghidra.program.model.data.Composite.AlignmentType;
-import ghidra.util.task.TaskMonitor;
 
 public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 
@@ -44,10 +42,8 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 		assertEquals(0, model.getNumSelectedComponentRows());
 		assertEquals(1, model.getNumSelectedRows());
 		checkSelection(new int[] { 0 });
-		assertIsInternallyAligned(false);
-		assertPackingValue(Composite.NOT_PACKING);
-		assertMinimumAlignmentType(AlignmentType.DEFAULT_ALIGNED);
-		assertMinimumAlignmentValue(Composite.DEFAULT_ALIGNMENT_VALUE);
+		assertIsPackingEnabled(false);
+		assertIsDefaultAligned();
 		assertActualAlignment(1);
 		assertLength(0);
 		assertEquals(emptyUnion.getName(), model.getCompositeName());
@@ -83,10 +79,8 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 		assertEquals(0, model.getNumSelectedComponentRows());
 		assertEquals(1, model.getNumSelectedRows());
 		checkSelection(new int[] { model.getNumComponents() });
-		assertIsInternallyAligned(false);
-		assertPackingValue(Composite.NOT_PACKING);
-		assertMinimumAlignmentType(AlignmentType.DEFAULT_ALIGNED);
-		assertMinimumAlignmentValue(Composite.DEFAULT_ALIGNMENT_VALUE);
+		assertIsPackingEnabled(false);
+		assertIsDefaultAligned();
 		assertActualAlignment(1);
 		assertLength(8);
 		assertEquals(simpleUnion.getName(), model.getCompositeName());
@@ -96,7 +90,8 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 		for (CompositeEditorTableAction action : actions) {
 			if ((action instanceof FavoritesAction) || (action instanceof CycleGroupAction) ||
 				(action instanceof EditFieldAction) || (action instanceof PointerAction) ||
-				(action instanceof HexNumbersAction)) {
+				(action instanceof HexNumbersAction) ||
+				(action instanceof ShowDataTypeInTreeAction)) {
 				checkEnablement(action, true);
 			}
 			else {
@@ -119,7 +114,8 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 				(action instanceof DuplicateAction) ||
 				(action instanceof DuplicateMultipleAction) || (action instanceof DeleteAction) ||
 				(action instanceof ArrayAction) || (action instanceof PointerAction) ||
-				(action instanceof HexNumbersAction)) {
+				(action instanceof HexNumbersAction) ||
+				(action instanceof ShowDataTypeInTreeAction)) {
 				checkEnablement(action, true);
 			}
 			else {
@@ -142,7 +138,8 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 				(action instanceof MoveDownAction) || (action instanceof DuplicateAction) ||
 				(action instanceof DuplicateMultipleAction) || (action instanceof DeleteAction) ||
 				(action instanceof ArrayAction) || (action instanceof PointerAction) ||
-				(action instanceof HexNumbersAction)) {
+				(action instanceof HexNumbersAction) ||
+				(action instanceof ShowDataTypeInTreeAction)) {
 				checkEnablement(action, true);
 			}
 			else {
@@ -165,7 +162,8 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 				(action instanceof DuplicateAction) ||
 				(action instanceof DuplicateMultipleAction) || (action instanceof DeleteAction) ||
 				(action instanceof ArrayAction) || (action instanceof PointerAction) ||
-				(action instanceof HexNumbersAction)) {
+				(action instanceof HexNumbersAction) ||
+				(action instanceof ShowDataTypeInTreeAction)) {
 				checkEnablement(action, true);
 			}
 			else {
@@ -185,7 +183,8 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 			if ((action instanceof FavoritesAction) || (action instanceof CycleGroupAction)// enabled to show message
 				|| (action instanceof MoveDownAction) || (action instanceof MoveUpAction) ||
 				(action instanceof DeleteAction) || (action instanceof PointerAction) ||
-				(action instanceof HexNumbersAction)) {
+				(action instanceof HexNumbersAction) ||
+				(action instanceof ShowDataTypeInTreeAction)) {
 				checkEnablement(action, true);
 			}
 			else {
@@ -204,7 +203,8 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 		setSelection(new int[] { 2, 3, 6, 7 });
 		for (CompositeEditorTableAction action : actions) {
 			if ((action instanceof FavoritesAction) || (action instanceof CycleGroupAction) ||
-				(action instanceof DeleteAction) || (action instanceof HexNumbersAction)) {
+				(action instanceof DeleteAction) || (action instanceof HexNumbersAction) ||
+				(action instanceof ShowDataTypeInTreeAction)) {
 				checkEnablement(action, true);
 			}
 			else {
@@ -283,8 +283,8 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 
 		assertEquals(0, model.getLength());
 		assertEquals(0, model.getNumComponents());
-		invoke(fav);
-		dialog = env.waitForDialogComponent(NumberInputDialog.class, 1000);
+		invoke(fav, false);
+		dialog = waitForDialogComponent(NumberInputDialog.class);
 		assertNotNull(dialog);
 		okInput(dialog, 7);
 		dialog = null;
@@ -377,8 +377,8 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 		assertTrue(getDataType(2).isEquivalent(new CharDataType()));
 		assertEquals(getDataType(3), dt3);
 
-		invoke(action);
-		dialog = env.waitForDialogComponent(NumberInputDialog.class, 1000);
+		invoke(action, false);
+		dialog = waitForDialogComponent(NumberInputDialog.class);
 		assertNotNull(dialog);
 		cancelInput(dialog);
 		dialog = null;
@@ -569,7 +569,7 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 		num++;
 		assertEquals(num, model.getNumComponents());
 		assertEquals(len, model.getLength());
-		checkSelection(new int[] { 0 });
+		checkSelection(new int[] { 1 });
 		assertEquals(getDataType(0), dt0);
 		assertEquals(getDataType(1), dt0);
 		assertEquals(getDataType(2), dt1);
@@ -582,7 +582,7 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 		num++;
 		assertEquals(num, model.getNumComponents());
 		assertEquals(len, model.getLength());
-		checkSelection(new int[] { 6 });
+		checkSelection(new int[] { 7 });
 		assertEquals(getDataType(6), dt0);
 		assertEquals(getDataType(7), dt0);
 		assertEquals(getDataType(8), dt1);
@@ -668,7 +668,7 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 		DataType dt3 = getDataType(3);
 
 		// Cancel the array dialog
-		invoke(arrayAction);
+		invoke(arrayAction, false);
 		dialog = waitForDialogComponent(NumberInputDialog.class);
 		assertNotNull(dialog);
 		cancelInput(dialog);
@@ -766,7 +766,7 @@ public class UnionEditorActions1Test extends AbstractUnionEditorTest {
 		init(complexUnion, pgmTestCat, false);
 
 		setSelection(new int[] { 3, 4 });
-		model.deleteSelectedComponents(TaskMonitor.DUMMY);
+		model.deleteSelectedComponents();
 		DataType viewCopy = model.viewComposite.clone(null);
 
 		assertFalse(complexUnion.isEquivalent(model.viewComposite));

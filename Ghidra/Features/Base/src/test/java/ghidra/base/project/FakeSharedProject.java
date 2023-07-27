@@ -16,23 +16,22 @@
 package ghidra.base.project;
 
 import static generic.test.AbstractGTest.*;
-import static generic.test.AbstractGenericTest.getInstanceField;
 import static generic.test.AbstractGenericTest.invokeInstanceMethod;
 import static generic.test.TestUtils.*;
 import static org.junit.Assert.*;
 
 import java.io.IOException;
-import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.StringUtils;
 
-import generic.test.AbstractGenericTest;
+import generic.test.AbstractGTest;
 import generic.test.TestUtils;
 import ghidra.framework.data.*;
 import ghidra.framework.model.*;
 import ghidra.framework.remote.User;
 import ghidra.framework.store.FileSystem;
-import ghidra.framework.store.FileSystemListener;
+import ghidra.framework.store.FileSystemEventManager;
 import ghidra.framework.store.local.LocalFileSystem;
 import ghidra.program.model.listing.Program;
 import ghidra.test.TestEnv;
@@ -40,6 +39,7 @@ import ghidra.test.TestProgramManager;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 import junit.framework.AssertionFailedError;
+import utilities.util.FileUtilities;
 
 /**
  * This class represents the idea of a shared Ghidra project.  Each project is associated with
@@ -62,21 +62,18 @@ public class FakeSharedProject {
 	public FakeSharedProject(FakeRepository repo, User user) throws IOException {
 
 		this.repo = repo;
-		String projectDirPath = AbstractGenericTest.getTestDirectoryPath();
+		String projectDirPath = AbstractGTest.getTestDirectoryPath();
 		gProject =
 			GhidraProject.createProject(projectDirPath, "TestProject_" + user.getName(), true);
 		gProject.setDeleteOnClose(true);
 
-		LocalFileSystem fs = repo.getSharedFileSystem();
-		if (fs != null) {
-			// first project will keeps its versioned file system
-			setVersionedFileSystem(fs);
-		}
+		// use local shared fake repo versioned file system
+		setVersionedFileSystem(repo.getSharedFileSystem());
 	}
 
 	FakeSharedProject(User user) throws IOException {
 
-		String projectDirPath = AbstractGenericTest.getTestDirectoryPath();
+		String projectDirPath = AbstractGTest.getTestDirectoryPath();
 		gProject =
 			GhidraProject.createProject(projectDirPath, "TestProject_" + user.getName(), true);
 	}
@@ -102,7 +99,7 @@ public class FakeSharedProject {
 	 * @return the project file manager
 	 */
 	public ProjectFileManager getProjectFileManager() {
-		return (ProjectFileManager) gProject.getProject().getProjectData();
+		return (ProjectFileManager) gProject.getProjectData();
 	}
 
 	/**
@@ -370,8 +367,11 @@ public class FakeSharedProject {
 	 * @see FakeRepository#dispose()
 	 */
 	public void dispose() {
+		ProjectLocator projectLocator = getProjectFileManager().getProjectLocator();
 		programManager.disposeOpenPrograms();
 		gProject.close();
+		FileUtilities.deleteDir(projectLocator.getProjectDir());
+		projectLocator.getMarkerFile().delete();
 	}
 
 	@Override
@@ -397,10 +397,11 @@ public class FakeSharedProject {
 
 	private void waitForFileSystemEvents() {
 		LocalFileSystem versionedFileSystem = getVersionedFileSystem();
-		FileSystemListener listener =
-			(FileSystemListener) invokeInstanceMethod("getListener", versionedFileSystem);
-		List<?> eventList = (List<?>) getInstanceField("events", listener);
-		waitForCondition(() -> eventList.isEmpty());
+		FileSystemEventManager eventManager =
+			(FileSystemEventManager) TestUtils.getInstanceField("eventManager",
+				versionedFileSystem);
+
+		eventManager.flushEvents(DEFAULT_WAIT_TIMEOUT, TimeUnit.MILLISECONDS);
 	}
 
 	private DomainFolder getFolder(String path) throws Exception {

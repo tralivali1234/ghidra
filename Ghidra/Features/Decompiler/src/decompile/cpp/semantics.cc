@@ -16,6 +16,8 @@
 #include "semantics.hh"
 #include "translate.hh"
 
+namespace ghidra {
+
 ConstTpl::ConstTpl(const_type tp)
 
 {				// Constructor for relative jump constants and uniques
@@ -37,6 +39,7 @@ ConstTpl::ConstTpl(const_type tp,int4 ht,v_field vf)
   type = handle;
   value.handle_index = ht;
   select = vf;
+  value_real = 0;
 }
 
 ConstTpl::ConstTpl(const_type tp,int4 ht,v_field vf,uintb plus)
@@ -120,6 +123,8 @@ uintb ConstTpl::fix(const ParserWalker &walker) const
     return walker.getAddr().getOffset(); // Fill in starting address placeholder with real address
   case j_next:
     return walker.getNaddr().getOffset(); // Fill in next address placeholder with real address
+  case j_next2:
+    return walker.getN2addr().getOffset(); // Fill in next2 address placeholder with real address
   case j_flowref:
     return walker.getRefAddr().getOffset();
   case j_flowref_size:
@@ -348,6 +353,9 @@ void ConstTpl::saveXml(ostream &s) const
   case j_next:
     s << "next\"/>";
     break;
+  case j_next2:
+    s << "next2\"/>";
+    break;
   case j_curspace:
     s << "curspace\"/>";
     break;
@@ -402,6 +410,9 @@ void ConstTpl::restoreXml(const Element *el,const AddrSpaceManager *manage)
   }
   else if (typestring=="next") {
     type = j_next;
+  }
+  else if (typestring=="next2") {
+    type = j_next2;
   }
   else if (typestring=="curspace") {
     type = j_curspace;
@@ -967,3 +978,5 @@ void PcodeBuilder::build(ConstructTpl *construct,int4 secnum)
   }
   labelbase = oldbase;		// Restore old labelbase
 }
+
+} // End namespace ghidra

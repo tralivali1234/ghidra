@@ -15,18 +15,16 @@
  */
 package ghidra.app.util.viewer.field;
 
-import ghidra.app.util.viewer.format.FieldFormatModel;
-import ghidra.app.util.viewer.proxy.EmptyProxy;
-import ghidra.app.util.viewer.proxy.ProxyObj;
-
 import java.awt.*;
 
 import javax.swing.JComponent;
 
 import docking.widgets.fieldpanel.internal.FieldBackgroundColorManager;
 import docking.widgets.fieldpanel.internal.PaintContext;
-import docking.widgets.fieldpanel.support.FieldLocation;
-import docking.widgets.fieldpanel.support.RowColLocation;
+import docking.widgets.fieldpanel.support.*;
+import generic.theme.GThemeDefaults.Colors.Palette;
+import ghidra.app.util.viewer.proxy.EmptyProxy;
+import ghidra.app.util.viewer.proxy.ProxyObj;
 
 /**
  * Field responsible for drawing +/- symbols when over an aggregate datatype that
@@ -79,15 +77,6 @@ public class IndentField implements ListingField {
 	@Override
 	public FieldFactory getFieldFactory() {
 		return factory;
-	}
-
-	/**
-	 * Returns the FieldModel that contains the FieldFactory that generated this
-	 * field.
-	 */
-	@Override
-	public FieldFormatModel getFieldModel() {
-		return factory.getFieldModel();
 	}
 
 	/**
@@ -177,8 +166,9 @@ public class IndentField implements ListingField {
 
 	@Override
 	public void paint(JComponent c, Graphics g, PaintContext context,
-			Rectangle clip, FieldBackgroundColorManager map, RowColLocation cursorLoc, int rowHeight) {
-		g.setColor(Color.LIGHT_GRAY);
+			Rectangle clip, FieldBackgroundColorManager map, RowColLocation cursorLoc,
+			int rowHeight) {
+		g.setColor(Palette.LIGHT_GRAY);
 
 		// draw the vertical lines to the left of the data (these are shown when there are vertical
 		// bars drawn for inset data)
@@ -226,6 +216,11 @@ public class IndentField implements ListingField {
 			return false;
 		}
 		return true;
+	}
+
+	@Override
+	public int getNumDataRows() {
+		return 1;
 	}
 
 	@Override
@@ -307,7 +302,7 @@ public class IndentField implements ListingField {
 
 	@Override
 	public RowColLocation textOffsetToScreenLocation(int textOffset) {
-		return new RowColLocation(0, 0);
+		return new DefaultRowColLocation();
 	}
 
 	@Override

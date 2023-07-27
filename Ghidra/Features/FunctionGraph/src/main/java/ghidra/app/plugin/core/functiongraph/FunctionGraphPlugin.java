@@ -17,10 +17,13 @@ package ghidra.app.plugin.core.functiongraph;
 
 import java.util.*;
 
-import javax.swing.ImageIcon;
+import javax.swing.Icon;
 
 import org.jdom.Element;
 
+import docking.options.OptionsService;
+import docking.tool.ToolConstants;
+import generic.theme.GIcon;
 import ghidra.GhidraOptions;
 import ghidra.app.CorePluginPackage;
 import ghidra.app.events.*;
@@ -36,14 +39,12 @@ import ghidra.framework.model.DomainFile;
 import ghidra.framework.options.*;
 import ghidra.framework.plugintool.PluginInfo;
 import ghidra.framework.plugintool.PluginTool;
-import ghidra.framework.plugintool.util.OptionsService;
 import ghidra.framework.plugintool.util.PluginStatus;
 import ghidra.graph.viewer.options.VisualGraphOptions;
 import ghidra.program.model.listing.Program;
 import ghidra.program.util.ProgramLocation;
 import ghidra.program.util.ProgramSelection;
 import ghidra.util.exception.AssertException;
-import resources.ResourceManager;
 
 //@formatter:off
 @PluginInfo(
@@ -57,16 +58,10 @@ import resources.ResourceManager;
 //@formatter:on
 public class FunctionGraphPlugin extends ProgramPlugin implements OptionsChangeListener {
 	static final String FUNCTION_GRAPH_NAME = "Function Graph";
-	static final String PLUGIN_OPTIONS_NAME = FUNCTION_GRAPH_NAME;
+	static final String OPTIONS_NAME_PATH =
+		ToolConstants.GRAPH_OPTIONS + Options.DELIMITER + FUNCTION_GRAPH_NAME;
 
-	static final ImageIcon ICON = ResourceManager.loadImage("images/function_graph.png");
-
-	public static final ImageIcon GROUP_ICON =
-		ResourceManager.loadImage("images/shape_handles.png");
-	public static final ImageIcon GROUP_ADD_ICON =
-		ResourceManager.loadImage("images/shape_square_add.png");
-	public static final ImageIcon UNGROUP_ICON =
-		ResourceManager.loadImage("images/shape_ungroup.png");
+	static final Icon ICON = new GIcon("icon.plugin.functiongraph.action.provider");
 
 	private static final String USER_DEFINED_FORMAT_CONFIG_NAME = "USER_DEFINED_FORMAT_MANAGER";
 
@@ -84,7 +79,7 @@ public class FunctionGraphPlugin extends ProgramPlugin implements OptionsChangeL
 	private List<FGLayoutProvider> layoutProviders;
 
 	public FunctionGraphPlugin(PluginTool tool) {
-		super(tool, true, true, true);
+		super(tool);
 
 		colorProvider = new IndependentColorProvider(tool);
 	}
@@ -147,14 +142,20 @@ public class FunctionGraphPlugin extends ProgramPlugin implements OptionsChangeL
 	}
 
 	private void initializeOptions() {
-		ToolOptions options = tool.getOptions(PLUGIN_OPTIONS_NAME);
+		ToolOptions options = tool.getOptions(ToolConstants.GRAPH_OPTIONS);
 		options.addOptionsChangeListener(this);
-		functionGraphOptions.registerOptions(options);
-		functionGraphOptions.loadOptions(options);
+
+		// Graph -> Function Graph
+		Options fgOptions = options.getOptions(FUNCTION_GRAPH_NAME);
+
+		functionGraphOptions.registerOptions(fgOptions);
+		functionGraphOptions.loadOptions(fgOptions);
 
 		for (FGLayoutProvider layoutProvider : layoutProviders) {
+
+			// Graph -> Function Graph -> Layout Name
 			String layoutName = layoutProvider.getLayoutName();
-			Options layoutToolOptions = options.getOptions(layoutName);
+			Options layoutToolOptions = fgOptions.getOptions(layoutName);
 			FGLayoutOptions layoutOptions = layoutProvider.createLayoutOptions(layoutToolOptions);
 			if (layoutOptions == null) {
 				continue; // many layouts do not have options
@@ -170,7 +171,11 @@ public class FunctionGraphPlugin extends ProgramPlugin implements OptionsChangeL
 	public void optionsChanged(ToolOptions options, String optionName, Object oldValue,
 			Object newValue) {
 
-		functionGraphOptions.loadOptions(options);
+		// Graph -> Function Graph
+		Options fgOptions = options.getOptions(FUNCTION_GRAPH_NAME);
+		functionGraphOptions.loadOptions(fgOptions);
+
+		connectedProvider.optionsChanged();
 
 		if (functionGraphOptions.optionChangeRequiresRelayout(optionName)) {
 			connectedProvider.refreshAndKeepPerspective();
@@ -184,6 +189,7 @@ public class FunctionGraphPlugin extends ProgramPlugin implements OptionsChangeL
 
 		connectedProvider.getComponent().repaint();
 		for (FGProvider provider : disconnectedProviders) {
+			provider.optionsChanged();
 			provider.getComponent().repaint();
 		}
 	}

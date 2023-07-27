@@ -23,6 +23,8 @@ import java.awt.event.MouseEvent;
 import java.util.*;
 
 import javax.swing.*;
+import javax.swing.event.TreeExpansionEvent;
+import javax.swing.event.TreeExpansionListener;
 import javax.swing.tree.TreePath;
 
 import docking.ActionContext;
@@ -31,9 +33,9 @@ import docking.widgets.tree.*;
 import docking.widgets.tree.support.GTreeNodeTransferable;
 import docking.widgets.tree.support.GTreeSelectionEvent.EventOrigin;
 import docking.widgets.tree.tasks.GTreeBulkTask;
+import generic.theme.GIcon;
 import ghidra.app.plugin.core.symboltree.actions.*;
-import ghidra.app.plugin.core.symboltree.nodes.SymbolNode;
-import ghidra.app.plugin.core.symboltree.nodes.SymbolTreeRootNode;
+import ghidra.app.plugin.core.symboltree.nodes.*;
 import ghidra.framework.model.*;
 import ghidra.framework.options.SaveState;
 import ghidra.framework.plugintool.ComponentProviderAdapter;
@@ -44,14 +46,12 @@ import ghidra.program.model.symbol.*;
 import ghidra.program.util.*;
 import ghidra.util.*;
 import ghidra.util.exception.*;
-import ghidra.util.task.SwingUpdateManager;
-import ghidra.util.task.TaskMonitor;
-import resources.ResourceManager;
+import ghidra.util.task.*;
 
 public class SymbolTreeProvider extends ComponentProviderAdapter {
 
-	private static final ImageIcon ICON = ResourceManager.loadImage("images/sitemap_color.png");
-	private final static String NAME = "Symbol Tree";
+	private static final Icon ICON = new GIcon("icon.plugin.symboltree.provider");
+	private static final String NAME = "Symbol Tree";
 
 	private ClipboardOwner clipboardOwner;
 	private Clipboard localClipboard;// temporary clipboard used for the "cut" operation
@@ -75,7 +75,7 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 	 */
 	private List<GTreeTask> bufferedTasks = new ArrayList<>();
 	private SwingUpdateManager domainChangeUpdateManager = new SwingUpdateManager(1000,
-		SwingUpdateManager.DEFAULT_MAX_DELAY, "Symbol Tree Provider", () -> {
+		AbstractSwingUpdateManager.DEFAULT_MAX_DELAY, "Symbol Tree Provider", () -> {
 
 			if (bufferedTasks.isEmpty()) {
 				return;
@@ -166,7 +166,7 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 			public void mouseClicked(MouseEvent e) {
 
 				// This code serves to perform navigation in  the case that the selection handler
-				// above does not, as is the case when the node is already selected.  This code 
+				// above does not, as is the case when the node is already selected.  This code
 				// will get called on the mouse release, whereas the selection handler gets called
 				// on the mouse pressed.
 				// For now, just attempt to perform the goto.  It may get called twice, but this
@@ -176,9 +176,29 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 			}
 		});
 
+		newTree.addTreeExpansionListener(new TreeExpansionListener() {
+
+			@Override
+			public void treeExpanded(TreeExpansionEvent event) {
+				// nothing
+			}
+
+			@Override
+			public void treeCollapsed(TreeExpansionEvent event) {
+				treeNodeCollapsed(event.getPath());
+			}
+		});
+
 		newTree.setEditable(true);
 
 		return newTree;
+	}
+
+	protected void treeNodeCollapsed(TreePath path) {
+		Object lastPathComponent = path.getLastPathComponent();
+		if (lastPathComponent instanceof SymbolCategoryNode && !tree.hasFilterText()) {
+			tree.runTask(m -> ((SymbolCategoryNode) lastPathComponent).unloadChildren());
+		}
 	}
 
 	private void maybeGoToSymbol() {
@@ -206,8 +226,15 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 		DockingAction setExternalProgramAction = new SetExternalProgramAction(plugin, this);
 		DockingAction createExternalLocationAction = new CreateExternalLocationAction(plugin);
 		DockingAction editExternalLocationAction = new EditExternalLocationAction(plugin);
-		DockingAction createClassAction = new CreateClassAction(plugin);
-		DockingAction createNamespaceAction = new CreateNamespaceAction(plugin);
+
+		String createGroup = "0Create";
+		int createGroupIndex = 0;
+		DockingAction createNamespaceAction =
+			new CreateNamespaceAction(plugin, createGroup, Integer.toString(createGroupIndex++));
+		DockingAction createClassAction =
+			new CreateClassAction(plugin, createGroup, Integer.toString(createGroupIndex++));
+		DockingAction convertToClassAction =
+			new ConvertToClassAction(plugin, createGroup, Integer.toString(createGroupIndex++));
 
 		DockingAction renameAction = new RenameAction(plugin);
 		DockingAction cutAction = new CutAction(plugin, this);
@@ -231,6 +258,7 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 		tool.addLocalAction(this, editExternalLocationAction);
 		tool.addLocalAction(this, createClassAction);
 		tool.addLocalAction(this, createNamespaceAction);
+		tool.addLocalAction(this, convertToClassAction);
 		tool.addLocalAction(this, renameAction);
 		tool.addLocalAction(this, cutAction);
 		tool.addLocalAction(this, pasteAction);
@@ -385,13 +413,18 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 	}
 
 	private void rebuildTree() {
+
+		// If we do not cancel the edit here, then an open edits will instead be committed.  It
+		// seems safer to cancel an edit rather than to commit it without asking.
+		tree.cancelEditing();
+
 		SymbolTreeRootNode node = (SymbolTreeRootNode) tree.getModelRoot();
 		node.setChildren(null);
 		tree.refilterLater();
 	}
 
-	private void symbolChanged(Symbol symbol) {
-		addTask(new SymbolChangedTask(tree, symbol));
+	private void symbolChanged(Symbol symbol, String oldName) {
+		addTask(new SymbolChangedTask(tree, symbol, oldName));
 	}
 
 	private void symbolAdded(Symbol symbol) {
@@ -405,9 +438,8 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 	private void addTask(GTreeTask task) {
 		// Note: if we want to call this method from off the Swing thread, then we have to
 		//       synchronize on the list that we are adding to here.
-		Swing.assertSwingThread(
-			"Adding tasks must be done on the Swing thread," +
-				"since they are put into a list that is processed on the Swing thread. ");
+		Swing.assertSwingThread("Adding tasks must be done on the Swing thread," +
+			"since they are put into a list that is processed on the Swing thread. ");
 
 		bufferedTasks.add(task);
 		domainChangeUpdateManager.update();
@@ -521,11 +553,11 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 		}
 	}
 
-	private abstract class AbstactSymbolUpdateTask extends GTreeTask {
+	private abstract class AbstractSymbolUpdateTask extends GTreeTask {
 
 		protected final Symbol symbol;
 
-		AbstactSymbolUpdateTask(GTree tree, Symbol symbol) {
+		AbstractSymbolUpdateTask(GTree tree, Symbol symbol) {
 			super(tree);
 			this.symbol = symbol;
 		}
@@ -548,7 +580,7 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 		}
 	}
 
-	private class SymbolAddedTask extends AbstactSymbolUpdateTask {
+	private class SymbolAddedTask extends AbstractSymbolUpdateTask {
 
 		SymbolAddedTask(GTree tree, Symbol symbol) {
 			super(tree, symbol);
@@ -560,34 +592,37 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 			SymbolTreeRootNode rootNode = (SymbolTreeRootNode) tree.getModelRoot();
 
 			// the symbol may have been deleted while we are processing bulk changes
-			if (symbol.checkIsValid()) {
+			if (!symbol.isDeleted()) {
 				GTreeNode newNode = rootNode.symbolAdded(symbol);
 				tree.refilterLater(newNode);
 			}
 		}
 	}
 
-	private class SymbolChangedTask extends AbstactSymbolUpdateTask {
+	private class SymbolChangedTask extends AbstractSymbolUpdateTask {
 
-		SymbolChangedTask(GTree tree, Symbol symbol) {
+		private String oldName;
+
+		SymbolChangedTask(GTree tree, Symbol symbol, String oldName) {
 			super(tree, symbol);
+			this.oldName = oldName;
 		}
 
 		@Override
 		void doRun(TaskMonitor monitor) throws CancelledException {
 
 			SymbolTreeRootNode root = (SymbolTreeRootNode) tree.getModelRoot();
-			root.symbolRemoved(symbol, monitor);
+			root.symbolRemoved(symbol, oldName, monitor);
 
 			// the symbol may have been deleted while we are processing bulk changes
-			if (symbol.checkIsValid()) {
+			if (!symbol.isDeleted()) {
 				root.symbolAdded(symbol);
 			}
 			tree.refilterLater();
 		}
 	}
 
-	private class SymbolRemovedTask extends AbstactSymbolUpdateTask {
+	private class SymbolRemovedTask extends AbstractSymbolUpdateTask {
 
 		SymbolRemovedTask(GTree tree, Symbol symbol) {
 			super(tree, symbol);
@@ -623,7 +658,7 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 			}
 
 			for (GTreeTask task : tasks) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 				task.run(monitor);
 			}
 		}
@@ -654,7 +689,7 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 
 				if (eventType == ChangeManager.DOCR_SYMBOL_RENAMED) {
 					Symbol symbol = (Symbol) object;
-					symbolChanged(symbol);
+					symbolChanged(symbol, (String) rec.getOldValue());
 				}
 				else if (eventType == ChangeManager.DOCR_SYMBOL_DATA_CHANGED ||
 					eventType == ChangeManager.DOCR_SYMBOL_SCOPE_CHANGED ||
@@ -668,7 +703,7 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 						symbol = ((Namespace) object).getSymbol();
 					}
 
-					symbolChanged(symbol);
+					symbolChanged(symbol, symbol.getName());
 				}
 				else if (eventType == ChangeManager.DOCR_SYMBOL_ADDED) {
 					Symbol symbol = (Symbol) rec.getNewValue();
@@ -685,7 +720,7 @@ public class SymbolTreeProvider extends ComponentProviderAdapter {
 					SymbolTable symbolTable = program.getSymbolTable();
 					Symbol[] symbols = symbolTable.getSymbols(address);
 					for (Symbol symbol : symbols) {
-						symbolChanged(symbol);
+						symbolChanged(symbol, symbol.getName());
 					}
 				}
 			}

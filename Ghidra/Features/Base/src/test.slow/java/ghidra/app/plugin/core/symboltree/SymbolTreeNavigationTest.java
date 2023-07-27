@@ -110,10 +110,11 @@ public class SymbolTreeNavigationTest extends AbstractProgramBasedTest {
 
 		Address addr = addr("0x01004896");
 		String nameLowInOrgNodes = labelsPrefix + "3700";
-		createGlobalLabel(addr, nameLowInOrgNodes);
+		Symbol firstSymbol = createGlobalLabel(addr, nameLowInOrgNodes);
 
 		util.collapseTree();
 		goTo(addr);
+		assertSelectedNode(firstSymbol);
 
 		// create a name next to the one above so it gets 'insert'ed into the same parent node
 		nameLowInOrgNodes = labelsPrefix + "37000";
@@ -449,21 +450,16 @@ public class SymbolTreeNavigationTest extends AbstractProgramBasedTest {
 	}
 
 	private void rename(Symbol symbol, String newName) {
-
-		String oldName = symbol.getName();
-		RenameLabelCmd cmd =
-			new RenameLabelCmd(symbol.getAddress(), oldName, newName, SourceType.USER_DEFINED);
+		RenameLabelCmd cmd = new RenameLabelCmd(symbol, newName, SourceType.USER_DEFINED);
 		applyCmd(cmd);
 		util.waitForTree();
 	}
 
 	private Symbol createGlobalLabel(Address addr) {
-
 		return createGlobalLabel(addr, "GlobalLabel");
 	}
 
 	private Symbol createGlobalLabel(Address addr, String labelName) {
-
 		AddLabelCmd cmd = new AddLabelCmd(addr, labelName, SourceType.USER_DEFINED);
 		applyCmd(cmd);
 		Symbol symbol = cmd.getSymbol();

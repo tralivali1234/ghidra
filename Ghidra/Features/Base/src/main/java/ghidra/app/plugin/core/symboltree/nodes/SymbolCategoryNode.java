@@ -18,16 +18,20 @@ package ghidra.app.plugin.core.symboltree.nodes;
 import java.awt.datatransfer.DataFlavor;
 import java.util.*;
 
+import docking.widgets.tree.GTree;
 import docking.widgets.tree.GTreeNode;
+import docking.widgets.tree.tasks.GTreeCollapseAllTask;
 import ghidra.app.plugin.core.symboltree.SymbolCategory;
 import ghidra.program.model.address.GlobalNamespace;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.*;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
-import ghidra.util.task.TaskMonitorAdapter;
 
 public abstract class SymbolCategoryNode extends SymbolTreeNode {
+	public static final int MAX_NODES_BEFORE_ORGANIZING = 40;
+	public static final int MAX_NODES_BEFORE_CLOSING = 200;
+
 	protected SymbolCategory symbolCategory;
 	protected SymbolTable symbolTable;
 	protected GlobalNamespace globalNamespace;
@@ -52,11 +56,8 @@ public abstract class SymbolCategoryNode extends SymbolTreeNode {
 	public List<GTreeNode> generateChildren(TaskMonitor monitor) throws CancelledException {
 		SymbolType symbolType = symbolCategory.getSymbolType();
 		List<GTreeNode> list = getSymbols(symbolType, monitor);
-		monitor.checkCanceled();
-		if (list.size() > MAX_CHILD_NODES) {
-			list = OrganizationNode.organize(list, MAX_CHILD_NODES, monitor);
-		}
-		return list;
+		monitor.checkCancelled();
+		return OrganizationNode.organize(list, MAX_NODES_BEFORE_ORGANIZING, monitor);
 	}
 
 	public Program getProgram() {
@@ -79,7 +80,7 @@ public abstract class SymbolCategoryNode extends SymbolTreeNode {
 		while (it.hasNext()) {
 			Symbol s = it.next();
 			monitor.incrementProgress(1);
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			if (s != null && (s.getSymbolType() == symbolType)) {
 				list.add(SymbolNode.createNode(s, program));
 			}
@@ -171,7 +172,7 @@ public abstract class SymbolCategoryNode extends SymbolTreeNode {
 		Namespace parentNamespace = symbol.getParentNamespace();
 		Symbol namespaceSymbol = parentNamespace.getSymbol();
 		SymbolNode key = SymbolNode.createNode(namespaceSymbol, program);
-		parentNode = findSymbolTreeNode(key, false, TaskMonitorAdapter.DUMMY_MONITOR);
+		parentNode = findSymbolTreeNode(key, false, TaskMonitor.DUMMY);
 		if (parentNode == null) {
 			return null;
 		}
@@ -196,7 +197,7 @@ public abstract class SymbolCategoryNode extends SymbolTreeNode {
 		List<GTreeNode> children = parentNode.getChildren();
 		int index = Collections.binarySearch(children, newNode, comparator);
 		if (index >= 0) { // found a match			
-			GTreeNode matchingNode = getChild(index);
+			GTreeNode matchingNode = parentNode.getChild(index);
 
 			// we must handle OrganizationNodes specially, since they may be recursively defined
 			if (matchingNode instanceof OrganizationNode) {
@@ -210,6 +211,14 @@ public abstract class SymbolCategoryNode extends SymbolTreeNode {
 		}
 
 		parentNode.addNode(index, newNode);
+		if (parentNode.isLoaded() && parentNode.getChildCount() > MAX_NODES_BEFORE_CLOSING) {
+			GTree tree = parentNode.getTree();
+			// tree needs to be reorganized, close this category node to clear its children
+			// and force a reorganization next time it is opened
+			// also need to clear the selection so that it doesn't re-open the category
+			tree.clearSelectionPaths();
+			tree.runTask(new GTreeCollapseAllTask(tree, parentNode));
+		}
 	}
 
 	public void symbolRemoved(Symbol symbol, TaskMonitor monitor) {

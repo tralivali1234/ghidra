@@ -17,7 +17,6 @@ package ghidra.app.cmd.formats;
 
 import java.util.List;
 
-import generic.continues.RethrowContinuesFactory;
 import ghidra.app.plugin.core.analysis.AnalysisWorker;
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.util.bin.ByteProvider;
@@ -64,7 +63,7 @@ public class MachoBinaryAnalysisCommand extends FlatProgramAPI
 	@Override
 	public boolean canApply(Program program) {
 		try {
-			Options options = program.getOptions("Program Information");
+			Options options = program.getOptions(Program.PROGRAM_INFO);
 			String format = options.getString("Executable Format", null);
 			if (!BinaryLoader.BINARY_NAME.equals(format)) {
 				return false;
@@ -90,12 +89,12 @@ public class MachoBinaryAnalysisCommand extends FlatProgramAPI
 
 		BookmarkManager bookmarkManager = program.getBookmarkManager();
 
-		ByteProvider provider = new MemoryByteProvider(program.getMemory(),
-			program.getAddressFactory().getDefaultAddressSpace());
+		ByteProvider provider =
+			MemoryByteProvider.createDefaultAddressSpaceByteProvider(program, false);
 
 		try {
-			MachHeader header = MachHeader.createMachHeader(RethrowContinuesFactory.INSTANCE,
-				provider, getAddress(program).getOffset(), isRelativeToAddress);
+			MachHeader header =
+				new MachHeader(provider, getAddress(program).getOffset(), isRelativeToAddress);
 			header.parse();
 
 			Address machAddress = getAddress(program);
@@ -110,7 +109,8 @@ public class MachoBinaryAnalysisCommand extends FlatProgramAPI
 
 			List<LoadCommand> commands = header.getLoadCommands();
 			for (LoadCommand command : commands) {
-				command.markup(header, this, getAddress(program), true, module, monitor, messages);
+				command.markupRawBinary(header, this, getAddress(program), module, monitor,
+					messages);
 				commandAddress = commandAddress.add(command.getCommandSize());
 				if (command instanceof UnsupportedLoadCommand) {
 					bookmarkManager.setBookmark(machAddress.add(command.getStartIndex()),

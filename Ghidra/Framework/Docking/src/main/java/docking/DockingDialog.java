@@ -25,10 +25,10 @@ import javax.swing.*;
 import org.apache.commons.collections4.map.LazyMap;
 
 import docking.framework.ApplicationInformationDisplayFactory;
-import docking.help.HelpDescriptor;
 import generic.util.WindowUtilities;
 import ghidra.framework.Application;
 import ghidra.util.bean.GGlassPane;
+import help.HelpDescriptor;
 
 // NOTE: this class has a static focus component variable that is set whenever the dialog gets
 // activated and is scheduled to get focus at a later time.  This variable is static so that only
@@ -37,6 +37,9 @@ import ghidra.util.bean.GGlassPane;
 
 public class DockingDialog extends JDialog implements HelpDescriptor {
 	private static Component focusComponent; // allow only one scheduled focus component. See above.
+
+	private static Map<String, BoundsInfo> dialogBoundsMap =
+		LazyMap.lazyMap(new HashMap<>(), () -> new BoundsInfo());
 
 	private WindowListener windowAdapter;
 	private DialogComponentProvider component;
@@ -47,22 +50,18 @@ public class DockingDialog extends JDialog implements HelpDescriptor {
 			hasBeenFocused = true;
 		}
 	};
-
-	private static Map<String, BoundsInfo> dialogBoundsMap =
-		LazyMap.lazyMap(new HashMap<>(), () -> new BoundsInfo());
 	private DockingWindowManager owningWindowManager;
-
 	private WindowAdapter modalFixWindowAdapter;
 
 	/**
 	 * Creates a default parent frame that will appear in the OS's task bar.  Having this frame
-	 * gives the user something to click when their dialog is lost.  We attempt to hide this 
+	 * gives the user something to click when their dialog is lost.  We attempt to hide this
 	 * frame offscreen.
-	 * 
+	 *
 	 * Note: we expect to only get here when there is no parent window found.  This usually
-	 * only happens during tests and one-off main methods that are not part of a 
+	 * only happens during tests and one-off main methods that are not part of a
 	 * running tool.
-	 * 
+	 *
 	 * @param componentProvider the dialog content for this dialog
 	 * @return the hidden frame
 	 */
@@ -70,7 +69,7 @@ public class DockingDialog extends JDialog implements HelpDescriptor {
 
 		//
 		// Note: we expect to only get here when there is no parent window found.  This usually
-		//       only happens during tests and one-off main methods that are not part of a 
+		//       only happens during tests and one-off main methods that are not part of a
 		//       running tool
 		//
 		HiddenDockingFrame hiddenFrame = new HiddenDockingFrame(Application.getName());
@@ -131,10 +130,10 @@ public class DockingDialog extends JDialog implements HelpDescriptor {
 		Rectangle lastBounds = boundsInfo.getEndBounds();
 		applySize(lastBounds); // apply the size before we try to center
 
-		Point initialLocation = component.getIntialLocation();
+		Point initialLocation = component.getInitialLocation();
 		if (initialLocation != null) {
-			// NOTE: have to call setLocation() twice because the first time the native peer 
-			// component's location is not actually changed; calling setLocation() again 
+			// NOTE: have to call setLocation() twice because the first time the native peer
+			// component's location is not actually changed; calling setLocation() again
 			// does cause the location to change.
 			setLocation(initialLocation);
 			setLocation(initialLocation);
@@ -155,7 +154,7 @@ public class DockingDialog extends JDialog implements HelpDescriptor {
 	}
 
 	private void applySize(Rectangle savedBounds) {
-		boolean rememberSize = component.getRemberSize();
+		boolean rememberSize = component.getRememberSize();
 		if (rememberSize && savedBounds != null) {
 			setSize(savedBounds.width, savedBounds.height);
 			return;
@@ -220,6 +219,12 @@ public class DockingDialog extends JDialog implements HelpDescriptor {
 				component.escapeCallback();
 			}
 
+			@Override
+			public void windowClosed(WindowEvent e) {
+				// this call is needed to handle the case where the dialog is closed by Java and
+				// not by the user closing the dialog or calling close() through the API
+				cleanup();
+			}
 		};
 		this.addWindowListener(windowAdapter);
 		modalFixWindowAdapter = new WindowAdapter() {
@@ -249,7 +254,11 @@ public class DockingDialog extends JDialog implements HelpDescriptor {
 	}
 
 	void close() {
-		if (component.getRemberSize() || component.getRememberLocation()) {
+		cleanup();
+	}
+
+	private void cleanup() {
+		if (component.getRememberSize() || component.getRememberLocation()) {
 			String key = getKey();
 			Rectangle rect = getBounds();
 			BoundsInfo boundsInfo = dialogBoundsMap.get(key);
@@ -258,7 +267,10 @@ public class DockingDialog extends JDialog implements HelpDescriptor {
 
 		component.setDialog(null);
 		removeWindowListener(windowAdapter);
+
+		// this will do nothing if already closed
 		setVisible(false);
+
 		component.dialogClosed();
 		component = null;
 		getContentPane().removeAll();
@@ -274,7 +286,7 @@ public class DockingDialog extends JDialog implements HelpDescriptor {
 			JFrame f = (JFrame) myParent;
 			Window[] ownedWindows = f.getOwnedWindows();
 			for (Window window : ownedWindows) {
-				if (window != this) {
+				if (window != this && window.isVisible()) {
 					return;
 				}
 			}
@@ -370,7 +382,7 @@ public class DockingDialog extends JDialog implements HelpDescriptor {
 
 		void setEndBounds(Rectangle bounds) {
 			if (Objects.equals(startBounds, bounds)) {
-				// keep the end bounds unchanged, which helps us later determine if the 
+				// keep the end bounds unchanged, which helps us later determine if the
 				// dialog was moved
 				return;
 			}

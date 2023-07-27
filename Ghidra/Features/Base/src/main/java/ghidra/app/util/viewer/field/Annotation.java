@@ -27,18 +27,26 @@ import ghidra.util.classfinder.ClassSearcher;
 
 public class Annotation {
 	/**
-	 * A pattern to match text between two quote characters and to capture that text.  This 
+	 * A pattern to match text between two quote characters and to capture that text.  This
 	 * pattern does not match quote characters that are escaped with a '\' character.
 	 */
 	private static final Pattern QUOTATION_PATTERN =
 		Pattern.compile("(?<!\\\\)[\"](.*?)(?<!\\\\)[\"]");
 
+	private static List<AnnotatedStringHandler> ANNOTATED_STRING_HANDLERS;
 	private static Map<String, AnnotatedStringHandler> ANNOTATED_STRING_MAP;
 
 	private String annotationText;
 	private String[] annotationParts;
 	private AnnotatedStringHandler annotatedStringHandler;
 	private AttributedString displayString;
+
+	public static List<AnnotatedStringHandler> getAnnotatedStringHandlers() {
+		if (ANNOTATED_STRING_HANDLERS == null) {
+			ANNOTATED_STRING_HANDLERS = getSupportedAnnotationHandlers();
+		}
+		return ANNOTATED_STRING_HANDLERS;
+	}
 
 	private static Map<String, AnnotatedStringHandler> getAnnotatedStringHandlerMap() {
 		if (ANNOTATED_STRING_MAP == null) { // lazy init due to our use of ClassSearcher
@@ -47,22 +55,26 @@ public class Annotation {
 		return ANNOTATED_STRING_MAP;
 	}
 
-	// locates AnnotatedStringHandler implementations to handle annotations 
 	private static Map<String, AnnotatedStringHandler> createAnnotatedStringHandlerMap() {
 		Map<String, AnnotatedStringHandler> map = new HashMap<>();
-
-		// find all instances of AnnotatedString
-		List<AnnotatedStringHandler> instances =
-			ClassSearcher.getInstances(AnnotatedStringHandler.class);
-
-		for (AnnotatedStringHandler instance : instances) {
+		for (AnnotatedStringHandler instance : getAnnotatedStringHandlers()) {
 			String[] supportedAnnotations = instance.getSupportedAnnotations();
 			for (String supportedAnnotation : supportedAnnotations) {
 				map.put(supportedAnnotation, instance);
 			}
 		}
-
 		return Collections.unmodifiableMap(map);
+	}
+
+	// locates AnnotatedStringHandler implementations to handle annotations
+	private static List<AnnotatedStringHandler> getSupportedAnnotationHandlers() {
+		List<AnnotatedStringHandler> list = new ArrayList<>();
+		for (AnnotatedStringHandler h : ClassSearcher.getInstances(AnnotatedStringHandler.class)) {
+			if (h.getSupportedAnnotations().length != 0) {
+				list.add(h);
+			}
+		}
+		return Collections.unmodifiableList(list);
 	}
 
 	/**
@@ -70,8 +82,9 @@ public class Annotation {
 	 * <b>Note</b>: This constructor assumes that the string starts with "{<pre>@</pre>" and ends with '}'
 	 * 
 	 * @param annotationText The complete annotation text.
-	 * @param prototypeString An AttributedString that provides the attributes for the display 
+	 * @param prototypeString An AttributedString that provides the attributes for the display
 	 * text this Annotation can create
+	 * @param program the program
 	 */
 	public Annotation(String annotationText, AttributedString prototypeString, Program program) {
 
@@ -126,7 +139,7 @@ public class Annotation {
 	 * Called when a mouse click occurs on a FieldElement containing this Annotation.
 	 * 
 	 * @param sourceNavigatable The source navigatable associated with the mouse click.
-	 * @param serviceProvider The service provider to be used when creating 
+	 * @param serviceProvider The service provider to be used when creating
 	 * {@link AnnotatedStringHandler} instances.
 	 * @return true if the handler desires to handle the mouse click.
 	 */
@@ -143,13 +156,13 @@ public class Annotation {
 		buffer.delete(0, 2); // remove '{' and '@'
 		buffer.deleteCharAt(buffer.length() - 1);
 
-		// first split out the tokens on '"' so that annotations can have groupings with 
+		// first split out the tokens on '"' so that annotations can have groupings with
 		// whitespace
 		int unqouotedOffset = 0;
 		List<String> tokens = new ArrayList<>();
 		Matcher matcher = QUOTATION_PATTERN.matcher(buffer.toString());
 		while (matcher.find()) {
-			// put all text in the buffer, 
+			// put all text in the buffer,
 			int quoteStart = matcher.start();
 			String contentBeforeQuote = buffer.substring(unqouotedOffset, quoteStart);
 			grabTokens(tokens, contentBeforeQuote);
@@ -181,14 +194,6 @@ public class Annotation {
 
 	public String getAnnotationText() {
 		return annotationText;
-	}
-
-	public static AnnotatedStringHandler[] getAnnotatedStringHandlers() {
-		Set<AnnotatedStringHandler> annotations =
-			new HashSet<>(getAnnotatedStringHandlerMap().values());
-		AnnotatedStringHandler[] retVal = new AnnotatedStringHandler[annotations.size()];
-		annotations.toArray(retVal);
-		return retVal;
 	}
 
 	/*package*/ static Set<String> getAnnotationNames() {

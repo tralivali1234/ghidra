@@ -17,6 +17,10 @@
 #include "sleighbase.hh"
 #include <cmath>
 
+namespace ghidra {
+
+using std::log;
+
 SleighSymbol *SymbolScope::addSymbol(SleighSymbol *a)
 
 {
@@ -252,6 +256,8 @@ void SymbolTable::restoreSymbolHeader(const Element *el)
     sym = new StartSymbol();
   else if (el->getName() == "end_sym_head")
     sym = new EndSymbol();
+  else if (el->getName() == "next2_sym_head")
+    sym = new Next2Symbol();
   else if (el->getName() == "subtable_sym_head")
     sym = new SubtableSymbol();
   else if (el->getName() == "flowdest_sym_head")
@@ -1254,6 +1260,70 @@ void EndSymbol::restoreXml(const Element *el,SleighBase *trans)
   patexp->layClaim();
 }
 
+Next2Symbol::Next2Symbol(const string &nm,AddrSpace *cspc) : SpecificSymbol(nm)
+
+{
+  const_space = cspc;
+  patexp = new Next2InstructionValue();
+  patexp->layClaim();
+}
+
+Next2Symbol::~Next2Symbol(void)
+
+{
+  if (patexp != (PatternExpression *)0)
+    PatternExpression::release(patexp);
+}
+
+VarnodeTpl *Next2Symbol::getVarnode(void) const
+
+{ // Return instruction offset after next instruction offset as a constant
+  ConstTpl spc(const_space);
+  ConstTpl off(ConstTpl::j_next2);
+  ConstTpl sz_zero;
+  return new VarnodeTpl(spc,off,sz_zero);
+}
+
+void Next2Symbol::getFixedHandle(FixedHandle &hand,ParserWalker &walker) const
+
+{
+  hand.space = walker.getCurSpace();
+  hand.offset_space = (AddrSpace *)0;
+  hand.offset_offset = walker.getN2addr().getOffset(); // Get instruction address after next instruction
+  hand.size = hand.space->getAddrSize();
+}
+
+void Next2Symbol::print(ostream &s,ParserWalker &walker) const
+
+{
+  intb val = (intb) walker.getN2addr().getOffset();
+  s << "0x" << hex << val;
+}
+
+void Next2Symbol::saveXml(ostream &s) const
+
+{
+  s << "<next2_sym";
+  SleighSymbol::saveXmlHeader(s);
+  s << "/>\n";
+}
+
+void Next2Symbol::saveXmlHeader(ostream &s) const
+
+{
+  s << "<next2_sym_head";
+  SleighSymbol::saveXmlHeader(s);
+  s << "/>\n";
+}
+
+void Next2Symbol::restoreXml(const Element *el,SleighBase *trans)
+
+{
+  const_space = trans->getConstantSpace();
+  patexp = new Next2InstructionValue();
+  patexp->layClaim();
+}
+
 FlowDestSymbol::FlowDestSymbol(const string &nm,AddrSpace *cspc) : SpecificSymbol(nm)
 
 {
@@ -1596,7 +1666,7 @@ void Constructor::saveXml(ostream &s) const
   s << " parent=\"0x" << hex << parent->getId() << "\"";
   s << " first=\"" << dec << firstwhitespace << "\"";
   s << " length=\"" << minimumlength << "\"";
-  s << " line=\"" << lineno << "\">\n";
+  s << " line=\"" << src_index << ":" << lineno << "\">\n";
   for(int4 i=0;i<operands.size();++i)
     s << "<oper id=\"0x" << hex << operands[i]->getId() << "\"/>\n";
   for(int4 i=0;i<printpiece.size();++i) {
@@ -1643,9 +1713,10 @@ void Constructor::restoreXml(const Element *el,SleighBase *trans)
     s >> minimumlength;
   }
   {
-    istringstream s(el->getAttributeValue("line"));
-    s.unsetf(ios::dec | ios::hex | ios::oct);
-    s >> lineno;
+   	string src_and_line = el->getAttributeValue("line");
+    size_t pos = src_and_line.find(":");
+    src_index = stoi(src_and_line.substr(0, pos),NULL,10);
+    lineno = stoi(src_and_line.substr(pos+1,src_and_line.length()),NULL,10);
   }
   const List &list(el->getChildren());
   List::const_iterator iter;
@@ -1803,7 +1874,7 @@ TokenPattern *Constructor::buildPattern(ostream &s)
 	  }
 				// We should also check that recursion is rightmost extreme
 	  recursion = true;
-	  oppattern.push_back(TokenPattern());
+	  oppattern.emplace_back();
 	}
 	else
 	  oppattern.push_back(*subsym->buildPattern(s));
@@ -2576,3 +2647,5 @@ ContextChange *ContextCommit::clone(void) const
   res->num = num;
   return res;
 }
+
+} // End namespace ghidra

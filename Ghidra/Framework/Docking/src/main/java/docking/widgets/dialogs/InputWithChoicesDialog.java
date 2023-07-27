@@ -17,6 +17,7 @@ package docking.widgets.dialogs;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.util.NoSuchElementException;
 
 import javax.swing.*;
 
@@ -26,8 +27,7 @@ import docking.widgets.label.GDLabel;
 import docking.widgets.label.GHtmlLabel;
 
 /**
- * A dialog that has text fields to get user input. 
- * 
+ * A dialog that has text fields to get user input.
  */
 public class InputWithChoicesDialog extends DialogComponentProvider {
 
@@ -36,49 +36,46 @@ public class InputWithChoicesDialog extends DialogComponentProvider {
 	private boolean allowEdits;
 
 	/**
-	 * Creates a provider for a generic input dialog with the specified title,
-	 * a label and a editable comboBox pre-populated with selectable values. The user
-	 * can check the value of {@link #isCanceled()} to know whether or not 
-	 * the user canceled the operation. To get the user selected value use the
-	 * {@link #getValue()} value(s) entered by the user.  If the user cancelled the operation, then
-	 * null will be returned from <code>getValue()</code>.
-	 * <P>
-	 * 
+	 * Creates a provider for a generic input dialog with the specified title, a label and a
+	 * editable comboBox pre-populated with selectable values. The user can check the value of
+	 * {@link #isCanceled()} to know whether or not the user canceled the operation. To get the
+	 * user selected value use the {@link #getValue()} value(s) entered by the user.  If the user
+	 * cancelled the operation, then null will be returned from {@link #getValue()}.
+	 *
 	 * @param dialogTitle used as the name of the dialog's title bar
 	 * @param label value to use for the label of the text field
 	 * @param optionValues values to populate the combo box
-	 * @param initialValue the initial value - can be null
-	 * @param messageIcon the icon to display on the dialog--can be null
+	 * @param initialValue the initial value; may be null
+	 * @param messageIcon the icon to display on the dialog; may be null
 	 */
 	public InputWithChoicesDialog(String dialogTitle, String label, String[] optionValues,
 			String initialValue, Icon messageIcon) {
 
 		super(dialogTitle, true, false, true, false);
 
-		this.addOKButton();
-		this.addCancelButton();
-		this.setRememberSize(false);
-		this.setRememberLocation(false);
+		setTransient(true);
+		addOKButton();
+		addCancelButton();
+		setRememberSize(false);
+		setRememberLocation(false);
 		buildMainPanel(label, optionValues, initialValue, messageIcon);
 
 		setFocusComponent(combo);
 	}
 
 	/**
-	 * Creates a provider for a generic input dialog with the specified title,
-	 * a label and a editable comboBox pre-populated with selectable values. The user
-	 * can check the value of {@link #isCanceled()} to know whether or not 
-	 * the user canceled the operation. To get the user selected value use the
-	 * {@link #getValue()} value(s) entered by the user.  If the user cancelled the operation, then
-	 * null will be returned from <code>getValue()</code>.
-	 * <P>
-	 * 
+	 * Creates a provider for a generic input dialog with the specified title, a label and a
+	 * editable comboBox pre-populated with selectable values. The user can check the value of
+	 * {@link #isCanceled()} to know whether or not the user canceled the operation. To get the
+	 * user selected value use the {@link #getValue()} value(s) entered by the user.  If the user
+	 * cancelled the operation, then null will be returned from {@link #getValue()}.
+	 *
 	 * @param dialogTitle used as the name of the dialog's title bar
 	 * @param label value to use for the label of the text field
 	 * @param optionValues values to populate the combo box
-	 * @param initialValue the initial value - can be null
-	 * @param allowEdits true allows the user to add custom entries to the combo box by entering text
-	 * @param messageIcon the icon to display on the dialog--can be null
+	 * @param initialValue the initial value; may be null
+	 * @param allowEdits true allows the user to add custom entries by entering text
+	 * @param messageIcon the icon to display on the dialog; may be null
 	 */
 	public InputWithChoicesDialog(String dialogTitle, String label, String[] optionValues,
 			String initialValue, boolean allowEdits, Icon messageIcon) {
@@ -101,7 +98,7 @@ public class InputWithChoicesDialog extends DialogComponentProvider {
 	}
 
 	/**
-	 * completes the construction of the gui for this dialog
+	 * Completes the construction of the gui for this dialog
 	 */
 	private void buildMainPanel(String labelText, String[] optionValues, String initialValue,
 			Icon messageIcon) {
@@ -166,19 +163,38 @@ public class InputWithChoicesDialog extends DialogComponentProvider {
 
 	/**
 	 * Returns if this dialog is canceled.
+	 * @return true if canceled
 	 */
 	public boolean isCanceled() {
 		return isCanceled;
 	}
 
 	/**
-	 * return the value of the first combo box
+	 * Return the value of the first combo box.
+	 * @return the value
 	 */
 	public String getValue() {
 		if (isCanceled) {
 			return null;
 		}
+
+		if (allowEdits) {
+			return combo.getText();
+		}
+
 		Object selectedItem = combo.getSelectedItem();
 		return selectedItem == null ? null : selectedItem.toString();
+	}
+
+	/**
+	 * Set the current choice to value.
+	 * @param value updated choice
+	 * @throws NoSuchElementException if edits not permitted and value is not a valid choice
+	 */
+	public void setValue(String value) {
+		combo.setSelectedItem(value);
+		if (!combo.isEditable() && !combo.getSelectedItem().equals(value)) {
+			throw new NoSuchElementException();
+		}
 	}
 }

@@ -19,7 +19,8 @@ import static org.junit.Assert.*;
 
 import java.awt.Component;
 import java.awt.Container;
-import java.awt.event.*;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Date;
 import java.util.Random;
@@ -31,8 +32,7 @@ import org.junit.*;
 import docking.ActionContext;
 import docking.action.DockingActionIf;
 import docking.tool.ToolConstants;
-import docking.widgets.MultiLineLabel;
-import docking.widgets.OptionDialog;
+import docking.widgets.OkDialog;
 import docking.widgets.table.GTable;
 import docking.widgets.table.threaded.GThreadedTablePanel;
 import ghidra.app.events.ProgramSelectionPluginEvent;
@@ -188,7 +188,7 @@ public class SearchTextPlugin1Test extends AbstractGhidraHeadedIntegrationTest {
 		assertNotNull(commentsCB);
 		assertSelected(commentsCB);
 
-		// verify that the case sensitive checkbox is not selected				
+		// verify that the case sensitive checkbox is not selected
 		JCheckBox csCB = (JCheckBox) findButton(dialog.getComponent(), "Case Sensitive");
 		assertNotNull(csCB);
 		assertNotSelected(csCB);
@@ -217,7 +217,7 @@ public class SearchTextPlugin1Test extends AbstractGhidraHeadedIntegrationTest {
 	@Test
 	public void testSearchOptions() throws Exception {
 		// verify that the search dialog allows for searching Functions,
-		// Comments, labels, instruction mnemonics and operands, defined data 
+		// Comments, labels, instruction mnemonics and operands, defined data
 		// mnemonics and values.
 		SearchTextDialog dialog = getDialog();
 		JCheckBox cb = (JCheckBox) findButton(dialog.getComponent(), "Functions");
@@ -420,6 +420,8 @@ public class SearchTextPlugin1Test extends AbstractGhidraHeadedIntegrationTest {
 		loc = cbPlugin.getCurrentLocation();
 		assertEquals(getAddr(0x01004192), loc.getAddress());
 		assertTrue(loc instanceof CommentFieldLocation);
+		assertEquals("Search result not placed at the matching character position", 15,
+			((CommentFieldLocation) loc).getCharOffset());
 		assertEquals(CodeUnit.PLATE_COMMENT, ((CommentFieldLocation) loc).getCommentType());
 
 		pressButton(searchButton);
@@ -668,7 +670,7 @@ public class SearchTextPlugin1Test extends AbstractGhidraHeadedIntegrationTest {
 
 		//
 		// test marker stuff
-		// 
+		//
 		AddressSet set = getAddressesFromModel(model);
 		MarkerService markerService = tool.getService(MarkerService.class);
 		MarkerSet markerSet = markerService.getMarkerSet("Search", program);
@@ -682,9 +684,9 @@ public class SearchTextPlugin1Test extends AbstractGhidraHeadedIntegrationTest {
 			AddressBasedTableModel<ProgramLocation> model) {
 		GThreadedTablePanel<ProgramLocation> threadedTablePanel =
 			(GThreadedTablePanel<ProgramLocation>) providers[0].getThreadedTablePanel();
-		final GTable table = threadedTablePanel.getTable();
+		GTable table = threadedTablePanel.getTable();
 		Random random = new Random();
-		final int randomRow = random.nextInt(model.getRowCount());
+		int randomRow = random.nextInt(model.getRowCount());
 
 		DockingActionIf deleteRowAction = getAction(tool, "TableServicePlugin", "Remove Items");
 		ProgramLocation toBeDeleted = model.getRowObject(randomRow);
@@ -954,12 +956,9 @@ public class SearchTextPlugin1Test extends AbstractGhidraHeadedIntegrationTest {
 	}
 
 	private void closeMaxSearchResultsDialog() throws Exception {
-		final OptionDialog d = waitForDialogComponent(OptionDialog.class);
-		assertNotNull(d);
-		String msg = findMessage(d.getComponent());
-		assertNotNull(msg);
-		assertTrue(msg.indexOf("Stopped search") >= 0);
-		runSwing(() -> d.close());
+		OkDialog d = waitForInfoDialog();
+		assertTrue(d.getMessage().contains("Stopped search"));
+		close(d);
 		waitForSwing();
 	}
 
@@ -976,8 +975,7 @@ public class SearchTextPlugin1Test extends AbstractGhidraHeadedIntegrationTest {
 	}
 
 	private void searchOnce(JTextField tf) throws Exception {
-		final ActionListener listener = tf.getActionListeners()[0];
-		runSwing(() -> listener.actionPerformed(null));
+		triggerEnter(tf);
 	}
 
 	private void searchBackOnce(SearchTextDialog dialog) throws Exception {
@@ -1065,22 +1063,6 @@ public class SearchTextPlugin1Test extends AbstractGhidraHeadedIntegrationTest {
 				JTextField tf = findTextField((Container) element);
 				if (tf != null) {
 					return tf;
-				}
-			}
-		}
-		return null;
-	}
-
-	private String findMessage(Container container) {
-		Component[] c = container.getComponents();
-		for (Component element : c) {
-			if (element instanceof MultiLineLabel) {
-				return ((MultiLineLabel) element).getLabel();
-			}
-			if (element instanceof Container) {
-				String str = findMessage((Container) element);
-				if (str != null) {
-					return str;
 				}
 			}
 		}

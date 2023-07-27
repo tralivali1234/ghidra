@@ -18,6 +18,7 @@ package mdemangler.typeinfo;
 import mdemangler.MDException;
 import mdemangler.MDMang;
 import mdemangler.datatype.modifier.MDBasedAttribute;
+import mdemangler.typeinfo.MDTypeInfo.PointerFormat;
 
 /**
  * This class parses the mangled string at the current offset to determine and
@@ -108,7 +109,7 @@ public class MDTypeInfoParser {
 				break;
 			case '8':
 				// All but the RTTI except RTT4 seem to show up here
-				//  under case '8'; RTTI4 is co-mingled under case '6' with VFTable. 
+				//  under case '8'; RTTI4 is co-mingled under case '6' with VFTable.
 				// TODO: UINFO: metatype (we had isVBTable = true, but I now believe
 				// that
 				// is wrong).
@@ -143,11 +144,13 @@ public class MDTypeInfoParser {
 				// hasArgs = false; //no reason to have set true
 				// dmang.parseInfoPop();
 				break;
-			case 'A':
+			case 'A': // A, B, I, J, Q, R: These might be "this adjustment" with no adjustment
 			case 'B':
 				dmang.increment();
 				typeInfo = new MDMemberFunctionInfo(dmang);
 				typeInfo.setPrivate();
+				typeInfo.setPointerFormat(
+					(code % 2 == 0) ? PointerFormat._NEAR : PointerFormat._NEAR);
 				break;
 			case 'C':
 			case 'D':
@@ -168,12 +171,16 @@ public class MDTypeInfoParser {
 				dmang.increment();
 				typeInfo = new MDVFAdjustor(dmang);
 				typeInfo.setPrivate();
+				typeInfo.setPointerFormat(
+					(code % 2 == 0) ? PointerFormat._NEAR : PointerFormat._NEAR);
 				break;
-			case 'I':
+			case 'I': // A, B, I, J, Q, R: These might be "this adjustment" with no adjustment
 			case 'J':
 				dmang.increment();
 				typeInfo = new MDMemberFunctionInfo(dmang);
 				typeInfo.setProtected();
+				typeInfo.setPointerFormat(
+					(code % 2 == 0) ? PointerFormat._NEAR : PointerFormat._NEAR);
 				break;
 			case 'K':
 			case 'L':
@@ -194,12 +201,16 @@ public class MDTypeInfoParser {
 				dmang.increment();
 				typeInfo = new MDVFAdjustor(dmang);
 				typeInfo.setProtected();
+				typeInfo.setPointerFormat(
+					(code % 2 == 0) ? PointerFormat._NEAR : PointerFormat._NEAR);
 				break;
-			case 'Q':
+			case 'Q': // A, B, I, J, Q, R: These might be "this adjustment" with no adjustment
 			case 'R':
 				dmang.increment();
 				typeInfo = new MDMemberFunctionInfo(dmang);
 				typeInfo.setPublic();
+				typeInfo.setPointerFormat(
+					(code % 2 == 0) ? PointerFormat._NEAR : PointerFormat._NEAR);
 				break;
 			case 'S':
 			case 'T':
@@ -220,6 +231,8 @@ public class MDTypeInfoParser {
 				dmang.increment();
 				typeInfo = new MDVFAdjustor(dmang);
 				typeInfo.setPublic();
+				typeInfo.setPointerFormat(
+					(code % 2 == 0) ? PointerFormat._NEAR : PointerFormat._NEAR);
 				break;
 			case 'Y':
 			case 'Z':
@@ -269,16 +282,22 @@ public class MDTypeInfoParser {
 			case '1':
 				typeInfo = new MDVtordisp(dmang);
 				typeInfo.setPrivate();
+				typeInfo.setPointerFormat(
+					(ch % 2 == 0) ? PointerFormat._NEAR : PointerFormat._NEAR);
 				break;
 			case '2':
 			case '3':
 				typeInfo = new MDVtordisp(dmang);
 				typeInfo.setProtected();
+				typeInfo.setPointerFormat(
+					(ch % 2 == 0) ? PointerFormat._NEAR : PointerFormat._NEAR);
 				break;
 			case '4':
 			case '5':
 				typeInfo = new MDVtordisp(dmang);
 				typeInfo.setPublic();
+				typeInfo.setPointerFormat(
+					(ch % 2 == 0) ? PointerFormat._NEAR : PointerFormat._NEAR);
 				break;
 			case '$':
 				char ch2 = dmang.getAndIncrement();
@@ -324,6 +343,7 @@ public class MDTypeInfoParser {
 					default:
 						throw new MDException("Access Level $$, unknown case: " + ch2);
 				}
+				typeInfo.setSpecialHandlingCode(ch2);
 				break;
 			// TODO: see following UINFO.
 			// UINFO:

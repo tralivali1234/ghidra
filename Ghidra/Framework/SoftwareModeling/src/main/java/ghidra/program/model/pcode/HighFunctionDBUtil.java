@@ -19,6 +19,7 @@ import java.util.*;
 
 import ghidra.program.model.address.*;
 import ghidra.program.model.data.*;
+import ghidra.program.model.lang.PrototypeModel;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.listing.Function.FunctionUpdateType;
@@ -40,6 +41,38 @@ public class HighFunctionDBUtil {
 	public static final String AUTO_CAT = "/auto_proto"; // Category for auto generated prototypes
 
 	/**
+	 * Return the appropriate model name for committing to the database with the given HighFunction.
+	 * Generally this just returns the model name attached to the HighFunction, but if the "unknown"
+	 * model is associated with the function, or if the model doesn't exist, the decompiler
+	 * was using the "default" model internally, so this is the more appropriate model to commit.
+	 * Its possible for this routine to return null, if the architecture has no default model.
+	 * @param highFunction is the given HighFunction
+	 * @return the model name to commit
+	 */
+	private static String getPrototypeModelForCommit(HighFunction highFunction) {
+		FunctionPrototype prototype = highFunction.getFunctionPrototype();
+		String modelName = (prototype != null) ? prototype.getModelName() : null;
+		if (modelName != null) {
+			if (modelName.equals(Function.UNKNOWN_CALLING_CONVENTION_STRING)) {
+				modelName = null;
+			}
+			else {
+				if (null == highFunction.getCompilerSpec().getCallingConvention(modelName)) {
+					modelName = null;
+				}
+			}
+		}
+		if (modelName == null) {
+			// Currently the decompiler uses the default convention to model an unknown convention
+			PrototypeModel model = highFunction.getCompilerSpec().getDefaultCallingConvention();
+			if (model != null) {
+				modelName = model.getName();
+			}
+		}
+		return modelName;
+	}
+
+	/**
 	 * Commit the decompiler's version of the function return data-type to the database.
 	 * The decompiler's version of the prototype model is committed as well
 	 * @param highFunction is the decompiler's model of the function
@@ -51,20 +84,18 @@ public class HighFunctionDBUtil {
 			// Change calling convention if needed
 			Function function = highFunction.getFunction();
 			String convention = function.getCallingConventionName();
-			String modelName = highFunction.getFunctionPrototype().getModelName();
+			String modelName = getPrototypeModelForCommit(highFunction);
 			if (modelName != null && !modelName.equals(convention)) {
 				function.setCallingConvention(modelName);
 			}
 
-			// TODO: no return storage currently returned from Decompiler
-			//highFunction.getFunction().setReturn(type, storage, source)
-
+			VariableStorage storage = highFunction.getFunctionPrototype().getReturnStorage();
 			DataType dataType = highFunction.getFunctionPrototype().getReturnType();
 			if (dataType == null) {
 				dataType = DefaultDataType.dataType;
 				source = SourceType.DEFAULT;
 			}
-			function.setReturnType(dataType, source);
+			function.setReturn(dataType, storage, source);
 		}
 		catch (InvalidInputException e) {
 			Msg.error(HighFunctionDBUtil.class, e.getMessage());
@@ -86,8 +117,7 @@ public class HighFunctionDBUtil {
 
 		List<Parameter> params = getParameters(highFunction, useDataTypes);
 
-		FunctionPrototype functionPrototype = highFunction.getFunctionPrototype();
-		String modelName = (functionPrototype != null) ? functionPrototype.getModelName() : null;
+		String modelName = getPrototypeModelForCommit(highFunction);
 		commitParamsToDatabase(function, modelName, params,
 			highFunction.getFunctionPrototype().isVarArg(), true, source);
 	}
@@ -98,7 +128,7 @@ public class HighFunctionDBUtil {
 		Program program = function.getProgram();
 		DataTypeManager dtm = program.getDataTypeManager();
 		LocalSymbolMap symbolMap = highFunction.getLocalSymbolMap();
-		List<Parameter> params = new ArrayList<Parameter>();
+		List<Parameter> params = new ArrayList<>();
 		int paramCnt = symbolMap.getNumParams();
 		for (int i = 0; i < paramCnt; ++i) {
 			HighSymbol param = symbolMap.getParamSymbol(i);
@@ -254,8 +284,8 @@ public class HighFunctionDBUtil {
 
 		Register reg = var.getRegister();
 		if (reg != null) {
-			program.getReferenceManager().addRegisterReference(pcAddr, -1, reg, RefType.WRITE,
-				source);
+			program.getReferenceManager()
+					.addRegisterReference(pcAddr, -1, reg, RefType.WRITE, source);
 		}
 
 		return var;
@@ -301,7 +331,7 @@ public class HighFunctionDBUtil {
 	 * @return an array of all Variables intended to be merged.
 	 */
 	private static Variable[] gatherMergeSet(Function function, Variable seed) {
-		TreeMap<String, Variable> nameMap = new TreeMap<String, Variable>();
+		TreeMap<String, Variable> nameMap = new TreeMap<>();
 		for (Variable var : function.getAllVariables()) {
 			nameMap.put(var.getName(), var);
 		}
@@ -314,7 +344,7 @@ public class HighFunctionDBUtil {
 		Variable currentVar = nameMap.get(baseName);
 		int index = 0;
 		boolean sawSeed = false;
-		ArrayList<Variable> mergeArray = new ArrayList<Variable>();
+		ArrayList<Variable> mergeArray = new ArrayList<>();
 		for (;;) {
 			if (currentVar == null) {
 				break;
@@ -496,8 +526,7 @@ public class HighFunctionDBUtil {
 			VariableStorage storage = highSymbol.getStorage();
 			Address pcAddr = highSymbol.getPCAddress();
 			HighVariable tmpHigh = highSymbol.getHighVariable();
-			if (!storage.isHashStorage() && tmpHigh != null &&
-				tmpHigh.requiresDynamicStorage()) {
+			if (!storage.isHashStorage() && tmpHigh != null && tmpHigh.requiresDynamicStorage()) {
 				DynamicEntry entry = DynamicEntry.build(tmpHigh.getRepresentative());
 				storage = entry.getStorage();
 				pcAddr = entry.getPCAdress();	// The address may change from original Varnode
@@ -636,18 +665,6 @@ public class HighFunctionDBUtil {
 			return null;
 		}
 		Address addr = storage.getFirstVarnode().getAddress();
-		if (storage.size() != dt.getLength() && program.getMemory().isBigEndian()) {
-			// maintain address of lsb
-			long delta = storage.size() - dt.getLength();
-			try {
-				addr = addr.addNoWrap(delta);
-			}
-			catch (AddressOverflowException e) {
-				throw new InvalidInputException(
-					"Unable to resize global storage for " + dt.getName() + " at " + addr);
-			}
-		}
-
 		Listing listing = program.getListing();
 		Data d = listing.getDataAt(addr);
 		if (d != null && d.getDataType().isEquivalent(dt)) {
@@ -655,7 +672,7 @@ public class HighFunctionDBUtil {
 		}
 
 		try {
-			return DataUtilities.createData(program, addr, dt, -1, false,
+			return DataUtilities.createData(program, addr, dt, -1,
 				DataUtilities.ClearDataMode.CHECK_FOR_SPACE);
 		}
 		catch (CodeUnitInsertionException e) {
@@ -679,10 +696,11 @@ public class HighFunctionDBUtil {
 
 		ParameterDefinition[] params = sig.getArguments();
 		FunctionDefinitionDataType fsig = new FunctionDefinitionDataType("tmpname"); // Empty datatype, will get renamed later
-		fsig.setGenericCallingConvention(sig.getGenericCallingConvention());
+		fsig.setCallingConvention(sig.getCallingConventionName());
 		fsig.setArguments(params);
 		fsig.setReturnType(sig.getReturnType());
 		fsig.setVarArgs(sig.hasVarArgs());
+		fsig.setNoReturn(sig.hasNoReturn());
 
 		DataTypeSymbol datsym = new DataTypeSymbol(fsig, "prt", AUTO_CAT);
 		Program program = function.getProgram();
@@ -717,30 +735,88 @@ public class HighFunctionDBUtil {
 	 * Get the Address referred to by a spacebase reference. Address-of references are encoded in
 	 * the p-code syntax tree as: {@code vn = PTRSUB(<spacebase>, #const)}.  This decodes the reference and
 	 * returns the Address
-	 * @param program is the program containing the Address
+	 * @param addrFactory is the factory used to construct the Address
 	 * @param op is the PTRSUB op encoding the reference
 	 * @return the recovered Address (or null if not correct form)
 	 */
-	public static Address getSpacebaseReferenceAddress(Program program, PcodeOp op) {
+	public static Address getSpacebaseReferenceAddress(AddressFactory addrFactory, PcodeOp op) {
 		Address storageAddress = null;
 		if (op == null) {
 			return storageAddress;
 		}
 		if (op.getOpcode() == PcodeOp.PTRSUB) {
 			Varnode vnode = op.getInput(0);
+			Varnode cnode = op.getInput(1);
 			if (vnode.isRegister()) {
-				AddressSpace stackspace = program.getAddressFactory().getStackSpace();
+				AddressSpace stackspace = addrFactory.getStackSpace();
 				if (stackspace != null) {
-					Address caddr = op.getInput(1).getAddress();
-					storageAddress = stackspace.getAddress(caddr.getOffset());
+					storageAddress = stackspace.getAddress(cnode.getOffset());
 				}
 			}
 			else {
-				Address caddr = op.getInput(1).getAddress();
-				storageAddress = program.getAddressFactory().getDefaultAddressSpace().getAddress(
-					caddr.getOffset());
+				AddressSpace space = addrFactory.getDefaultAddressSpace();
+				if (space instanceof SegmentedAddressSpace) {
+					// Assume this is a "full" encoding of the offset
+					int innersize = space.getPointerSize();
+					int base = (int) (cnode.getOffset() >>> 8 * innersize);
+					int off = (int) cnode.getOffset() & ((1 << 8 * innersize) - 1);
+					storageAddress = ((SegmentedAddressSpace) space).getAddress(base, off);
+				}
+				else {
+					storageAddress = space.getAddress(cnode.getOffset());
+				}
 			}
 		}
 		return storageAddress;
+	}
+
+	/**
+	 * Write a union facet to the database (UnionFacetSymbol).  Parameters provide the
+	 * pieces for building the dynamic LocalVariable.  This method clears out any preexisting
+	 * union facet with the same dynamic hash and firstUseOffset.
+	 * @param function is the function affected by the union facet
+	 * @param dt is the parent data-type; a union, a pointer to a union, or a partial union
+	 * @param fieldNum is the ordinal of the desired union field
+	 * @param addr is the first use address of the facet
+	 * @param hash is the dynamic hash
+	 * @param source is the SourceType for the LocalVariable
+	 * @throws InvalidInputException if the LocalVariable cannot be created
+	 * @throws DuplicateNameException if the (auto-generated) name is used elsewhere
+	 */
+	public static void writeUnionFacet(Function function, DataType dt, int fieldNum, Address addr,
+			long hash, SourceType source) throws InvalidInputException, DuplicateNameException {
+		if (dt instanceof PartialUnion) {
+			dt = ((PartialUnion) dt).getParent();
+		}
+		int firstUseOffset = (int) addr.subtract(function.getEntryPoint());
+		String symbolName = UnionFacetSymbol.buildSymbolName(fieldNum, addr);
+		boolean nameCollision = false;
+		Variable[] localVariables =
+			function.getLocalVariables(VariableFilter.UNIQUE_VARIABLE_FILTER);
+		Variable preexistingVar = null;
+		for (Variable var : localVariables) {
+			if (var.getFirstUseOffset() == firstUseOffset &&
+				var.getFirstStorageVarnode().getOffset() == hash) {
+				preexistingVar = var;
+			}
+			else if (var.getName().startsWith(symbolName)) {
+				nameCollision = true;
+			}
+		}
+		if (nameCollision) {	// Uniquify the name if necessary
+			symbolName = symbolName + '_' + Integer.toHexString(DynamicHash.getComparable(hash));
+		}
+		if (preexistingVar != null) {
+			if (preexistingVar.getName().equals(symbolName)) {
+				return;			// No change to make
+			}
+			preexistingVar.setName(symbolName, source);		// Change the name
+			return;
+		}
+		Program program = function.getProgram();
+		VariableStorage storage =
+			new VariableStorage(program, AddressSpace.HASH_SPACE.getAddress(hash), dt.getLength());
+		Variable var = new LocalVariableImpl(symbolName, firstUseOffset, dt, storage, program);
+		function.addLocalVariable(var, SourceType.USER_DEFINED);
 	}
 }

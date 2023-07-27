@@ -24,7 +24,6 @@ import ghidra.app.util.bin.format.pdb.PdbParser.PdbXmlMember;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.graph.*;
 import ghidra.graph.algo.GraphNavigator;
-import ghidra.graph.jung.JungDirectedGraph;
 import ghidra.program.model.data.Composite;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.symbol.SymbolUtilities;
@@ -67,8 +66,8 @@ public class ApplyDataTypes {
 	private List<CompositeDefinition> getCompositeDefinitionsInPostDependencyOrder(
 			TaskMonitor monitor) {
 
-		JungDirectedGraph<CompositeDefinition, GEdge<CompositeDefinition>> graph =
-			new JungDirectedGraph<>();
+		GDirectedGraph<CompositeDefinition, GEdge<CompositeDefinition>> graph =
+			GraphFactory.createDirectedGraph();
 		for (CompositeDefinition compositeDefinition : compositeQueue.values()) {
 			graph.addVertex(compositeDefinition);
 			for (PdbMember m : compositeDefinition.memberList) {
@@ -107,7 +106,7 @@ public class ApplyDataTypes {
 		monitor.setMessage("Building PDB datatypes... ");
 
 		for (CompositeDefinition compositeDefinition : verticesInPostOrder) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 
 			// namespace qualified name used for cache lookups
 			DataType cachedDataType = pdbParser.getCachedDataType(compositeDefinition.name);
@@ -152,7 +151,7 @@ public class ApplyDataTypes {
 		String elementType = isClasses ? "classes" : "datatypes";
 
 		while (xmlParser.hasNext()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			XmlElement elem = xmlParser.peek();
 			if (elem.isEnd() && elem.getName().equals(elementType)) {
 				xmlParser.next();

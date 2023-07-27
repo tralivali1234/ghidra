@@ -1,6 +1,5 @@
 /* ###
  * IP: GHIDRA
- * REVIEWED: YES
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +14,6 @@
  * limitations under the License.
  */
 package ghidra.program.model.data;
-
 
 /**
  * Provides a definition of a Long Double within a program.
@@ -32,7 +30,12 @@ public class LongDoubleDataType extends AbstractFloatDataType {
 	}
 
 	public LongDoubleDataType(DataTypeManager dtm) {
-		super("longdouble", dtm);
+		super("longdouble", getDataOrganization(dtm).getLongDoubleSize(), dtm);
+	}
+
+	@Override
+	protected String buildDescription() {
+		return "Compiler-defined 'long double' " + super.buildDescription();
 	}
 
 	public DataType clone(DataTypeManager dtm) {
@@ -48,12 +51,7 @@ public class LongDoubleDataType extends AbstractFloatDataType {
 	}
 
 	@Override
-	public boolean isDynamicallySized() {
+	public boolean hasLanguageDependantLength() {
 		return true;
-	}
-
-	@Override
-	public int getLength() {
-		return getDataOrganization().getLongDoubleSize();
 	}
 }

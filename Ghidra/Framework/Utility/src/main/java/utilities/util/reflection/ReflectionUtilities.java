@@ -21,7 +21,7 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
-import ghidra.util.exception.AssertException;
+import ghidra.util.Msg;
 
 public class ReflectionUtilities {
 
@@ -240,13 +240,15 @@ public class ReflectionUtilities {
 		}
 
 		if (lastIgnoreIndex == -1) {
-			throw new AssertException("Did not find the following classes in the call stack: " +
-				Arrays.toString(classes));
+			Msg.error(ReflectionUtilities.class,
+				"Change call to ReflectionUtils.  Did not find the " +
+					"following classes in the call stack: " + Arrays.toString(classes));
 		}
 
 		if (lastIgnoreIndex == trace.length - 1) {
-			throw new AssertException(
-				"Call stack only contains the classes to ignore: " + Arrays.toString(classes));
+			Msg.error(ReflectionUtilities.class,
+				"Change call to ReflectionUtils. Call stack only contains the classes to ignore: " +
+					Arrays.toString(classes));
 		}
 
 		int startIndex = lastIgnoreIndex + 1;
@@ -499,14 +501,31 @@ public class ReflectionUtilities {
 	 * @return the string
 	 */
 	public static String stackTraceToString(Throwable t) {
-		StringBuffer sb = new StringBuffer();
+		return stackTraceToString(t.getMessage(), t);
+	}
+
+	/**
+	 * Turns the given {@link Throwable} into a String version of its 
+	 * {@link Throwable#printStackTrace()} method.
+	 * 
+	 * @param message the preferred message to use.  If null, the throwable message will be used
+	 * @param t the throwable
+	 * @return the string
+	 */
+	public static String stackTraceToString(String message, Throwable t) {
+		StringBuilder sb = new StringBuilder();
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		PrintStream ps = new PrintStream(baos);
 
-		String msg = t.getMessage();
-		if (msg != null) {
-			ps.println(msg);
+		if (message != null) {
+			ps.println(message);
+		}
+		else {
+			String throwableMessage = t.getMessage();
+			if (throwableMessage != null) {
+				ps.println(throwableMessage);
+			}
 		}
 
 		t.printStackTrace(ps);

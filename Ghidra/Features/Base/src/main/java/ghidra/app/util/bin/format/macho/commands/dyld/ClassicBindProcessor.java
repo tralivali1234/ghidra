@@ -15,12 +15,12 @@
  */
 package ghidra.app.util.bin.format.macho.commands.dyld;
 
+import java.util.List;
+
 import ghidra.app.util.bin.format.macho.*;
 import ghidra.app.util.bin.format.macho.commands.*;
 import ghidra.program.model.listing.Program;
 import ghidra.util.task.TaskMonitor;
-
-import java.util.List;
 
 public class ClassicBindProcessor extends AbstractClassicProcessor {
 
@@ -44,8 +44,11 @@ public class ClassicBindProcessor extends AbstractClassicProcessor {
 					break;
 				}
 				long address = relocation.getAddress() + getRelocationBase();
-				int symbolIndex = relocation.getSymbolIndex();
+				int symbolIndex = relocation.getValue();
 				NList nList = symbolTableCommand.getSymbolAt(symbolIndex);
+				if (nList == null) {
+					continue;
+				}
 				boolean isWeak = (nList.getDescription() & NListConstants.DESC_N_WEAK_REF) != 0;
 				String fromDylib = getClassicOrdinalName(nList.getLibraryOrdinal());
 				Section section = getSectionName(address);

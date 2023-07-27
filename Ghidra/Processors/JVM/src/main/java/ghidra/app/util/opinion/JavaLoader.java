@@ -39,7 +39,7 @@ import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.task.TaskMonitor;
 
-public class JavaLoader extends AbstractLibrarySupportLoader {
+public class JavaLoader extends AbstractProgramWrapperLoader {
 
 	private static final String JAVA_NAME = "Java Class File";
 	private Register alignmentReg;
@@ -145,16 +145,15 @@ public class JavaLoader extends AbstractLibrarySupportLoader {
 		try {
 			block = memory.createInitializedBlock("method_lookup", address,
 				JavaClassUtil.METHOD_INDEX_SIZE, (byte) 0xff, monitor, false);
+			block.setRead(true);
+			block.setWrite(false);
+			block.setExecute(false);
 		}
-		catch (LockException | DuplicateNameException | MemoryConflictException
+		catch (LockException | MemoryConflictException
 				| AddressOverflowException | CancelledException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		block.setRead(true);
-		block.setWrite(false);
-		block.setExecute(false);
-
 	}
 
 	private void createMethodMemoryBlocks(Program program, ByteProvider provider,

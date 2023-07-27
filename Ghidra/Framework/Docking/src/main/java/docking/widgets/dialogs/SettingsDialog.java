@@ -52,6 +52,8 @@ public class SettingsDialog extends DialogComponentProvider {
 		if (help != null) {
 			setHelpLocation(help);
 		}
+
+		setTransient(true);
 		addWorkPanel(buildWorkPanel());
 		addDismissButton();
 
@@ -68,11 +70,12 @@ public class SettingsDialog extends DialogComponentProvider {
 		DockingWindowManager.showDialog(parent, this);
 	}
 
+	@Override
 	public void dispose() {
 		settingsTable.editingStopped(null);
 		settingsTable.dispose();
 
-		close();
+		super.dispose();
 		settingsDefs = null;
 		settings = null;
 	}

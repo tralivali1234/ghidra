@@ -1,6 +1,5 @@
 /* ###
  * IP: GHIDRA
- * REVIEWED: YES
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -109,12 +108,17 @@ class LibraryDB implements Library {
 
 	@Override
 	public String getAssociatedProgramPath() {
-		return symbol.getSymbolData3();
+		return symbol.getSymbolStringData();
 	}
 
 	@Override
 	public boolean isExternal() {
 		return true;
+	}
+
+	@Override
+	public String toString() {
+		return getName();
 	}
 
 }

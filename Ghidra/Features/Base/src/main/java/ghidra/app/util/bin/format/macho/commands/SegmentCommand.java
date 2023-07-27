@@ -19,7 +19,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.format.macho.*;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.flatapi.FlatProgramAPI;
@@ -31,9 +31,7 @@ import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.task.TaskMonitor;
 
 /**
- * Represents a segment_command and segment_command_64 structure.
- * 
- * @see <a href="https://opensource.apple.com/source/xnu/xnu-4570.71.2/EXTERNAL_HEADERS/mach-o/loader.h.auto.html">mach-o/loader.h</a> 
+ * Represents a segment_command and segment_command_64 structure 
  */
 public class SegmentCommand extends LoadCommand {
 
@@ -50,31 +48,16 @@ public class SegmentCommand extends LoadCommand {
 	private boolean is32bit;
 	private List<Section> sections = new ArrayList<Section>();
 
-	public static SegmentCommand createSegmentCommand(FactoryBundledWithBinaryReader reader,
-			boolean is32bit) throws IOException {
-		SegmentCommand segmentCommand =
-			(SegmentCommand) reader.getFactory().create(SegmentCommand.class);
-		segmentCommand.initSegmentCommand(reader, is32bit);
-		return segmentCommand;
-	}
-
-	/**
-	 * DO NOT USE THIS CONSTRUCTOR, USE create*(GenericFactory ...) FACTORY METHODS INSTEAD.
-	 */
-	public SegmentCommand() {
-	}
-
-	private void initSegmentCommand(FactoryBundledWithBinaryReader reader, boolean is32bit)
-			throws IOException {
-		initLoadCommand(reader);
+	public SegmentCommand(BinaryReader reader, boolean is32bit) throws IOException {
+		super(reader);
 		this.is32bit = is32bit;
 
 		segname = reader.readNextAsciiString(MachConstants.NAME_LENGTH);
 		if (is32bit) {
-			vmaddr = reader.readNextInt() & 0xffffffffL;
-			vmsize = reader.readNextInt() & 0xffffffffL;
-			fileoff = reader.readNextInt() & 0xffffffffL;
-			filesize = reader.readNextInt() & 0xffffffffL;
+			vmaddr = reader.readNextUnsignedInt();
+			vmsize = reader.readNextUnsignedInt();
+			fileoff = reader.readNextUnsignedInt();
+			filesize = reader.readNextUnsignedInt();
 		}
 		else {
 			vmaddr = reader.readNextLong();
@@ -88,7 +71,7 @@ public class SegmentCommand extends LoadCommand {
 		flags = reader.readNextInt();
 
 		for (int i = 0; i < nsects; ++i) {
-			sections.add(Section.createSection(reader, is32bit));
+			sections.add(new Section(reader, is32bit));
 		}
 	}
 
@@ -122,6 +105,10 @@ public class SegmentCommand extends LoadCommand {
 	}
 
 	public long getVMaddress() {
+		// Mask off possible chained fixup found in kernelcache segment addresses
+		if ((vmaddr & 0xfff000000000L) == 0xfff000000000L) {
+			return vmaddr | 0xffff000000000000L;
+		}
 		return vmaddr;
 	}
 
@@ -129,12 +116,24 @@ public class SegmentCommand extends LoadCommand {
 		return vmsize;
 	}
 
+	public void setVMsize(long vmSize) {
+		vmsize = vmSize;
+	}
+
 	public long getFileOffset() {
 		return fileoff;
+	}
+	
+	public void setFileOffset(long fileOffset) {
+		fileoff = fileOffset;
 	}
 
 	public long getFileSize() {
 		return filesize;
+	}
+
+	public void setFileSize(long fileSize) {
+		filesize = fileSize;
 	}
 
 	/**
@@ -229,59 +228,53 @@ public class SegmentCommand extends LoadCommand {
 	}
 
 	@Override
-	public void markup(MachHeader header, FlatProgramAPI api, Address baseAddress, boolean isBinary,
+	public void markupRawBinary(MachHeader header, FlatProgramAPI api, Address baseAddress,
 			ProgramModule parentModule, TaskMonitor monitor, MessageLog log) {
-		updateMonitor(monitor);
 		try {
-			if (isBinary) {
-				createFragment(api, baseAddress, parentModule);
-				Address addr = baseAddress.getNewAddress(getStartIndex());
-				DataType segmentDT = toDataType();
-				api.createData(addr, segmentDT);
-				api.setPlateComment(addr, getSegmentName());
+			super.markupRawBinary(header, api, baseAddress, parentModule, monitor, log);
+			Address addr = baseAddress.getNewAddress(getStartIndex());
 
-				Address sectionAddress = addr.add(segmentDT.getLength());
-				for (Section section : sections) {
-					if (monitor.isCancelled()) {
-						return;
-					}
-					DataType sectionDT = section.toDataType();
-					api.createData(sectionAddress, sectionDT);
-					api.setPlateComment(sectionAddress, section.toString());
-					sectionAddress = sectionAddress.add(sectionDT.getLength());
+			Address sectionAddress = addr.add(toDataType().getLength());
+			for (Section section : sections) {
+				if (monitor.isCancelled()) {
+					return;
+				}
+				DataType sectionDT = section.toDataType();
+				api.createData(sectionAddress, sectionDT);
+				api.setPlateComment(sectionAddress, section.toString());
+				sectionAddress = sectionAddress.add(sectionDT.getLength());
 
-					if (section.getType() == SectionTypes.S_ZEROFILL) {
-						continue;
-					}
-					if (header.getFileType() == MachHeaderFileTypes.MH_DYLIB_STUB) {
-						continue;
-					}
+				if (section.getType() == SectionTypes.S_ZEROFILL) {
+					continue;
+				}
+				if (header.getFileType() == MachHeaderFileTypes.MH_DYLIB_STUB) {
+					continue;
+				}
 
-					Address sectionByteAddr = baseAddress.add(section.getOffset());
-					if (section.getSize() > 0) {
-						api.createLabel(sectionByteAddr, section.getSectionName(), true,
-							SourceType.IMPORTED);
-						api.createFragment(parentModule, "SECTION_BYTES", sectionByteAddr,
-							section.getSize());
-					}
+				Address sectionByteAddr = baseAddress.add(section.getOffset());
+				if (section.getSize() > 0) {
+					api.createLabel(sectionByteAddr, section.getSectionName(), true,
+						SourceType.IMPORTED);
+					api.createFragment(parentModule, "SECTION_BYTES", sectionByteAddr,
+						section.getSize());
+				}
 
-					if (section.getRelocationOffset() > 0) {
-						Address relocStartAddr = baseAddress.add(section.getRelocationOffset());
-						long offset = 0;
-						List<RelocationInfo> relocations = section.getRelocations();
-						for (RelocationInfo reloc : relocations) {
-							if (monitor.isCancelled()) {
-								return;
-							}
-							DataType relocDT = reloc.toDataType();
-							Address relocAddr = relocStartAddr.add(offset);
-							api.createData(relocAddr, relocDT);
-							api.setPlateComment(relocAddr, reloc.toString());
-							offset += relocDT.getLength();
+				if (section.getRelocationOffset() > 0) {
+					Address relocStartAddr = baseAddress.add(section.getRelocationOffset());
+					long offset = 0;
+					List<RelocationInfo> relocations = section.getRelocations();
+					for (RelocationInfo reloc : relocations) {
+						if (monitor.isCancelled()) {
+							return;
 						}
-						api.createFragment(parentModule, section.getSectionName() + "_Relocations",
-							relocStartAddr, offset);
+						DataType relocDT = reloc.toDataType();
+						Address relocAddr = relocStartAddr.add(offset);
+						api.createData(relocAddr, relocDT);
+						api.setPlateComment(relocAddr, reloc.toString());
+						offset += relocDT.getLength();
 					}
+					api.createFragment(parentModule, section.getSectionName() + "_Relocations",
+						relocStartAddr, offset);
 				}
 			}
 		}

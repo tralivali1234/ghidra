@@ -26,16 +26,16 @@ import ghidra.util.exception.*;
 import ghidra.util.task.TaskMonitor;
 
 /**
- * <code>CompositeMember</code> provides the ability to process PDB data-type records and 
- * incrementally build-up composite structure and union data-types from a flattened offset-based 
- * list of members which may include embedded anonymous composite members.  Composite members 
+ * <code>CompositeMember</code> provides the ability to process PDB data-type records and
+ * incrementally build-up composite structure and union data-types from a flattened offset-based
+ * list of members which may include embedded anonymous composite members.  Composite members
  * correspond to either hard predefined data-types, or structure/union containers whose members
- * are added and refined incrementally.  
+ * are added and refined incrementally.
  * <p>
- * Container members are characterized by a null data-type name, zero length, and will be 
- * identified as either a structure or union. 
+ * Container members are characterized by a null data-type name, zero length, and will be
+ * identified as either a structure or union.
  */
-class DefaultCompositeMember extends CompositeMember {
+public class DefaultCompositeMember extends CompositeMember {
 
 	private static int MAX_CONSTRUCTION_DEPTH = 20;
 
@@ -143,7 +143,7 @@ class DefaultCompositeMember extends CompositeMember {
 	 * @param componentOffset member offset within parent
 	 * @param baseDataType bitfield base datatype
 	 * @param bitSize bitfield size in bits
-	 * @param bitOffsetWithinBaseType offset of bitfield within base type 
+	 * @param bitOffsetWithinBaseType offset of bitfield within base type
 	 * @throws InvalidDataTypeException invalid baseDataType for bitfield
 	 */
 	private DefaultCompositeMember(int componentOffset, DataType baseDataType, int bitSize,
@@ -220,7 +220,7 @@ class DefaultCompositeMember extends CompositeMember {
 			parent.memberNameChanged(oldMemberName, memberName);
 		}
 		catch (InvalidNameException | DuplicateNameException e) {
-			// exceptions are unexpected 
+			// exceptions are unexpected
 			throw new AssertException(e);
 		}
 	}
@@ -234,8 +234,11 @@ class DefaultCompositeMember extends CompositeMember {
 			// transform last member into flexible array
 			Structure struct = (Structure) memberDataType;
 			Array array = (Array) m.getDataType();
-			struct.setFlexibleArrayComponent(array.getDataType(), m.getName(), m.memberComment); // use unmodified comment
-			struct.delete(struct.getNumComponents() - 1);
+			// TODO: there may be a more direct approach since we now handle zero-length array instantiation
+			struct.delete(struct.getNumComponents() - 1); // delete placeholder component
+			struct.insertAtOffset(m.memberOffset,
+				new ArrayDataType(array.getDataType(), 0, 1, dataTypeManager), 0, m.getName(),
+				m.memberComment); // use unmodified comment
 		}
 	}
 
@@ -266,7 +269,7 @@ class DefaultCompositeMember extends CompositeMember {
 	}
 
 	/**
-	 * Adjust unaligned structure following member reconstruction.
+	 * Adjust non-packed structure following member reconstruction.
 	 * @param preferredSize preferred size
 	 */
 	private void adjustSize(int preferredSize) {
@@ -286,7 +289,7 @@ class DefaultCompositeMember extends CompositeMember {
 			return;
 		}
 
-		DataTypeComponent dtc = struct.getComponentAt(preferredSize);
+		DataTypeComponent dtc = struct.getComponentContaining(preferredSize);
 		if (dtc == null) {
 			return;
 		}
@@ -306,7 +309,7 @@ class DefaultCompositeMember extends CompositeMember {
 	}
 
 	/**
-	 * Align container composite data type if possible.  
+	 * Align container composite data type if possible.
 	 * @param preferredSize preferred size of composite if known, else <= 0 if unknown
 	 */
 	private void alignComposite(int preferredSize) {
@@ -325,18 +328,29 @@ class DefaultCompositeMember extends CompositeMember {
 		Composite copy = (Composite) composite.copy(dataTypeManager);
 
 		int pack = 0;
-		copy.setPackingValue(pack);
+		copy.setToDefaultPacking();
 
 		boolean alignOK = isGoodAlignment(copy, preferredSize);
-		if (!alignOK) {
-			pack = 1;
-			copy.setPackingValue(pack);
-			alignOK = isGoodAlignment(copy, preferredSize);
-		}
 		if (alignOK) {
-			composite.setPackingValue(pack);
+			composite.setToDefaultPacking();
 		}
-		else if (errorConsumer != null && !isClass) { // don't complain about Class structs which always fail
+		else {
+			copy.setToMachineAligned();
+			alignOK = isGoodAlignment(copy, preferredSize);
+			if (alignOK) {
+				composite.setToDefaultPacking();
+				composite.setToMachineAligned();
+			}
+			else {
+				pack = 1;
+				copy.setExplicitPackingValue(pack);
+				alignOK = isGoodAlignment(copy, preferredSize);
+				if (alignOK) {
+					composite.setExplicitPackingValue(pack);
+				}
+			}
+		}
+		if (!alignOK && errorConsumer != null && !isClass) { // don't complain about Class structs which always fail
 			String anonymousStr = parent != null ? " anonymous " : "";
 			errorConsumer.accept("PDB " + anonymousStr + memberType +
 				" reconstruction failed to align " + composite.getPathName());
@@ -352,11 +366,11 @@ class DefaultCompositeMember extends CompositeMember {
 		if (alignOK && isStructureContainer()) {
 			// verify that components did not move
 			Structure struct = (Structure) memberDataType;
-			DataTypeComponent[] unalignedComponents = struct.getDefinedComponents();
+			DataTypeComponent[] nonPackedComponents = struct.getDefinedComponents();
 			int index = 0;
 			for (DataTypeComponent dtc : testComposite.getComponents()) {
-				DataTypeComponent unalignedDtc = unalignedComponents[index++];
-				if (!isComponentUnchanged(dtc, unalignedDtc)) {
+				DataTypeComponent nonPackedDtc = nonPackedComponents[index++];
+				if (!isComponentUnchanged(dtc, nonPackedDtc)) {
 					alignOK = false;
 					break;
 				}
@@ -365,18 +379,18 @@ class DefaultCompositeMember extends CompositeMember {
 		return alignOK;
 	}
 
-	private boolean isComponentUnchanged(DataTypeComponent dtc, DataTypeComponent unalignedDtc) {
-		if (unalignedDtc.getOffset() != dtc.getOffset() ||
-			unalignedDtc.getLength() != dtc.getLength() ||
-			unalignedDtc.isBitFieldComponent() != dtc.isBitFieldComponent()) {
+	private boolean isComponentUnchanged(DataTypeComponent dtc, DataTypeComponent nonPackedDtc) {
+		if (nonPackedDtc.getOffset() != dtc.getOffset() ||
+			nonPackedDtc.getLength() != dtc.getLength() ||
+			nonPackedDtc.isBitFieldComponent() != dtc.isBitFieldComponent()) {
 			return false;
 		}
 		if (dtc.isBitFieldComponent()) {
 			// both components are bit fields
 			BitFieldDataType bitfieldDt = (BitFieldDataType) dtc.getDataType();
-			BitFieldDataType unalignedBitfieldDt = (BitFieldDataType) unalignedDtc.getDataType();
-			if (bitfieldDt.getBitOffset() != unalignedBitfieldDt.getBitOffset() ||
-				bitfieldDt.getBitSize() != unalignedBitfieldDt.getBitSize()) {
+			BitFieldDataType nonPackedBitfieldDt = (BitFieldDataType) nonPackedDtc.getDataType();
+			if (bitfieldDt.getBitOffset() != nonPackedBitfieldDt.getBitOffset() ||
+				bitfieldDt.getBitSize() != nonPackedBitfieldDt.getBitSize()) {
 				return false;
 			}
 		}
@@ -497,7 +511,7 @@ class DefaultCompositeMember extends CompositeMember {
 	 * false if unable to resolve member's data-type or other error occurred.
 	 * NOTE: there may be complex hierarchies not yet handled.
 	 * @throws CancelledException if operation cancelled
-	 * @throws DataTypeDependencyException if child's datatype can not be resolved.  
+	 * @throws DataTypeDependencyException if child's datatype can not be resolved.
 	 * It may be possible to skip and continue with next child.
 	 */
 	private boolean addMember(PdbMember child, TaskMonitor monitor)
@@ -807,7 +821,7 @@ class DefaultCompositeMember extends CompositeMember {
 
 	private boolean addStructureMember(DefaultCompositeMember member) {
 		try {
-			// check for conflict within structure container deferred  
+			// check for conflict within structure container deferred
 			int conflictOffset = structureMemberRangeMap.getValue(member.memberOffset);
 			if (conflictOffset < 0) {
 
@@ -1007,7 +1021,7 @@ class DefaultCompositeMember extends CompositeMember {
 		}
 		else if (isStructureContainer()) {
 			Structure struct = (Structure) memberDataType;
-			// TODO: complicated by bitfields
+			// TODO: complicated by bitfields where multiple components may occupy same byte
 			struct.deleteAtOffset(newContainerMember.getOffset());
 			struct.insertAtOffset(newContainerMember.getOffset(), newContainerMember.getDataType(),
 				newContainerMember.getLength());
@@ -1080,10 +1094,10 @@ class DefaultCompositeMember extends CompositeMember {
 
 	/**
 	 * This method facilitates the removal and collection of all siblings of this
-	 * member from its parent container.  Only those siblings whose offset is greater 
-	 * than this member's offset will be included.  The use of this method is necessary when 
-	 * a member sequence has been added to a structure container and it is later decided to 
-	 * push this member and its siblings into a new sub-composite.  Before they can be 
+	 * member from its parent container.  Only those siblings whose offset is greater
+	 * than this member's offset will be included.  The use of this method is necessary when
+	 * a member sequence has been added to a structure container and it is later decided to
+	 * push this member and its siblings into a new sub-composite.  Before they can be
 	 * added to the new container they must be removed from their current container
 	 * using this method.
 	 * @return list of sibling structure members removed from parent
@@ -1139,8 +1153,8 @@ class DefaultCompositeMember extends CompositeMember {
 	}
 
 	/**
-	 * Buildup an empty composite by applying datatype composite members.  
-	 * Only those children with a kind of "Member" will be processed. 
+	 * Buildup an empty composite by applying datatype composite members.
+	 * Only those children with a kind of "Member" will be processed.
 	 * @param composite empty composite to which members will be added
 	 * @param isClass true if composite corresponds to a Class structure, else false
 	 * @param preferredCompositeSize preferred size of composite, <= 0 indicates unknown
@@ -1150,7 +1164,7 @@ class DefaultCompositeMember extends CompositeMember {
 	 * @return true if members successfully added to composite
 	 * @throws CancelledException if monitor is cancelled
 	 */
-	static boolean applyDataTypeMembers(Composite composite, boolean isClass,
+	public static boolean applyDataTypeMembers(Composite composite, boolean isClass,
 			int preferredCompositeSize, List<? extends PdbMember> members,
 			Consumer<String> errorConsumer, TaskMonitor monitor) throws CancelledException {
 
@@ -1160,7 +1174,7 @@ class DefaultCompositeMember extends CompositeMember {
 			new DefaultCompositeMember(isClass, editComposite, errorConsumer);
 
 		for (PdbMember m : members) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			try {
 				if (!rootMember.addMember(m, monitor)) {
 					return false;
@@ -1189,8 +1203,8 @@ class DefaultCompositeMember extends CompositeMember {
 	private static enum MemberType {
 
 		//@formatter:off
-		STRUCTURE, 
-		UNION, 
+		STRUCTURE,
+		UNION,
 		MEMBER;
 		//@formatter:on
 

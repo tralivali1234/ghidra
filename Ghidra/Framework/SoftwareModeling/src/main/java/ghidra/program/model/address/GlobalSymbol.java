@@ -34,8 +34,8 @@ public class GlobalSymbol implements Symbol {
 	}
 
 	@Override
-	public boolean checkIsValid() {
-		return true;
+	public boolean isDeleted() {
+		return false;
 	}
 
 	@Override
@@ -68,7 +68,7 @@ public class GlobalSymbol implements Symbol {
 
 	@Override
 	public Program getProgram() {
-		return null;
+		return globalNamespace.memory.getProgram();
 	}
 
 	@Override

@@ -15,14 +15,14 @@
  */
 package ghidra.app.util.viewer.field;
 
-import java.awt.Color;
 import java.util.*;
 import java.util.regex.Pattern;
 
 import docking.widgets.fieldpanel.field.AttributedString;
+import generic.theme.GThemeDefaults.Colors.Messages;
+import generic.theme.GThemeDefaults.Colors.Palette;
 import ghidra.app.nav.Navigatable;
 import ghidra.app.services.GoToService;
-import ghidra.app.services.QueryData;
 import ghidra.app.util.NamespaceUtils;
 import ghidra.framework.plugintool.ServiceProvider;
 import ghidra.program.model.address.Address;
@@ -91,7 +91,7 @@ public class SymbolAnnotatedStringHandler implements AnnotatedStringHandler {
 				prototypeString.getFontMetrics(0), true, prototypeString.getColor(0));
 		}
 
-		return new AttributedString("No symbol: " + text[1], Color.RED,
+		return new AttributedString("No symbol: " + text[1], Messages.ERROR,
 			prototypeString.getFontMetrics(0), false, null);
 	}
 
@@ -102,7 +102,7 @@ public class SymbolAnnotatedStringHandler implements AnnotatedStringHandler {
 			buffer.append(string).append(" ");
 		}
 
-		return new AttributedString(buffer.toString(), Color.LIGHT_GRAY,
+		return new AttributedString(buffer.toString(), Palette.LIGHT_GRAY,
 			prototypeString.getFontMetrics(0));
 	}
 
@@ -142,8 +142,8 @@ public class SymbolAnnotatedStringHandler implements AnnotatedStringHandler {
 
 		// try going to the symbol first
 		if (!symbols.isEmpty()) {
-			QueryData data = new QueryData(symbols.get(0).getName(), true);
-			return goToService.goToQuery(sourceNavigatable, null, data, null, null);
+			Symbol s = symbols.get(0);
+			return goToService.goTo(s.getProgramLocation());
 		}
 
 		// try going to the address
@@ -158,20 +158,19 @@ public class SymbolAnnotatedStringHandler implements AnnotatedStringHandler {
 		return false;
 	}
 
-	/**
-	 * @see ghidra.app.util.viewer.field.AnnotatedStringHandler#getDisplayString()
-	 */
 	@Override
 	public String getDisplayString() {
 		return "Symbol";
 	}
 
-	/**
-	 * @see ghidra.app.util.viewer.field.AnnotatedStringHandler#getPrototypeString()
-	 */
 	@Override
 	public String getPrototypeString() {
 		return "{@symbol symbol_address}";
+	}
+
+	@Override
+	public String getPrototypeString(String displayText) {
+		return "{@symbol " + displayText.trim() + "}";
 	}
 
 }

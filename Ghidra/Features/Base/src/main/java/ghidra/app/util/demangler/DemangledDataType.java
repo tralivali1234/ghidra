@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.commons.lang3.StringUtils;
+
 import ghidra.program.database.data.DataTypeUtilities;
 import ghidra.program.model.data.*;
 import ghidra.program.model.data.Enum;
@@ -30,6 +32,12 @@ import ghidra.program.model.symbol.Namespace;
  */
 public class DemangledDataType extends DemangledType {
 
+	protected static final CategoryPath DEMANGLER_ROOT_CATEGORY_PATH =
+		CategoryPath.ROOT.extend("Demangler");
+
+	protected static final CategoryPath DEMANGLER_ANONYMOUS_FUNCTION_CATEGORY_PATH =
+		DEMANGLER_ROOT_CATEGORY_PATH.extend("!_anon_funcs_");
+
 	private static final Pattern ARRAY_SUBSCRIPT_PATTERN = Pattern.compile("\\[\\d*\\]");
 
 	public static final char SPACE = ' ';
@@ -39,6 +47,7 @@ public class DemangledDataType extends DemangledType {
 
 	public static final String ARR_NOTATION = "[]";
 	public static final String REF_NOTATION = "&";
+	public static final String RIGHT_REF_NOTATION = "&&";
 	public static final String PTR_NOTATION = "*";
 
 	public static final String VOLATILE = "volatile";
@@ -56,6 +65,8 @@ public class DemangledDataType extends DemangledType {
 	public final static String BOOL = "bool";
 	public final static String CHAR = "char";
 	public final static String WCHAR_T = "wchar_t";
+	public final static String WCHAR16 = "char16_t";
+	public final static String WCHAR32 = "char32_t";
 	public final static String SHORT = "short";
 	public final static String INT = "int";
 	public final static String INT0_T = "int0_t";
@@ -81,15 +92,20 @@ public class DemangledDataType extends DemangledType {
 	private static final String UNSIGNED_INT = "unsigned int";
 	private static final String UNSIGNED_LONG = "unsigned long";
 
-	public final static String[] PRIMITIVES = { VOID, BOOL, CHAR, WCHAR_T, SHORT, INT, INT0_T, LONG,
-		LONG_LONG, FLOAT, DOUBLE, INT128, FLOAT128, LONG_DOUBLE, };
+	public final static String[] PRIMITIVES =
+		{ VOID, BOOL, CHAR, WCHAR_T, WCHAR16, WCHAR32, SHORT, INT, INT0_T, LONG,
+			LONG_LONG, FLOAT, DOUBLE, INT128, FLOAT128, LONG_DOUBLE, };
 
 	private int arrayDimensions = 0;
 	private boolean isClass;
 	private boolean isComplex;
 	private boolean isEnum;
 	private boolean isPointer64;
-	private boolean isReference;
+	// Cannot be both lref and rref.  Prior to C++11, we only had reference (& operator).
+	// This is now distinguished as left-value reference (l-value reference or lref), and there
+	// is now an additional right-value reference (r-value reference or rref) with the && operator.
+	private boolean isLValueReference;
+	private boolean isRValueReference;
 	private boolean isSigned;
 	private boolean isStruct;
 	private boolean isTemplate;
@@ -142,33 +158,33 @@ public class DemangledDataType extends DemangledType {
 			}
 			else if (isUnion()) {
 				if (baseType == null || !(baseType instanceof Union)) {
-					dt = new UnionDataType(getDemanglerCategoryPath(name, getNamespace()), name);
+					dt = new UnionDataType(getDemanglerCategoryPath(getNamespace()), name);
 				}
 			}
 			else if (isEnum()) {
 				if (baseType == null || !(baseType instanceof Enum)) {
 
 					if (enumType == null || INT.equals(enumType) || UNSIGNED_INT.equals(enumType)) {
-						// Can't tell how big an enum is, just use the size of a pointer	
-						dt = new EnumDataType(getDemanglerCategoryPath(name, getNamespace()), name,
+						// Can't tell how big an enum is, just use the size of a pointer
+						dt = new EnumDataType(getDemanglerCategoryPath(getNamespace()), name,
 							dataTypeManager.getDataOrganization().getIntegerSize());
 					}
 					else if (CHAR.equals(enumType) || UNSIGNED_CHAR.equals(enumType)) {
-						dt = new EnumDataType(getDemanglerCategoryPath(name, getNamespace()), name,
+						dt = new EnumDataType(getDemanglerCategoryPath(getNamespace()), name,
 							dataTypeManager.getDataOrganization().getCharSize());
 
 					}
 					else if (SHORT.equals(enumType) || UNSIGNED_SHORT.equals(enumType)) {
-						dt = new EnumDataType(getDemanglerCategoryPath(name, getNamespace()), name,
+						dt = new EnumDataType(getDemanglerCategoryPath(getNamespace()), name,
 							dataTypeManager.getDataOrganization().getShortSize());
 
 					}
 					else if (LONG.equals(enumType) || UNSIGNED_LONG.equals(enumType)) {
-						dt = new EnumDataType(getDemanglerCategoryPath(name, getNamespace()), name,
+						dt = new EnumDataType(getDemanglerCategoryPath(getNamespace()), name,
 							dataTypeManager.getDataOrganization().getLongSize());
 					}
 					else {
-						dt = new EnumDataType(getDemanglerCategoryPath(name, getNamespace()), name,
+						dt = new EnumDataType(getDemanglerCategoryPath(getNamespace()), name,
 							dataTypeManager.getDataOrganization().getIntegerSize());
 					}
 				}
@@ -184,7 +200,7 @@ public class DemangledDataType extends DemangledType {
 				// I don't know what this is
 				// If it isn't pointed to, or isn't a referent, then assume typedef.
 				if (!(isReference() || isPointer())) { // Unknown type
-					dt = new TypedefDataType(getDemanglerCategoryPath(name, getNamespace()), name,
+					dt = new TypedefDataType(getDemanglerCategoryPath(getNamespace()), name,
 						new DWordDataType());
 				}
 				else {
@@ -196,13 +212,20 @@ public class DemangledDataType extends DemangledType {
 		}
 
 		int numPointers = getPointerLevels();
-		if (isReference()) {
-			numPointers++;
-		}
 
 		for (int i = 0; i < numPointers; ++i) {
 			dt = PointerDataType.getPointer(dt, dataTypeManager);
 		}
+
+		if (isLValueReference()) {
+			// Placeholder in prep for more lref work
+			dt = PointerDataType.getPointer(dt, dataTypeManager);
+		}
+		else if (isRValueReference()) {
+			// Placeholder in prep for more rref work
+			dt = PointerDataType.getPointer(dt, dataTypeManager);
+		}
+
 		return dt;
 	}
 
@@ -222,6 +245,15 @@ public class DemangledDataType extends DemangledType {
 			else {
 				dt = CharDataType.dataType;
 			}
+		}
+		else if (WCHAR_T.equals(name)) {
+			dt = WideCharDataType.dataType;
+		}
+		else if (WCHAR16.equals(name)) {
+			dt = WideChar16DataType.dataType;
+		}
+		else if (WCHAR32.equals(name)) {
+			dt = WideChar32DataType.dataType;
 		}
 		else if (SHORT.equals(name)) {
 			if (isUnsigned()) {
@@ -330,7 +362,7 @@ public class DemangledDataType extends DemangledType {
 	 * Find non-builtin type
 	 * @param dataTypeManager data type manager to be searched
 	 * @param dtName name of data type
-	 * @param namespace namespace associated with dtName or null if not applicable.  If specified, 
+	 * @param namespace namespace associated with dtName or null if not applicable.  If specified,
 	 * a namespace-base category path will be given precedence.
 	 * @return data type if found, otherwise null.
 	 * @see DataTypeUtilities#findDataType(DataTypeManager, ghidra.program.model.symbol.Namespace, String, Class) for similar namespace
@@ -338,6 +370,9 @@ public class DemangledDataType extends DemangledType {
 	 */
 	static DataType findDataType(DataTypeManager dataTypeManager, Demangled namespace,
 			String dtName) {
+
+		// TODO: add support for use of Program.getPreferredRootNamespaceCategoryPath when
+		// searching for datatypes
 
 		List<DataType> list = new ArrayList<>();
 		dataTypeManager.findDataTypes(dtName, list);
@@ -388,24 +423,21 @@ public class DemangledDataType extends DemangledType {
 		return true;
 	}
 
-	private static String getNamespacePath(String dtName, Demangled namespace) {
-		Demangled ns = namespace;
-		String namespacePath = "";
-		while (ns != null) {
-			namespacePath = "/" + ns.getName() + namespacePath;
-			ns = ns.getNamespace();
+	// Recursive method
+	protected static CategoryPath getDemanglerCategoryPath(Demangled namespace) {
+		if (namespace == null) {
+			return DEMANGLER_ROOT_CATEGORY_PATH;
 		}
-		return namespacePath;
-	}
-
-	private static CategoryPath getDemanglerCategoryPath(String dtName, Demangled namespace) {
-		return new CategoryPath("/Demangler" + getNamespacePath(dtName, namespace));
+		return getDemanglerCategoryPath(namespace.getNamespace()).extend(namespace.getName());
 	}
 
 	static Structure createPlaceHolderStructure(String dtName, Demangled namespace) {
+		if (StringUtils.isBlank(dtName)) {
+			throw new IllegalArgumentException("Name cannot be blank");
+		}
 		StructureDataType structDT = new StructureDataType(dtName, 0);
 		structDT.setDescription("PlaceHolder Structure");
-		structDT.setCategoryPath(getDemanglerCategoryPath(dtName, namespace));
+		structDT.setCategoryPath(getDemanglerCategoryPath(namespace));
 		return structDT;
 	}
 
@@ -442,7 +474,22 @@ public class DemangledDataType extends DemangledType {
 	}
 
 	public void setReference() {
-		isReference = true;
+		setLValueReference();
+	}
+
+	public void setLValueReference() {
+		isLValueReference = true;
+		// Cannot be both
+		isRValueReference = false;
+	}
+
+	/**
+	 * rvalue reference; C++11
+	 */
+	public void setRValueReference() {
+		isRValueReference = true;
+		// Cannot be both
+		isLValueReference = false;
 	}
 
 	public void setSigned() {
@@ -522,7 +569,15 @@ public class DemangledDataType extends DemangledType {
 	}
 
 	public boolean isReference() {
-		return isReference;
+		return isLValueReference() || isRValueReference();
+	}
+
+	public boolean isLValueReference() {
+		return isLValueReference;
+	}
+
+	public boolean isRValueReference() {
+		return isRValueReference;
 	}
 
 	public boolean isSigned() {
@@ -669,11 +724,14 @@ public class DemangledDataType extends DemangledType {
 			buffer.append(SPACE + PTR_NOTATION);
 		}
 
-		if (isReference) {
+		if (isLValueReference) {
 			buffer.append(SPACE + REF_NOTATION);
 		}
+		else if (isRValueReference) {
+			buffer.append(SPACE + RIGHT_REF_NOTATION);
+		}
 
-		// the order of __ptr64 and __restrict can vary--with fuzzing... 
+		// the order of __ptr64 and __restrict can vary--with fuzzing...
 		// but what is the natural "real symbol" order?
 		if (isPointer64) {
 			buffer.append(SPACE + PTR64);
@@ -703,5 +761,4 @@ public class DemangledDataType extends DemangledType {
 	public String toString() {
 		return getSignature();
 	}
-
 }

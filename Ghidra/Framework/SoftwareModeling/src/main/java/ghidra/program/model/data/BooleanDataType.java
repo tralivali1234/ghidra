@@ -26,9 +26,7 @@ import ghidra.program.model.mem.MemoryAccessException;
 /**
  * Provides a definition of an Ascii byte in a program.
  */
-public class BooleanDataType extends AbstractIntegerDataType {
-
-	private final static long serialVersionUID = 1;
+public class BooleanDataType extends AbstractUnsignedIntegerDataType {
 
 	private static SettingsDefinition[] SETTINGS_DEFS = {};
 
@@ -42,7 +40,7 @@ public class BooleanDataType extends AbstractIntegerDataType {
 	}
 
 	public BooleanDataType(DataTypeManager dtm) {
-		super("bool", false, dtm);
+		super("bool", dtm);
 	}
 
 	@Override
@@ -52,8 +50,9 @@ public class BooleanDataType extends AbstractIntegerDataType {
 
 	@Override
 	public String getDecompilerDisplayName(DecompilerLanguage language) {
-		if (language == DecompilerLanguage.JAVA_LANGUAGE)
+		if (language == DecompilerLanguage.JAVA_LANGUAGE) {
 			return "boolean";
+		}
 		return name;
 	}
 
@@ -65,11 +64,6 @@ public class BooleanDataType extends AbstractIntegerDataType {
 	@Override
 	public int getLength() {
 		return 1; // TODO: Size should probably be based upon data organization
-	}
-
-	@Override
-	public boolean isDynamicallySized() {
-		return false;
 	}
 
 	@Override

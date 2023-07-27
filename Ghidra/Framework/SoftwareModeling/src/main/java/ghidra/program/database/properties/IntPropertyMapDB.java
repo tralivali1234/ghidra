@@ -1,6 +1,5 @@
 /* ###
  * IP: GHIDRA
- * REVIEWED: YES
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +15,22 @@
  */
 package ghidra.program.database.properties;
 
+import java.io.IOException;
+
+import db.*;
+import db.util.ErrorHandler;
 import ghidra.program.database.map.AddressMap;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.util.IntPropertyMap;
 import ghidra.program.util.ChangeManager;
 import ghidra.util.exception.*;
-import ghidra.util.prop.PropertyVisitor;
 import ghidra.util.task.TaskMonitor;
-
-import java.io.IOException;
-
-import db.*;
-import db.util.ErrorHandler;
 
 /**
  * Property manager that deals with properties that are of
  * int type and stored with a database table.
  */
-public class IntPropertyMapDB extends PropertyMapDB implements IntPropertyMap {
+public class IntPropertyMapDB extends PropertyMapDB<Integer> implements IntPropertyMap {
 
 	/**
 	 * Construct a integer property map.
@@ -55,9 +52,7 @@ public class IntPropertyMapDB extends PropertyMapDB implements IntPropertyMap {
 		checkMapVersion(openMode, monitor);
 	}
 
-	/**
-	 * @see ghidra.program.model.util.IntPropertyMap#add(ghidra.program.model.address.Address, int)
-	 */
+	@Override
 	public void add(Address addr, int value) {
 		lock.acquire();
 		try {
@@ -66,24 +61,24 @@ public class IntPropertyMapDB extends PropertyMapDB implements IntPropertyMap {
 			long key = addrMap.getKey(addr, true);
 
 			if (propertyTable == null) {
-				createTable(IntField.class);
+				createTable(IntField.INSTANCE);
 			}
 			else {
 				oldValue = (Integer) cache.get(key);
 				if (oldValue == null) {
-					Record rec = propertyTable.getRecord(key);
+					DBRecord rec = propertyTable.getRecord(key);
 					if (rec != null) {
-						oldValue = new Integer(rec.getIntValue(PROPERTY_VALUE_COL));
+						oldValue = rec.getIntValue(PROPERTY_VALUE_COL);
 					}
 				}
 			}
-			Record rec = schema.createRecord(key);
+			DBRecord rec = schema.createRecord(key);
 
 			rec.setIntValue(PROPERTY_VALUE_COL, value);
 			propertyTable.putRecord(rec);
-			cache.put(key, new Integer(value));
+			cache.put(key, value);
 
-			changeMgr.setPropertyChanged(name, addr, oldValue, new Integer(value));
+			changeMgr.setPropertyChanged(name, addr, oldValue, value);
 		}
 		catch (IOException e) {
 			errHandler.dbError(e);
@@ -93,9 +88,7 @@ public class IntPropertyMapDB extends PropertyMapDB implements IntPropertyMap {
 		}
 	}
 
-	/**
-	 * @see ghidra.program.model.util.IntPropertyMap#getInt(ghidra.program.model.address.Address)
-	 */
+	@Override
 	public int getInt(Address addr) throws NoValueException {
 		if (propertyTable == null) {
 			throw NO_VALUE_EXCEPTION;
@@ -112,7 +105,7 @@ public class IntPropertyMapDB extends PropertyMapDB implements IntPropertyMap {
 				return ((Integer) obj).intValue();
 			}
 
-			Record rec = propertyTable.getRecord(key);
+			DBRecord rec = propertyTable.getRecord(key);
 			if (rec == null) {
 				throw NO_VALUE_EXCEPTION;
 			}
@@ -127,26 +120,13 @@ public class IntPropertyMapDB extends PropertyMapDB implements IntPropertyMap {
 		return 0;
 	}
 
-	/**
-	 * @see ghidra.program.model.util.PropertyMap#getObject(ghidra.program.model.address.Address)
-	 */
-	public Object getObject(Address addr) {
+	@Override
+	public Integer get(Address addr) {
 		try {
-			return new Integer(getInt(addr));
+			return getInt(addr);
 		}
 		catch (NoValueException e) {
 			return null;
-		}
-	}
-
-	/**
-	 * @see ghidra.program.model.util.PropertyMap#applyValue(ghidra.util.prop.PropertyVisitor, ghidra.program.model.address.Address)
-	 */
-	public void applyValue(PropertyVisitor visitor, Address addr) {
-		try {
-			visitor.visit(getInt(addr));
-		}
-		catch (NoValueException e) {
 		}
 	}
 

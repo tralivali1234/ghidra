@@ -24,8 +24,7 @@ import javax.swing.table.*;
 
 import org.junit.*;
 
-import docking.ActionContext;
-import docking.ComponentProvider;
+import docking.*;
 import docking.action.DockingActionIf;
 import docking.widgets.OptionDialog;
 import ghidra.app.plugin.core.datamgr.DataTypeManagerPlugin;
@@ -41,10 +40,6 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 	private PluginTool tool;
 	private TestEnv env;
 	private DataTypeManagerPlugin plugin;
-
-	public EnumEditor2Test() {
-		super();
-	}
 
 	@Before
 	public void setUp() throws Exception {
@@ -69,8 +64,9 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 	@Test
 	public void testInsertRow() throws Exception {
 
-		Category cat = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category cat = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		final Enum enumm = new EnumDataType("Colors", 1);
 		enumm.add("Red", 0);
 		enumm.add("Green", 0x10);
@@ -80,10 +76,10 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		final Enum enumDt = (Enum) cat.addDataType(enumm, DataTypeConflictHandler.DEFAULT_HANDLER);
 		program.endTransaction(transactionID, true);
 		program.flushEvents();
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
-		SwingUtilities.invokeLater(() -> plugin.edit(enumDt));
-		waitForPostedSwingRunnables();
+		runSwingLater(() -> plugin.edit(enumDt));
+		waitForSwing();
 
 		EnumEditorPanel panel = findEditorPanel(tool.getToolFrame());
 		final JTable table = panel.getTable();
@@ -95,7 +91,7 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 		assertEquals("Blue", model.getValueAt(3, EnumTableModel.NAME_COL));
 		assertEquals("Gold", model.getValueAt(2, EnumTableModel.NAME_COL));
-		assertEquals("0x15", model.getValueAt(2, EnumTableModel.VALUE_COL));
+		assertEquals(0x15L, model.getValueAt(2, EnumTableModel.VALUE_COL));
 		// add an entry with a value of 5
 		addEntry(table, model, "Pink", 5);
 		assertEquals(5, model.getRowCount());
@@ -104,8 +100,9 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 	@Test
 	public void testSortColumns() throws Exception {
-		Category cat = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category cat = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		final Enum enumm = new EnumDataType("Colors", 1);
 		enumm.add("Red", 0);
 		enumm.add("Green", 0x10);
@@ -115,10 +112,10 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		final Enum enummDt = (Enum) cat.addDataType(enumm, DataTypeConflictHandler.DEFAULT_HANDLER);
 		program.endTransaction(transactionID, true);
 		program.flushEvents();
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
-		SwingUtilities.invokeLater(() -> plugin.edit(enummDt));
-		waitForPostedSwingRunnables();
+		runSwingLater(() -> plugin.edit(enummDt));
+		waitForSwing();
 
 		EnumEditorPanel panel = findEditorPanel(tool.getToolFrame());
 		final JTable table = panel.getTable();
@@ -128,7 +125,7 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		JTableHeader header = table.getTableHeader();
 		Rectangle rect = header.getHeaderRect(EnumTableModel.NAME_COL);
 		clickMouse(header, 1, rect.x, rect.y, 1, 0);
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
 		assertEquals("Blue", model.getValueAt(0, EnumTableModel.NAME_COL));
 		assertEquals("Green", model.getValueAt(1, EnumTableModel.NAME_COL));
@@ -137,7 +134,7 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		// sort by Value
 		rect = header.getHeaderRect(EnumTableModel.VALUE_COL);
 		clickMouse(header, 1, rect.x, rect.y, 1, 0);
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
 		assertEquals("Red", model.getValueAt(0, EnumTableModel.NAME_COL));
 		assertEquals("Green", model.getValueAt(1, EnumTableModel.NAME_COL));
@@ -145,9 +142,50 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 	}
 
 	@Test
+	public void testSortOnComments() {
+
+		Category cat = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Enum enumm = new EnumDataType("Colors", 1);
+		enumm.add("Red", 0, "1");
+		enumm.add("Green", 0x10, "3");
+		enumm.add("Blue", 0x20, "2");
+
+		Enum enummDt = tx(program, () -> {
+			return (Enum) cat.addDataType(enumm, DataTypeConflictHandler.DEFAULT_HANDLER);
+		});
+
+		runSwingLater(() -> plugin.edit(enummDt));
+		waitForSwing();
+
+		EnumEditorPanel panel = findEditorPanel(tool.getToolFrame());
+		JTable table = panel.getTable();
+		EnumTableModel model = (EnumTableModel) table.getModel();
+
+		// sort by Name
+		JTableHeader header = table.getTableHeader();
+		Rectangle rect = header.getHeaderRect(EnumTableModel.COMMENT_COL);
+		clickMouse(header, 1, rect.x, rect.y, 1, 0);
+		waitForSwing();
+
+		assertEquals("1", model.getValueAt(0, EnumTableModel.COMMENT_COL));
+		assertEquals("2", model.getValueAt(1, EnumTableModel.COMMENT_COL));
+		assertEquals("3", model.getValueAt(2, EnumTableModel.COMMENT_COL));
+
+		clickMouse(header, 1, rect.x, rect.y, 1, 0);
+		waitForSwing();
+
+		assertEquals("3", model.getValueAt(0, EnumTableModel.COMMENT_COL));
+		assertEquals("2", model.getValueAt(1, EnumTableModel.COMMENT_COL));
+		assertEquals("1", model.getValueAt(2, EnumTableModel.COMMENT_COL));
+	}
+
+	@Test
 	public void testSortOrder() throws Exception {
-		Category cat = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category cat = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		final Enum enumm = new EnumDataType("Colors", 1);
 		enumm.add("Red", 0);
 		enumm.add("Green", 0x10);
@@ -157,10 +195,10 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		final Enum enummDt = (Enum) cat.addDataType(enumm, DataTypeConflictHandler.DEFAULT_HANDLER);
 		program.endTransaction(transactionID, true);
 		program.flushEvents();
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
-		SwingUtilities.invokeLater(() -> plugin.edit(enummDt));
-		waitForPostedSwingRunnables();
+		runSwingLater(() -> plugin.edit(enummDt));
+		waitForSwing();
 
 		EnumEditorPanel panel = findEditorPanel(tool.getToolFrame());
 		final JTable table = panel.getTable();
@@ -170,19 +208,19 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		JTableHeader header = table.getTableHeader();
 		Rectangle rect = header.getHeaderRect(EnumTableModel.VALUE_COL);
 		clickMouse(header, 1, rect.x, rect.y, 1, 0);
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
-		assertEquals("0x20", model.getValueAt(0, EnumTableModel.VALUE_COL));
-		assertEquals("0x10", model.getValueAt(1, EnumTableModel.VALUE_COL));
-		assertEquals("0x0", model.getValueAt(2, EnumTableModel.VALUE_COL));
+		assertEquals(0x20L, model.getValueAt(0, EnumTableModel.VALUE_COL));
+		assertEquals(0x10L, model.getValueAt(1, EnumTableModel.VALUE_COL));
+		assertEquals(0L, model.getValueAt(2, EnumTableModel.VALUE_COL));
 
 		// sort by Name
 		rect = header.getHeaderRect(EnumTableModel.NAME_COL);
 		clickMouse(header, 1, rect.x, rect.y, 1, 0);
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		// sort Descending
 		clickMouse(header, 1, rect.x, rect.y, 1, 0);
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		assertEquals("Red", model.getValueAt(0, EnumTableModel.NAME_COL));
 		assertEquals("Green", model.getValueAt(1, EnumTableModel.NAME_COL));
 		assertEquals("Blue", model.getValueAt(2, EnumTableModel.NAME_COL));
@@ -190,8 +228,9 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 	@Test
 	public void testInsertRowByName() throws Exception {
-		Category cat = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category cat = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		final Enum enumm = new EnumDataType("Colors", 1);
 		enumm.add("Red", 0);
 		enumm.add("Green", 0x10);
@@ -201,10 +240,10 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		final Enum enummDt = (Enum) cat.addDataType(enumm, DataTypeConflictHandler.DEFAULT_HANDLER);
 		program.endTransaction(transactionID, true);
 		program.flushEvents();
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
-		SwingUtilities.invokeLater(() -> plugin.edit(enummDt));
-		waitForPostedSwingRunnables();
+		runSwingLater(() -> plugin.edit(enummDt));
+		waitForSwing();
 
 		EnumEditorPanel panel = findEditorPanel(tool.getToolFrame());
 		final JTable table = panel.getTable();
@@ -214,7 +253,7 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		JTableHeader header = table.getTableHeader();
 		Rectangle rect = header.getHeaderRect(EnumTableModel.NAME_COL);
 		clickMouse(header, 1, rect.x, rect.y, 1, 0);
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
 		// insert "Cyan"
 		addEntry(table, model, "Cyan", 0x30);
@@ -236,16 +275,16 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		final DockingActionIf deleteAction = getAction(plugin, "Delete Enum Value");
 		assertTrue(deleteAction.isEnabled());
 
-		SwingUtilities.invokeAndWait(() -> deleteAction.actionPerformed(new ActionContext()));
-		waitForPostedSwingRunnables();
+		runSwing(() -> deleteAction.actionPerformed(new DefaultActionContext()));
+		waitForSwing();
 		assertTrue(table.isRowSelected(3));
 
 		final DockingActionIf applyAction = getAction(plugin, "Apply Enum Changes");
 		assertTrue(applyAction.isEnabled());
 
-		SwingUtilities.invokeAndWait(() -> applyAction.actionPerformed(new ActionContext()));
+		runSwing(() -> applyAction.actionPerformed(new DefaultActionContext()));
 		program.flushEvents();
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
 		assertEquals(4, model.getRowCount());
 		assertEquals(4, enummDt.getCount());
@@ -265,8 +304,8 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 		for (int i = 0; i < count; i++) {
 
-			SwingUtilities.invokeAndWait(() -> deleteAction.actionPerformed(new ActionContext()));
-			waitForPostedSwingRunnables();
+			runSwing(() -> deleteAction.actionPerformed(new DefaultActionContext()));
+			waitForSwing();
 		}
 		assertEquals(0, model.getRowCount());
 		// add an entry so the tear down works properly
@@ -287,8 +326,8 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 		for (int i = 0; i < count; i++) {
 
-			SwingUtilities.invokeAndWait(() -> deleteAction.actionPerformed(new ActionContext()));
-			waitForPostedSwingRunnables();
+			runSwing(() -> deleteAction.actionPerformed(new DefaultActionContext()));
+			waitForSwing();
 		}
 		applyChanges(true);
 		Window w = windowForComponent(table);
@@ -313,20 +352,19 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 		for (int i = 0; i < count; i++) {
 
-			SwingUtilities.invokeAndWait(() -> deleteAction.actionPerformed(new ActionContext()));
-			waitForPostedSwingRunnables();
+			runSwing(() -> deleteAction.actionPerformed(new DefaultActionContext()));
+			waitForSwing();
 		}
 
-		final ComponentProvider provider =
-			waitForComponentProvider(tool.getToolFrame(), EnumEditorProvider.class, 1500);
+		final ComponentProvider provider = waitForComponentProvider(EnumEditorProvider.class);
 		assertNotNull(provider);
-		SwingUtilities.invokeLater(() -> provider.closeComponent());
-		waitForPostedSwingRunnables();
+		runSwingLater(() -> provider.closeComponent());
+		waitForSwing();
 		Window w = windowForComponent(table);
-		OptionDialog d = waitForDialogComponent(tool.getToolFrame(), OptionDialog.class, 2000);
+		OptionDialog d = waitForDialogComponent(OptionDialog.class);
 		assertNotNull(d);
 		pressButtonByText(d.getComponent(), "Yes");
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
 		assertTrue(tool.isVisible(provider));
 		String str = findLabelStr(w, "Tool Status");
@@ -349,19 +387,18 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 		for (int i = 0; i < count; i++) {
 
-			SwingUtilities.invokeAndWait(() -> deleteAction.actionPerformed(new ActionContext()));
-			waitForPostedSwingRunnables();
+			runSwing(() -> deleteAction.actionPerformed(new DefaultActionContext()));
+			waitForSwing();
 		}
 
-		final ComponentProvider provider =
-			waitForComponentProvider(tool.getToolFrame(), EnumEditorProvider.class, 1500);
+		final ComponentProvider provider = waitForComponentProvider(EnumEditorProvider.class);
 		assertNotNull(provider);
-		SwingUtilities.invokeLater(() -> provider.closeComponent());
-		waitForPostedSwingRunnables();
-		OptionDialog d = waitForDialogComponent(tool.getToolFrame(), OptionDialog.class, 2000);
+		runSwingLater(() -> provider.closeComponent());
+		waitForSwing();
+		OptionDialog d = waitForDialogComponent(OptionDialog.class);
 		assertNotNull(d);
 		pressButtonByText(d.getComponent(), "No");
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		assertTrue(!tool.isVisible(provider));
 	}
 
@@ -379,19 +416,18 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 		for (int i = 0; i < count; i++) {
 
-			SwingUtilities.invokeAndWait(() -> deleteAction.actionPerformed(new ActionContext()));
-			waitForPostedSwingRunnables();
+			runSwing(() -> deleteAction.actionPerformed(new DefaultActionContext()));
+			waitForSwing();
 		}
 
-		final ComponentProvider provider =
-			waitForComponentProvider(tool.getToolFrame(), EnumEditorProvider.class, 1500);
+		final ComponentProvider provider = waitForComponentProvider(EnumEditorProvider.class);
 		assertNotNull(provider);
-		SwingUtilities.invokeLater(() -> provider.closeComponent());
-		waitForPostedSwingRunnables();
-		OptionDialog d = waitForDialogComponent(tool.getToolFrame(), OptionDialog.class, 2000);
+		runSwingLater(() -> provider.closeComponent());
+		waitForSwing();
+		OptionDialog d = waitForDialogComponent(OptionDialog.class);
 		assertNotNull(d);
 		pressButtonByText(d.getComponent(), "Cancel");
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		assertTrue(tool.isVisible(provider));
 
 		// add an entry so the tear down works properly
@@ -412,17 +448,17 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		final DockingActionIf deleteAction = getAction(plugin, "Delete Enum Value");
 		assertTrue(deleteAction.isEnabled());
 
-		SwingUtilities.invokeAndWait(() -> deleteAction.actionPerformed(new ActionContext()));
-		waitForPostedSwingRunnables();
+		runSwing(() -> deleteAction.actionPerformed(new DefaultActionContext()));
+		waitForSwing();
 
 		assertTrue(table.isRowSelected(0));
 
 		final DockingActionIf applyAction = getAction(plugin, "Apply Enum Changes");
 		assertTrue(applyAction.isEnabled());
 
-		SwingUtilities.invokeAndWait(() -> applyAction.actionPerformed(new ActionContext()));
+		runSwing(() -> applyAction.actionPerformed(new DefaultActionContext()));
 		program.flushEvents();
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
 		assertEquals(5, model.getRowCount());
 		assertEquals(5, enummDt.getCount());
@@ -434,11 +470,11 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 		final EnumEditorPanel panel = findEditorPanel(tool.getToolFrame());
 
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			JTextField nameField = getTextField(panel, "Name");
 			nameField.setText("MyColors");
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		applyChanges(true);
 		assertEquals("MyColors", enummDt.getName());
 	}
@@ -446,8 +482,9 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 	@Test
 	public void testDuplicateName() throws Exception {
 
-		Category cat = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category cat = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		final Enum enumm = new EnumDataType("Colors", 1);
 		enumm.add("Red", 0);
 		enumm.add("Green", 0x10);
@@ -467,29 +504,28 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 		program.endTransaction(transactionID, true);
 		program.flushEvents();
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
-		SwingUtilities.invokeLater(() -> plugin.edit(enummDt));
-		waitForPostedSwingRunnables();
+		runSwing(() -> plugin.edit(enummDt), false);
+		waitForSwing();
 
-		final EnumEditorPanel panel = findEditorPanel(tool.getToolFrame());
+		EnumEditorPanel panel = findEditorPanel(tool.getToolFrame());
 
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			JTextField nameField = getTextField(panel, "Name");
 			nameField.setText("FavoriteColors");
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		applyChanges(false);
-		Window window = windowForComponent(panel);
-		final OptionDialog d = waitForDialogComponent(window, OptionDialog.class, 2000);
-		assertNotNull(d);
-		assertEquals("Duplicate Name", d.getTitle());
+		DialogComponentProvider dialog = waitForErrorDialog();
+		assertNotNull(dialog);
+		assertEquals("Duplicate Name", dialog.getTitle());
 		assertEquals("Colors", enummDt.getName());
 
-		pressButtonByText(d, "OK");
-		waitForPostedSwingRunnables();
+		close(dialog);
+		waitForSwing();
 
-		assertTrue(!getAction(plugin, "Apply Enum Changes").isEnabled());
+		assertFalse(getAction(plugin, "Apply Enum Changes").isEnabled());
 
 	}
 
@@ -510,7 +546,7 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		clickMouse(table, 1, rect.x, rect.y, 1, 0);
 
 		table.setRowSelectionInterval(row, row);
-		SwingUtilities.invokeLater(() -> {
+		runSwingLater(() -> {
 			table.editCellAt(1, EnumTableModel.VALUE_COL);
 			TableCellEditor editor = table.getCellEditor(row, EnumTableModel.VALUE_COL);
 			Component c = editor.getTableCellEditorComponent(table,
@@ -521,7 +557,7 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 			tf.setText("0x0");
 			editor.stopCellEditing();
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		Window w = windowForComponent(table);
 		String str = findLabelStr(w, "Tool Status");
 //		assertEquals("Colors enum value 0 already assigned", str);
@@ -538,8 +574,8 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		final JTextField descField = getTextField(panel, "Description");
 		assertEquals("This is a set of Colors", descField.getText());
 
-		SwingUtilities.invokeAndWait(() -> descField.setText("My Favorite colors"));
-		waitForPostedSwingRunnables();
+		runSwing(() -> descField.setText("My Favorite colors"));
+		waitForSwing();
 		applyChanges(true);
 		assertEquals("My Favorite colors", enumDt.getDescription());
 
@@ -553,8 +589,8 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		final EnumEditorPanel panel = findEditorPanel(tool.getToolFrame());
 		final JTextField descField = getTextField(panel, "Description");
 
-		SwingUtilities.invokeAndWait(() -> descField.setText(""));
-		waitForPostedSwingRunnables();
+		runSwing(() -> descField.setText(""));
+		waitForSwing();
 		applyChanges(true);
 		assertEquals("", enumDt.getDescription());
 
@@ -568,19 +604,19 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		final EnumEditorPanel panel = findEditorPanel(tool.getToolFrame());
 		final JTable table = panel.getTable();
 
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			TableColumnModel colModel = table.getColumnModel();
 			colModel.moveColumn(1, 0);
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		assertEquals("Value", table.getColumnName(0));
 		assertEquals("Name", table.getColumnName(1));
 
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			TableColumnModel colModel = table.getColumnModel();
 			colModel.moveColumn(0, 1);
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		assertEquals("Name", table.getColumnName(0));
 		assertEquals("Value", table.getColumnName(1));
 
@@ -597,9 +633,9 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 		// delete a row
 		table.setRowSelectionInterval(0, 0);
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			DockingActionIf action = getAction(plugin, "Delete Enum Value");
-			action.actionPerformed(new ActionContext());
+			action.actionPerformed(new DefaultActionContext());
 		});
 		applyChanges(true);
 		assertNull(enumDt.getName(0));
@@ -622,28 +658,28 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		EnumTableModel model = (EnumTableModel) table.getModel();
 
 		int origRowCount = model.getRowCount();
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			DockingActionIf action = getAction(plugin, "Add Enum Value");
-			action.actionPerformed(new ActionContext());
-			action.actionPerformed(new ActionContext());
+			action.actionPerformed(new DefaultActionContext());
+			action.actionPerformed(new DefaultActionContext());
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		applyChanges(true);
 		// make more changes
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			DockingActionIf action = getAction(plugin, "Add Enum Value");
-			action.actionPerformed(new ActionContext());
-			action.actionPerformed(new ActionContext());
+			action.actionPerformed(new DefaultActionContext());
+			action.actionPerformed(new DefaultActionContext());
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		undo(false);
-		OptionDialog d = waitForDialogComponent(tool.getToolFrame(), OptionDialog.class, 2000);
+		OptionDialog d = waitForDialogComponent(OptionDialog.class);
 		assertNotNull(d);
 		// yes to reload the enum data type
 		final JButton button = findButtonByText(d.getComponent(), "Yes");
 		assertNotNull(button);
-		SwingUtilities.invokeAndWait(() -> button.getActionListeners()[0].actionPerformed(null));
-		waitForPostedSwingRunnables();
+		runSwing(() -> button.getActionListeners()[0].actionPerformed(null));
+		waitForSwing();
 		assertEquals(origRowCount, model.getRowCount());
 	}
 
@@ -656,37 +692,37 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		final JTable table = panel.getTable();
 		final EnumTableModel model = (EnumTableModel) table.getModel();
 
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			int lastRow = model.getRowCount() - 1;
 			if (lastRow >= 0) {
 				table.addRowSelectionInterval(lastRow, lastRow);
 			}
 			DockingActionIf action = getAction(plugin, "Add Enum Value");
-			action.actionPerformed(new ActionContext());
-			action.actionPerformed(new ActionContext());
+			action.actionPerformed(new DefaultActionContext());
+			action.actionPerformed(new DefaultActionContext());
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		applyChanges(true);
 		// make more changes
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			int lastRow = model.getRowCount() - 1;
 			if (lastRow >= 0) {
 				table.addRowSelectionInterval(lastRow, lastRow);
 			}
 			DockingActionIf action = getAction(plugin, "Add Enum Value");
-			action.actionPerformed(new ActionContext());
-			action.actionPerformed(new ActionContext());
+			action.actionPerformed(new DefaultActionContext());
+			action.actionPerformed(new DefaultActionContext());
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		int rowCount = model.getRowCount();
 		undo(false);
-		OptionDialog d = waitForDialogComponent(tool.getToolFrame(), OptionDialog.class, 2000);
+		OptionDialog d = waitForDialogComponent(OptionDialog.class);
 		assertNotNull(d);
 		// not to not reload the enum data type
 		final JButton button = findButtonByText(d.getComponent(), "No");
 		assertNotNull(button);
-		SwingUtilities.invokeAndWait(() -> button.getActionListeners()[0].actionPerformed(null));
-		waitForPostedSwingRunnables();
+		runSwing(() -> button.getActionListeners()[0].actionPerformed(null));
+		waitForSwing();
 		assertEquals(rowCount, model.getRowCount());
 	}
 
@@ -742,22 +778,22 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 
 	private void addEntry(final JTable table, final EnumTableModel model, final String name,
 			final long value) throws Exception {
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			int lastRow = model.getRowCount() - 1;
 			if (lastRow >= 0) {
 				table.addRowSelectionInterval(lastRow, lastRow);
 			}
 			DockingActionIf addAction = getAction(plugin, "Add Enum Value");
-			addAction.actionPerformed(new ActionContext());
+			addAction.actionPerformed(new DefaultActionContext());
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		final int newRow = model.getRowCount() - 1;
-		// change entry 
-		SwingUtilities.invokeAndWait(() -> table.addRowSelectionInterval(newRow, newRow));
+		// change entry
+		runSwing(() -> table.addRowSelectionInterval(newRow, newRow));
 		Rectangle rect = table.getCellRect(newRow, EnumTableModel.NAME_COL, true);
 		clickMouse(table, 1, rect.x, rect.y, 2, 0);
 
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			TableCellEditor editor = table.getCellEditor(newRow, EnumTableModel.NAME_COL);
 			Component c = editor.getTableCellEditorComponent(table,
 				model.getValueAt(newRow, EnumTableModel.NAME_COL), true, newRow,
@@ -766,36 +802,36 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 			tf.setText(name);
 			editor.stopCellEditing();
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		rect = table.getCellRect(newRow, EnumTableModel.VALUE_COL, true);
 		clickMouse(table, 1, rect.x + 1, rect.y + 1, 2, 0);
 
-		SwingUtilities.invokeAndWait(() -> {
+		runSwing(() -> {
 			TableCellEditor editor = table.getCellEditor(newRow, EnumTableModel.VALUE_COL);
 
 			Component c = editor.getTableCellEditorComponent(table,
-				model.getValueAt(newRow, EnumTableModel.NAME_COL), true, newRow,
-				EnumTableModel.NAME_COL);
+				model.getValueAt(newRow, EnumTableModel.VALUE_COL), true, newRow,
+				EnumTableModel.VALUE_COL);
 			JTextField tf = (JTextField) c;
 			tf.setText("0x" + Long.toHexString(value));
 			editor.stopCellEditing();
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 	}
 
 	private void applyChanges(boolean doWait) throws Exception {
 
 		final DockingActionIf applyAction = getAction(plugin, "Apply Enum Changes");
 		assertTrue(applyAction.isEnabled());
-		Runnable r = () -> applyAction.actionPerformed(new ActionContext());
+		Runnable r = () -> applyAction.actionPerformed(new DefaultActionContext());
 		if (doWait) {
-			SwingUtilities.invokeAndWait(r);
+			runSwing(r);
 			program.flushEvents();
 		}
 		else {
-			SwingUtilities.invokeLater(r);
+			runSwingLater(r);
 		}
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
 	}
 
@@ -818,8 +854,9 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 	}
 
 	private Enum editSampleEnum() {
-		Category cat = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category cat = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		final Enum enumm = new EnumDataType("Colors", 1);
 		enumm.add("Red", 0);
 		enumm.add("Green", 0x10);
@@ -833,10 +870,10 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 		final Enum enumDt = (Enum) cat.addDataType(enumm, DataTypeConflictHandler.DEFAULT_HANDLER);
 		program.endTransaction(transactionID, true);
 		program.flushEvents();
-		waitForPostedSwingRunnables();
+		waitForSwing();
 
-		SwingUtilities.invokeLater(() -> plugin.edit(enumDt));
-		waitForPostedSwingRunnables();
+		runSwingLater(() -> plugin.edit(enumDt));
+		waitForSwing();
 		return enumDt;
 	}
 
@@ -851,12 +888,12 @@ public class EnumEditor2Test extends AbstractGhidraHeadedIntegrationTest {
 			}
 		};
 		if (doWait) {
-			SwingUtilities.invokeAndWait(r);
+			runSwing(r);
 		}
 		else {
-			SwingUtilities.invokeLater(r);
+			runSwingLater(r);
 		}
-		waitForPostedSwingRunnables();
+		waitForSwing();
 	}
 
 }

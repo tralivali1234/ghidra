@@ -23,16 +23,13 @@ import ghidra.framework.Application;
 import ghidra.framework.data.DomainObjectAdapterDB;
 import ghidra.framework.model.*;
 import ghidra.framework.options.Options;
-import ghidra.program.database.data.ProjectDataTypeManager;
-import ghidra.program.model.data.DataTypeManager;
-import ghidra.program.model.data.PointerDataType;
+import ghidra.program.model.data.*;
 import ghidra.program.model.listing.DataTypeArchive;
 import ghidra.program.model.listing.Program;
 import ghidra.program.util.*;
 import ghidra.util.InvalidNameException;
 import ghidra.util.exception.*;
 import ghidra.util.task.TaskMonitor;
-import ghidra.util.task.TaskMonitorAdapter;
 
 /**
  * Database implementation for Data Type Archive. 
@@ -43,10 +40,19 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 	/**
 	 * DB_VERSION should be incremented any time a change is made to the overall
 	 * database schema associated with any of the managers.
-	 * 18-Sep-2008 - version 1 - added fields for synchronizing program data types with project archives.
+	 * 18-Sep-2008 - version 1 - Added fields for synchronizing program data types with project archives.
 	 * 03-Dec-2009 - version 2 - Added source archive updating (consolidating windows.gdt, clib.gdt, ntddk.gdt)
+	 * 14-Nov-2019 - version 3 - Corrected fixed length indexing implementation causing change
+	 *                           in index table low-level storage for newly created tables. 
+	 * 20-Apr-2023 - version 4 - Added architecture support and string-based function calling
+	 *                           convention specification.
+	 *                           
+	 * NOTE: The true versioning is based on the underlying {@link StandAloneDataTypeManager}
+	 * implementation and its ability to detect and manage versioning concerns.  Due to the need to
+	 * always support opening in a read-only fashion we are unable to impose a forced upgrade
+	 * requirement.
 	 */
-	static final int DB_VERSION = 2;
+	static final int DB_VERSION = 4;
 
 	/**
 	 * UPGRADE_REQUIRED_BEFORE_VERSION should be changed to DB_VERSION any time the
@@ -76,10 +82,10 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 
 	private static final String DEFAULT_POINTER_SIZE = "Default Pointer Size";
 
-	private final static Class<?>[] COL_CLASS = new Class[] { StringField.class };
+	private final static Field[] COL_FIELDS = new Field[] { StringField.INSTANCE };
 	private final static String[] COL_TYPES = new String[] { "Value" };
 	private final static Schema SCHEMA =
-		new Schema(0, StringField.class, "Key", COL_CLASS, COL_TYPES);
+		new Schema(0, StringField.INSTANCE, "Key", COL_FIELDS, COL_TYPES);
 
 	private ProjectDataTypeManager dataTypeManager;
 
@@ -98,7 +104,7 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 	 */
 	public DataTypeArchiveDB(DomainFolder folder, String name, Object consumer)
 			throws IOException, DuplicateNameException, InvalidNameException {
-		super(new DBHandle(), name, 500, 1000, consumer);
+		super(new DBHandle(), name, 500, consumer);
 		this.name = name;
 
 		recordChanges = false;
@@ -107,17 +113,17 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 			int id = startTransaction("create data type archive");
 
 			createDatabase();
-			if (createManagers(CREATE, TaskMonitorAdapter.DUMMY_MONITOR) != null) {
+			if (createManagers(CREATE, TaskMonitor.DUMMY) != null) {
 				throw new AssertException("Unexpected version exception on create");
 			}
 			changeSet = new DataTypeArchiveDBChangeSet(NUM_UNDOS);
-			initManagers(CREATE, TaskMonitorAdapter.DUMMY_MONITOR);
+			initManagers(CREATE, TaskMonitor.DUMMY);
 			propertiesCreate();
 			endTransaction(id, true);
 			clearUndo(false);
 
 			if (folder != null) {
-				folder.createFile(name, this, TaskMonitorAdapter.DUMMY_MONITOR);
+				folder.createFile(name, this, TaskMonitor.DUMMY);
 			}
 
 			success = true;
@@ -151,9 +157,9 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 	public DataTypeArchiveDB(DBHandle dbh, int openMode, TaskMonitor monitor, Object consumer)
 			throws IOException, VersionException, CancelledException {
 
-		super(dbh, "Untitled", 500, 1000, consumer);
+		super(dbh, "Untitled", 500, consumer);
 		if (monitor == null) {
-			monitor = TaskMonitorAdapter.DUMMY_MONITOR;
+			monitor = TaskMonitor.DUMMY;
 		}
 		boolean success = false;
 		try {
@@ -193,6 +199,14 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 			}
 		}
 
+	}
+
+	@Override
+	protected void close() {
+		super.close();
+		if (dataTypeManager != null) {
+			dataTypeManager.dispose();
+		}
 	}
 
 	@Override
@@ -274,11 +288,15 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 	 * notification the a data type has changed
 	 * @param dataTypeID the id of the data type that changed.
 	 * @param type the type of the change (moved, renamed, etc.)
+	 * @param isAutoResponseChange true if change is an auto-response change caused by 
+	 * another datatype's change (e.g., size, alignment), else false in which case this
+	 * change will be added to archive change-set to aid merge conflict detection.
 	 * @param oldValue the old data type.
 	 * @param newValue the new data type.
 	 */
-	public void dataTypeChanged(long dataTypeID, int type, Object oldValue, Object newValue) {
-		if (recordChanges) {
+	public void dataTypeChanged(long dataTypeID, int type, boolean isAutoResponseChange,
+			Object oldValue, Object newValue) {
+		if (recordChanges && !isAutoResponseChange) {
 			((DataTypeArchiveDBChangeSet) changeSet).dataTypeChanged(dataTypeID);
 		}
 		changed = true;
@@ -375,7 +393,7 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 	private void createDatabase() throws IOException {
 		table = dbh.createTable(TABLE_NAME, SCHEMA);
 
-		Record record = SCHEMA.createRecord(new StringField(ARCHIVE_DB_VERSION));
+		DBRecord record = SCHEMA.createRecord(new StringField(ARCHIVE_DB_VERSION));
 		record.setString(0, Integer.toString(DB_VERSION));
 		table.putRecord(record);
 	}
@@ -420,14 +438,15 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 	}
 
 	private void upgradeDatabase() throws IOException {
+
 		table = dbh.getTable(TABLE_NAME);
-		Record record = SCHEMA.createRecord(new StringField(ARCHIVE_DB_VERSION));
+		DBRecord record = SCHEMA.createRecord(new StringField(ARCHIVE_DB_VERSION));
 		record.setString(0, Integer.toString(DB_VERSION));
 		table.putRecord(record);
 	}
 
 	private int getStoredVersion() throws IOException {
-		Record record = table.getRecord(new StringField(ARCHIVE_DB_VERSION));
+		DBRecord record = table.getRecord(new StringField(ARCHIVE_DB_VERSION));
 
 		// DB Version
 		// if record does not exist return 1;
@@ -469,7 +488,7 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 			throws CancelledException, IOException {
 
 		VersionException versionExc = null;
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 //		try {
 		checkOldProperties(openMode);
@@ -478,19 +497,19 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 //		}
 
 		try {
-			dataTypeManager = new ProjectDataTypeManager(dbh, openMode, this, lock, monitor);
+			dataTypeManager = new ProjectDataTypeManager(this, dbh, openMode, this, lock, monitor);
 		}
 		catch (VersionException e) {
 			versionExc = e.combine(versionExc);
 		}
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 		return versionExc;
 	}
 
-	private void initManagers(int openMode, TaskMonitor monitor) throws CancelledException {
-		monitor.checkCanceled();
-		dataTypeManager.setDataTypeArchive(this);
+	private void initManagers(int openMode, TaskMonitor monitor)
+			throws IOException, CancelledException {
+		monitor.checkCancelled();
 		dataTypeManager.archiveReady(openMode, monitor);
 	}
 
@@ -540,18 +559,18 @@ public class DataTypeArchiveDB extends DomainObjectAdapterDB
 		Options propList = getOptions(Program.PROGRAM_INFO);
 		List<String> propNames = propList.getOptionNames();
 		Collections.sort(propNames);
-		for (String name : propNames) {
-			metadata.put(name, propList.getValueAsString(name));
+		for (String propName : propNames) {
+			if (propName.indexOf(Options.DELIMITER) >= 0) {
+				continue; // ignore second tier options
+			}
+			String valueAsString = propList.getValueAsString(propName);
+			if (valueAsString != null) {
+				metadata.put(propName, propList.getValueAsString(propName));
+			}
 		}
 		return metadata;
 	}
 
-//	private static String getString(Object obj) {
-//		if (obj != null) {
-//			return obj.toString();
-//		}
-//		return null;
-//	}
 	@Override
 	protected void updateMetadata() throws IOException {
 		getMetadata(); // updates metadata map

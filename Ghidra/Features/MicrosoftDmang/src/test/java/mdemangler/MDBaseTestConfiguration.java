@@ -17,6 +17,8 @@ package mdemangler;
 
 import static org.junit.Assert.*;
 
+import org.junit.rules.TestName;
+
 import ghidra.util.Msg;
 import mdemangler.datatype.MDDataType;
 
@@ -62,6 +64,7 @@ public class MDBaseTestConfiguration {
 	/**
 	 * Runs through the process of creating a demangler, demangling a symbol string,
 	 * testing the output, and performing other ancillary outputs and tests.
+	 * @param testName TestName of the test being run.
 	 * @param mangledArg Mangled string to process
 	 * @param mdtruth Truth that "we" (developers of this demangler) believe is truth
 	 * @param mstruth Truth that was output from one of the Microsoft tools (e.g., undname).
@@ -69,19 +72,22 @@ public class MDBaseTestConfiguration {
 	 * @param ms2013truth Like mstruth, but from Visual Studio 2013 version of tool.
 	 * @throws Exception if any exceptions are thrown
 	 */
-	public void demangleAndTest(String mangledArg, String mdtruth, String mstruth, String ghtruth,
-			String ms2013truth) throws Exception {
+	public void demangleAndTest(TestName testName, String mangledArg, String mdtruth,
+			String mstruth, String ghtruth, String ms2013truth) throws Exception {
 		mangled = mangledArg;
 		setTruth(mdtruth, mstruth, ghtruth, ms2013truth);
 		outputInfo = new StringBuilder();
 
 		if (verboseOutput) {
+			outputInfo.append("\n   Test: ");
+			outputInfo.append(testName.getMethodName());
 			outputInfo.append(getNumberHeader(mangledArg.length()));
 			outputInfo.append(getTestHeader());
 		}
 
 		// Meant to be overridden, as needed by extended classes
-		doDemangleSymbol();
+		demangItem = doDemangleSymbol(mdm, mangled);
+		demangled = (demangItem == null) ? "" : demangItem.toString();
 
 		doBasicTestsAndOutput();
 
@@ -186,14 +192,12 @@ public class MDBaseTestConfiguration {
 	}
 
 	// Meant to be overridden, as needed by extended classes
-	protected void doDemangleSymbol() throws Exception {
+	protected MDParsableItem doDemangleSymbol(MDMang mdmIn, String mangledIn) throws Exception {
 		try {
-			demangItem = mdm.demangle(mangled, true);
-			demangled = demangItem.toString();
+			return mdmIn.demangle(mangledIn, true);
 		}
 		catch (MDException e) {
-			demangItem = null;
-			demangled = "";
+			return null;
 		}
 	}
 

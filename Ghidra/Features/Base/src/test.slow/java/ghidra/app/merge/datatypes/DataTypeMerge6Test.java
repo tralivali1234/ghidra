@@ -21,7 +21,7 @@ import org.junit.Test;
 
 import ghidra.program.database.*;
 import ghidra.program.model.data.*;
-import ghidra.util.task.TaskMonitorAdapter;
+import ghidra.util.task.TaskMonitor;
 
 /**
  * Data type merge tests for aligned data types.
@@ -31,87 +31,58 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 	private void setupStructureMachineAlignedVsValue() throws Exception {
 
 		mtf.initialize("notepad", new OriginalProgramModifierListener() {
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.OriginalProgramModifierListener#modifyOriginal(ghidra.program.database.ProgramDB)
-			 */
+
 			@Override
 			public void modifyOriginal(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertEquals(15, s.getLength());
-					assertEquals(1, s.getAlignment());
-					s.setInternallyAligned(true);
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(2, s.getComponent(1).getOffset());
-					assertEquals(4, s.getComponent(2).getOffset());
-					assertEquals(8, s.getComponent(3).getOffset());
-					assertEquals(16, s.getLength());
-					assertEquals(4, s.getAlignment());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertEquals(15, s.getLength());
+				assertEquals(1, s.getAlignment());
+				s.setToDefaultPacking();
+
+				// Offsets change to 0,2,4,8.
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(2, s.getComponent(1).getOffset());
+				assertEquals(4, s.getComponent(2).getOffset());
+				assertEquals(8, s.getComponent(3).getOffset());
+				assertEquals(16, s.getLength());
+				assertEquals(4, s.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyLatest(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					s.setToMachineAlignment();
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(2, s.getComponent(1).getOffset());
-					assertEquals(4, s.getComponent(2).getOffset());
-					assertEquals(8, s.getComponent(3).getOffset());
-					assertEquals(16, s.getLength());
-					assertEquals(8, s.getAlignment());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				s.setToMachineAligned();
+
+				// Offsets change to 0,2,4,8.
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(2, s.getComponent(1).getOffset());
+				assertEquals(4, s.getComponent(2).getOffset());
+				assertEquals(8, s.getComponent(3).getOffset());
+				assertEquals(16, s.getLength());
+				assertEquals(8, s.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyPrivate(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					s.setMinimumAlignment(4);
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(2, s.getComponent(1).getOffset());
-					assertEquals(4, s.getComponent(2).getOffset());
-					assertEquals(8, s.getComponent(3).getOffset());
-					assertEquals(16, s.getLength());
-					assertEquals(4, s.getAlignment());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				s.setExplicitMinimumAlignment(4);
+
+				// Offsets change to 0,2,4,8.
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(2, s.getComponent(1).getOffset());
+				assertEquals(4, s.getComponent(2).getOffset());
+				assertEquals(8, s.getComponent(3).getOffset());
+				assertEquals(16, s.getLength());
+				assertEquals(4, s.getAlignment());
 			}
 		});
 	}
@@ -129,11 +100,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
 		Category c = dtm.getCategory(new CategoryPath("/Category1/Category2/Category3"));
 		Structure s = (Structure) c.getDataType("IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(false, s.isDefaultAligned());
-		assertEquals(true, s.isMachineAligned());
-		assertEquals(8, s.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, s.getPackingValue());
+		assertTrue(s.hasDefaultPacking());
+		assertTrue(s.isMachineAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(2, s.getComponent(1).getOffset());
 		assertEquals(4, s.getComponent(2).getOffset());
@@ -155,11 +124,10 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
 		Category c = dtm.getCategory(new CategoryPath("/Category1/Category2/Category3"));
 		Structure s = (Structure) c.getDataType("IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(false, s.isDefaultAligned());
-		assertEquals(false, s.isMachineAligned());
-		assertEquals(4, s.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, s.getPackingValue());
+		assertTrue(s.hasDefaultPacking());
+		assertTrue(s.hasExplicitMinimumAlignment());
+		assertEquals(4, s.getExplicitMinimumAlignment());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(2, s.getComponent(1).getOffset());
 		assertEquals(4, s.getComponent(2).getOffset());
@@ -181,11 +149,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
 		Category c = dtm.getCategory(new CategoryPath("/Category1/Category2/Category3"));
 		Structure s = (Structure) c.getDataType("IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(true, s.isDefaultAligned());
-		assertEquals(false, s.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, s.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, s.getPackingValue());
+		assertTrue(s.hasDefaultPacking());
+		assertTrue(s.isDefaultAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(2, s.getComponent(1).getOffset());
 		assertEquals(4, s.getComponent(2).getOffset());
@@ -197,93 +163,58 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 	private void setupStructurePack1VsPack2() throws Exception {
 
 		mtf.initialize("notepad", new OriginalProgramModifierListener() {
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.OriginalProgramModifierListener#modifyOriginal(ghidra.program.database.ProgramDB)
-			 */
+
 			@Override
 			public void modifyOriginal(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertEquals(15, s.getLength());
-					assertEquals(1, s.getAlignment());
-					s.setInternallyAligned(true);
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertEquals(15, s.getLength());
+				assertEquals(1, s.getAlignment());
+				s.setToDefaultPacking();
 
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(2, s.getComponent(1).getOffset());
-					assertEquals(4, s.getComponent(2).getOffset());
-					assertEquals(8, s.getComponent(3).getOffset());
-					assertEquals(16, s.getLength());
-					assertEquals(4, s.getAlignment());
-					assertEquals(Composite.NOT_PACKING, s.getPackingValue());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Offsets change to 0,2,4,8.
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(2, s.getComponent(1).getOffset());
+				assertEquals(4, s.getComponent(2).getOffset());
+				assertEquals(8, s.getComponent(3).getOffset());
+				assertEquals(16, s.getLength());
+				assertEquals(4, s.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyLatest(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					s.setPackingValue(1);
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				s.pack(1);
 
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(1, s.getComponent(1).getOffset());
-					assertEquals(3, s.getComponent(2).getOffset());
-					assertEquals(7, s.getComponent(3).getOffset());
-					assertEquals(15, s.getLength());
-					assertEquals(1, s.getAlignment());
-					assertEquals(1, s.getPackingValue());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Offsets change to 0,2,4,8.
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(1, s.getComponent(1).getOffset());
+				assertEquals(3, s.getComponent(2).getOffset());
+				assertEquals(7, s.getComponent(3).getOffset());
+				assertEquals(15, s.getLength());
+				assertEquals(1, s.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyPrivate(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					s.setPackingValue(2);
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				s.pack(2);
 
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(2, s.getComponent(1).getOffset());
-					assertEquals(4, s.getComponent(2).getOffset());
-					assertEquals(8, s.getComponent(3).getOffset());
-					assertEquals(16, s.getLength());
-					assertEquals(2, s.getAlignment());
-					assertEquals(2, s.getPackingValue());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Offsets change to 0,2,4,8.
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(2, s.getComponent(1).getOffset());
+				assertEquals(4, s.getComponent(2).getOffset());
+				assertEquals(8, s.getComponent(3).getOffset());
+				assertEquals(16, s.getLength());
+				assertEquals(2, s.getAlignment());
 			}
 		});
 	}
@@ -302,11 +233,10 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		Structure s =
 			(Structure) dtm.getDataType(new CategoryPath("/Category1/Category2/Category3"),
 				"IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(true, s.isDefaultAligned());
-		assertEquals(false, s.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, s.getMinimumAlignment());
-		assertEquals(1, s.getPackingValue());
+		assertTrue(s.hasExplicitPackingValue());
+		assertEquals(1, s.getExplicitPackingValue());
+		assertTrue(s.isDefaultAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(1, s.getComponent(1).getOffset());
 		assertEquals(3, s.getComponent(2).getOffset());
@@ -329,11 +259,10 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		Structure s =
 			(Structure) dtm.getDataType(new CategoryPath("/Category1/Category2/Category3"),
 				"IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(true, s.isDefaultAligned());
-		assertEquals(false, s.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, s.getMinimumAlignment());
-		assertEquals(2, s.getPackingValue());
+		assertTrue(s.hasExplicitPackingValue());
+		assertEquals(2, s.getExplicitPackingValue());
+		assertTrue(s.isDefaultAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(2, s.getComponent(1).getOffset());
 		assertEquals(4, s.getComponent(2).getOffset());
@@ -355,11 +284,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
 		Category c = dtm.getCategory(new CategoryPath("/Category1/Category2/Category3"));
 		Structure s = (Structure) c.getDataType("IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(true, s.isDefaultAligned());
-		assertEquals(false, s.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, s.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, s.getPackingValue());
+		assertTrue(s.hasDefaultPacking());
+		assertTrue(s.isDefaultAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(2, s.getComponent(1).getOffset());
 		assertEquals(4, s.getComponent(2).getOffset());
@@ -371,91 +298,57 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 	private void setupStructureMinAlignVsPack() throws Exception {
 
 		mtf.initialize("notepad", new OriginalProgramModifierListener() {
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.OriginalProgramModifierListener#modifyOriginal(ghidra.program.database.ProgramDB)
-			 */
+
 			@Override
 			public void modifyOriginal(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertEquals(15, s.getLength());
-					assertEquals(1, s.getAlignment());
-					s.setInternallyAligned(true);
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertEquals(15, s.getLength());
+				assertEquals(1, s.getAlignment());
+				s.setToDefaultPacking();
 
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(2, s.getComponent(1).getOffset());
-					assertEquals(4, s.getComponent(2).getOffset());
-					assertEquals(8, s.getComponent(3).getOffset());
-					assertEquals(16, s.getLength());
-					assertEquals(4, s.getAlignment());
-					assertEquals(Composite.NOT_PACKING, s.getPackingValue());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Offsets change to 0,2,4,8.
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(2, s.getComponent(1).getOffset());
+				assertEquals(4, s.getComponent(2).getOffset());
+				assertEquals(8, s.getComponent(3).getOffset());
+				assertEquals(16, s.getLength());
+				assertEquals(4, s.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyLatest(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					s.setToMachineAlignment();
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				s.setToMachineAligned();
 
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(2, s.getComponent(1).getOffset());
-					assertEquals(4, s.getComponent(2).getOffset());
-					assertEquals(8, s.getComponent(3).getOffset());
-					assertEquals(16, s.getLength());
-					assertEquals(8, s.getAlignment());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Offsets change to 0,2,4,8.
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(2, s.getComponent(1).getOffset());
+				assertEquals(4, s.getComponent(2).getOffset());
+				assertEquals(8, s.getComponent(3).getOffset());
+				assertEquals(16, s.getLength());
+				assertEquals(8, s.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyPrivate(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					s.setPackingValue(1);
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				s.pack(1);
 
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(1, s.getComponent(1).getOffset());
-					assertEquals(3, s.getComponent(2).getOffset());
-					assertEquals(7, s.getComponent(3).getOffset());
-					assertEquals(15, s.getLength());
-					assertEquals(1, s.getAlignment());
-					assertEquals(1, s.getPackingValue());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(1, s.getComponent(1).getOffset());
+				assertEquals(3, s.getComponent(2).getOffset());
+				assertEquals(7, s.getComponent(3).getOffset());
+				assertEquals(15, s.getLength());
+				assertEquals(1, s.getAlignment());
 			}
 		});
 	}
@@ -474,11 +367,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		Structure s =
 			(Structure) dtm.getDataType(new CategoryPath("/Category1/Category2/Category3"),
 				"IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(false, s.isDefaultAligned());
-		assertEquals(true, s.isMachineAligned());
-		assertEquals(8, s.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, s.getPackingValue());
+		assertTrue(s.hasDefaultPacking());
+		assertTrue(s.isMachineAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(2, s.getComponent(1).getOffset());
 		assertEquals(4, s.getComponent(2).getOffset());
@@ -501,11 +392,10 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		Structure s =
 			(Structure) dtm.getDataType(new CategoryPath("/Category1/Category2/Category3"),
 				"IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(true, s.isDefaultAligned());
-		assertEquals(false, s.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, s.getMinimumAlignment());
-		assertEquals(1, s.getPackingValue());
+		assertTrue(s.hasExplicitPackingValue());
+		assertEquals(1, s.getExplicitPackingValue());
+		assertTrue(s.isDefaultAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(1, s.getComponent(1).getOffset());
 		assertEquals(3, s.getComponent(2).getOffset());
@@ -517,67 +407,45 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 	private void setupStructureAddVsAlign() throws Exception {
 
 		mtf.initialize("notepad", new ProgramModifierListener() {
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyLatest(ghidra.program.database.ProgramDB)
-			 */
+
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertEquals(15, s.getLength());
-					assertEquals(1, s.getAlignment());
-					s.add(new IntegerDataType());
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertEquals(15, s.getLength());
+				assertEquals(1, s.getAlignment());
+				s.add(new IntegerDataType());
 
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(1, s.getComponent(1).getOffset());
-					assertEquals(3, s.getComponent(2).getOffset());
-					assertEquals(7, s.getComponent(3).getOffset());
-					assertEquals(15, s.getComponent(4).getOffset());
-					assertEquals(19, s.getLength());
-					assertEquals(1, s.getAlignment());
-					assertEquals(Composite.NOT_PACKING, s.getPackingValue());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Offsets change to 0,2,4,8.
+				assertFalse(s.isPackingEnabled());
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(1, s.getComponent(1).getOffset());
+				assertEquals(3, s.getComponent(2).getOffset());
+				assertEquals(7, s.getComponent(3).getOffset());
+				assertEquals(15, s.getComponent(4).getOffset());
+				assertEquals(19, s.getLength());
+				assertEquals(1, s.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyPrivate(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertEquals(15, s.getLength());
-					assertEquals(1, s.getAlignment());
-					s.setInternallyAligned(true);
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertEquals(15, s.getLength());
+				assertEquals(1, s.getAlignment());
+				s.setToDefaultPacking();
 
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(2, s.getComponent(1).getOffset());
-					assertEquals(4, s.getComponent(2).getOffset());
-					assertEquals(8, s.getComponent(3).getOffset());
-					assertEquals(16, s.getLength());
-					assertEquals(4, s.getAlignment());
-					assertEquals(Composite.NOT_PACKING, s.getPackingValue());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Offsets change to 0,2,4,8.
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(2, s.getComponent(1).getOffset());
+				assertEquals(4, s.getComponent(2).getOffset());
+				assertEquals(8, s.getComponent(3).getOffset());
+				assertEquals(16, s.getLength());
+				assertEquals(4, s.getAlignment());
 			}
 		});
 	}
@@ -596,11 +464,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		Structure s =
 			(Structure) dtm.getDataType(new CategoryPath("/Category1/Category2/Category3"),
 				"IntStruct");
-		assertEquals(false, s.isInternallyAligned());
-		assertEquals(true, s.isDefaultAligned());
-		assertEquals(false, s.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, s.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, s.getPackingValue());
+		assertFalse(s.isPackingEnabled());
+		assertTrue(s.isDefaultAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(1, s.getComponent(1).getOffset());
 		assertEquals(3, s.getComponent(2).getOffset());
@@ -624,11 +490,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		Structure s =
 			(Structure) dtm.getDataType(new CategoryPath("/Category1/Category2/Category3"),
 				"IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(true, s.isDefaultAligned());
-		assertEquals(false, s.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, s.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, s.getPackingValue());
+		assertTrue(s.hasDefaultPacking());
+		assertTrue(s.isDefaultAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(2, s.getComponent(1).getOffset());
 		assertEquals(4, s.getComponent(2).getOffset());
@@ -640,94 +504,64 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 	private void setupStructureFieldNameVsPack() throws Exception {
 
 		mtf.initialize("notepad", new OriginalProgramModifierListener() {
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.OriginalProgramModifierListener#modifyOriginal(ghidra.program.database.ProgramDB)
-			 */
+
 			@Override
 			public void modifyOriginal(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertEquals(15, s.getLength());
-					assertEquals(1, s.getAlignment());
-					s.setInternallyAligned(true);
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(2, s.getComponent(1).getOffset());
-					assertEquals(4, s.getComponent(2).getOffset());
-					assertEquals(8, s.getComponent(3).getOffset());
-					assertEquals(16, s.getLength());
-					assertEquals(4, s.getAlignment());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertEquals(15, s.getLength());
+				assertEquals(1, s.getAlignment());
+				s.setToDefaultPacking();
+
+				// Offsets change to 0,2,4,8.
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(2, s.getComponent(1).getOffset());
+				assertEquals(4, s.getComponent(2).getOffset());
+				assertEquals(8, s.getComponent(3).getOffset());
+				assertEquals(16, s.getLength());
+				assertEquals(4, s.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyLatest(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertEquals(16, s.getLength());
-					assertEquals(4, s.getAlignment());
-					s.getComponent(1).setFieldName("MyComponentOne");
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertEquals(16, s.getLength());
+				assertEquals(4, s.getAlignment());
+				s.getComponent(1).setFieldName("MyComponentOne");
 
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(2, s.getComponent(1).getOffset());
-					assertEquals("MyComponentOne", s.getComponent(1).getFieldName());
-					assertEquals(4, s.getComponent(2).getOffset());
-					assertEquals(8, s.getComponent(3).getOffset());
-					assertEquals(16, s.getLength());
-					assertEquals(4, s.getAlignment());
-					assertEquals(Composite.NOT_PACKING, s.getPackingValue());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				assertTrue(s.hasDefaultPacking());
+				assertTrue(s.isDefaultAligned());
+
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(2, s.getComponent(1).getOffset());
+				assertEquals("MyComponentOne", s.getComponent(1).getFieldName());
+				assertEquals(4, s.getComponent(2).getOffset());
+				assertEquals(8, s.getComponent(3).getOffset());
+				assertEquals(16, s.getLength());
+				assertEquals(4, s.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyPrivate(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertEquals(16, s.getLength());
-					assertEquals(4, s.getAlignment());
-					s.setPackingValue(1);
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertEquals(16, s.getLength());
+				assertEquals(4, s.getAlignment());
+				s.pack(1);
 
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(1, s.getComponent(1).getOffset());
-					assertEquals(3, s.getComponent(2).getOffset());
-					assertEquals(7, s.getComponent(3).getOffset());
-					assertEquals(15, s.getLength());
-					assertEquals(1, s.getAlignment());
-					assertEquals(1, s.getPackingValue());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(1, s.getComponent(1).getOffset());
+				assertEquals(3, s.getComponent(2).getOffset());
+				assertEquals(7, s.getComponent(3).getOffset());
+				assertEquals(15, s.getLength());
+				assertEquals(1, s.getAlignment());
 			}
 		});
 	}
@@ -746,11 +580,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		Structure s =
 			(Structure) dtm.getDataType(new CategoryPath("/Category1/Category2/Category3"),
 				"IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(true, s.isDefaultAligned());
-		assertEquals(false, s.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, s.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, s.getPackingValue());
+		assertTrue(s.hasDefaultPacking());
+		assertTrue(s.isDefaultAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(2, s.getComponent(1).getOffset());
 		assertEquals(4, s.getComponent(2).getOffset());
@@ -773,11 +605,10 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		Structure s =
 			(Structure) dtm.getDataType(new CategoryPath("/Category1/Category2/Category3"),
 				"IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(true, s.isDefaultAligned());
-		assertEquals(false, s.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, s.getMinimumAlignment());
-		assertEquals(1, s.getPackingValue());
+		assertTrue(s.hasExplicitPackingValue());
+		assertEquals(1, s.getExplicitPackingValue());
+		assertTrue(s.isDefaultAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(1, s.getComponent(1).getOffset());
 		assertEquals(3, s.getComponent(2).getOffset());
@@ -789,88 +620,54 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 	private void setupStructureRemoveVsPack() throws Exception {
 
 		mtf.initialize("notepad", new OriginalProgramModifierListener() {
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.OriginalProgramModifierListener#modifyOriginal(ghidra.program.database.ProgramDB)
-			 */
+
 			@Override
 			public void modifyOriginal(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertEquals(15, s.getLength());
-					assertEquals(1, s.getAlignment());
-					s.setInternallyAligned(true);
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertEquals(15, s.getLength());
+				assertEquals(1, s.getAlignment());
+				s.setToDefaultPacking();
 
-					// Offsets change to 0,2,4,8.
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(2, s.getComponent(1).getOffset());
-					assertEquals(4, s.getComponent(2).getOffset());
-					assertEquals(8, s.getComponent(3).getOffset());
-					assertEquals(16, s.getLength());
-					assertEquals(4, s.getAlignment());
-					assertEquals(Composite.NOT_PACKING, s.getPackingValue());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Offsets change to 0,2,4,8.
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(2, s.getComponent(1).getOffset());
+				assertEquals(4, s.getComponent(2).getOffset());
+				assertEquals(8, s.getComponent(3).getOffset());
+				assertEquals(16, s.getLength());
+				assertEquals(4, s.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyLatest(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					dtm.remove(s, TaskMonitorAdapter.DUMMY_MONITOR);
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				dtm.remove(s, TaskMonitor.DUMMY);
 
-					// Offsets change to 0,2,4,8.
-					Structure intStruct = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertNull(intStruct);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Offsets change to 0,2,4,8.
+				Structure intStruct = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertNull(intStruct);
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyPrivate(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					s.setPackingValue(1);
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				s.pack(1);
 
-					assertEquals(0, s.getComponent(0).getOffset());
-					assertEquals(1, s.getComponent(1).getOffset());
-					assertEquals(3, s.getComponent(2).getOffset());
-					assertEquals(7, s.getComponent(3).getOffset());
-					assertEquals(15, s.getLength());
-					assertEquals(1, s.getAlignment());
-					assertEquals(1, s.getPackingValue());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				assertEquals(0, s.getComponent(0).getOffset());
+				assertEquals(1, s.getComponent(1).getOffset());
+				assertEquals(3, s.getComponent(2).getOffset());
+				assertEquals(7, s.getComponent(3).getOffset());
+				assertEquals(15, s.getLength());
+				assertEquals(1, s.getAlignment());
 			}
 		});
 	}
@@ -906,11 +703,10 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		Structure s =
 			(Structure) dtm.getDataType(new CategoryPath("/Category1/Category2/Category3"),
 				"IntStruct");
-		assertEquals(true, s.isInternallyAligned());
-		assertEquals(true, s.isDefaultAligned());
-		assertEquals(false, s.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, s.getMinimumAlignment());
-		assertEquals(1, s.getPackingValue());
+		assertTrue(s.hasExplicitPackingValue());
+		assertEquals(1, s.getExplicitPackingValue());
+		assertTrue(s.isDefaultAligned());
+
 		assertEquals(0, s.getComponent(0).getOffset());
 		assertEquals(1, s.getComponent(1).getOffset());
 		assertEquals(3, s.getComponent(2).getOffset());
@@ -922,85 +718,52 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 	private void setupStructureInUnionAndViceVersa() throws Exception {
 
 		mtf.initialize("notepad", new OriginalProgramModifierListener() {
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.OriginalProgramModifierListener#modifyOriginal(ghidra.program.database.ProgramDB)
-			 */
+
 			@Override
 			public void modifyOriginal(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure s = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					s.setInternallyAligned(true);
+				Structure s = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				s.setPackingEnabled(true);
 
-					Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
-						"CoolUnion");
-					union.setInternallyAligned(true);
-
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
+					"CoolUnion");
+				union.setPackingEnabled(true);
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyLatest(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
+				
+				Structure structure = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertEquals(16, structure.getLength());
+				assertEquals(4, structure.getAlignment());
 
-				try {
-					Structure structure = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertEquals(16, structure.getLength());
-					assertEquals(4, structure.getAlignment());
+				Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
+					"CoolUnion");
+				assertEquals(96, union.getLength());
+				assertEquals(4, union.getAlignment());
 
-					Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
-						"CoolUnion");
-					assertEquals(96, union.getLength());
-					assertEquals(4, union.getAlignment());
-
-					structure.add(union);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				structure.add(union);
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyPrivate(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Structure structure = (Structure) dtm.getDataType(
-						new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
-					assertEquals(16, structure.getLength());
-					assertEquals(4, structure.getAlignment());
+				Structure structure = (Structure) dtm.getDataType(
+					new CategoryPath("/Category1/Category2/Category3"), "IntStruct");
+				assertEquals(16, structure.getLength());
+				assertEquals(4, structure.getAlignment());
 
-					Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
-						"CoolUnion");
-					assertEquals(96, union.getLength());
-					assertEquals(4, union.getAlignment());
+				Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
+					"CoolUnion");
+				assertEquals(96, union.getLength());
+				assertEquals(4, union.getAlignment());
 
-					union.add(structure);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				union.add(structure);
 			}
 		});
 	}
@@ -1019,11 +782,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		Structure intStruct =
 			(Structure) dtm.getDataType(new CategoryPath("/Category1/Category2/Category3"),
 				"IntStruct");
-		assertEquals(true, intStruct.isInternallyAligned());
-		assertEquals(true, intStruct.isDefaultAligned());
-		assertEquals(false, intStruct.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, intStruct.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, intStruct.getPackingValue());
+		assertTrue(intStruct.hasDefaultPacking());
+		assertTrue(intStruct.isDefaultAligned());
+
 		assertEquals(5, intStruct.getNumComponents());
 		assertEquals(0, intStruct.getComponent(0).getOffset());
 		assertEquals(2, intStruct.getComponent(1).getOffset());
@@ -1036,11 +797,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 
 		Union coolUnion =
 			(Union) dtm.getDataType(new CategoryPath("/Category1/Category2"), "CoolUnion");
-		assertEquals(true, coolUnion.isInternallyAligned());
-		assertEquals(true, coolUnion.isDefaultAligned());
-		assertEquals(false, coolUnion.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, coolUnion.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, coolUnion.getPackingValue());
+		assertTrue(coolUnion.hasDefaultPacking());
+		assertTrue(coolUnion.isDefaultAligned());
+
 		assertEquals(6, coolUnion.getNumComponents());
 		assertEquals("qword", coolUnion.getComponent(0).getDataType().getDisplayName());
 		assertEquals("word", coolUnion.getComponent(1).getDataType().getDisplayName());
@@ -1061,90 +820,58 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 	public void setupUnionMachineAlignedVsValue() throws Exception {
 
 		mtf.initialize("notepad", new OriginalProgramModifierListener() {
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.OriginalProgramModifierListener#modifyOriginal(ghidra.program.database.ProgramDB)
-			 */
+
 			@Override
 			public void modifyOriginal(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
-						"CoolUnion");
-					assertEquals(96, union.getLength());
-					assertEquals(1, union.getAlignment());
-					union.setInternallyAligned(true);
+				Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
+					"CoolUnion");
+				assertEquals(96, union.getLength());
+				assertEquals(1, union.getAlignment());
+				union.setPackingEnabled(true);
 
-					assertEquals(8, union.getComponent(0).getLength());
-					assertEquals(2, union.getComponent(1).getLength());
-					assertEquals(4, union.getComponent(2).getLength());
-					assertEquals(96, union.getComponent(3).getLength());
-					assertEquals(4, union.getComponent(4).getLength());
-					assertEquals(96, union.getLength());
-					assertEquals(4, union.getAlignment());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				assertEquals(8, union.getComponent(0).getLength());
+				assertEquals(2, union.getComponent(1).getLength());
+				assertEquals(4, union.getComponent(2).getLength());
+				assertEquals(96, union.getComponent(3).getLength());
+				assertEquals(4, union.getComponent(4).getLength());
+				assertEquals(96, union.getLength());
+				assertEquals(4, union.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyLatest(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
-						"CoolUnion");
-					union.setToMachineAlignment();
+				Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
+					"CoolUnion");
+				union.setToMachineAligned();
 
-					assertEquals(8, union.getComponent(0).getLength());
-					assertEquals(2, union.getComponent(1).getLength());
-					assertEquals(4, union.getComponent(2).getLength());
-					assertEquals(96, union.getComponent(3).getLength());
-					assertEquals(4, union.getComponent(4).getLength());
-					assertEquals(96, union.getLength());
-					assertEquals(8, union.getAlignment());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				assertEquals(8, union.getComponent(0).getLength());
+				assertEquals(2, union.getComponent(1).getLength());
+				assertEquals(4, union.getComponent(2).getLength());
+				assertEquals(96, union.getComponent(3).getLength());
+				assertEquals(4, union.getComponent(4).getLength());
+				assertEquals(96, union.getLength());
+				assertEquals(8, union.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyPrivate(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
-						"CoolUnion");
-					union.setMinimumAlignment(4);
+				Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
+					"CoolUnion");
+				union.setExplicitMinimumAlignment(4);
 
-					assertEquals(8, union.getComponent(0).getLength());
-					assertEquals(2, union.getComponent(1).getLength());
-					assertEquals(4, union.getComponent(2).getLength());
-					assertEquals(96, union.getComponent(3).getLength());
-					assertEquals(4, union.getComponent(4).getLength());
-					assertEquals(96, union.getLength());
-					assertEquals(4, union.getAlignment());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				assertEquals(8, union.getComponent(0).getLength());
+				assertEquals(2, union.getComponent(1).getLength());
+				assertEquals(4, union.getComponent(2).getLength());
+				assertEquals(96, union.getComponent(3).getLength());
+				assertEquals(4, union.getComponent(4).getLength());
+				assertEquals(96, union.getLength());
+				assertEquals(4, union.getAlignment());
 			}
 		});
 	}
@@ -1162,11 +889,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
 		Category c = dtm.getCategory(new CategoryPath("/Category1/Category2"));
 		Union union = (Union) c.getDataType("CoolUnion");
-		assertEquals(true, union.isInternallyAligned());
-		assertEquals(false, union.isDefaultAligned());
-		assertEquals(true, union.isMachineAligned());
-		assertEquals(8, union.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, union.getPackingValue());
+		assertTrue(union.hasDefaultPacking());
+		assertTrue(union.isMachineAligned());
+
 		assertEquals(8, union.getComponent(0).getLength());
 		assertEquals(2, union.getComponent(1).getLength());
 		assertEquals(4, union.getComponent(2).getLength());
@@ -1189,11 +914,10 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
 		Category c = dtm.getCategory(new CategoryPath("/Category1/Category2"));
 		Union union = (Union) c.getDataType("CoolUnion");
-		assertEquals(true, union.isInternallyAligned());
-		assertEquals(false, union.isDefaultAligned());
-		assertEquals(false, union.isMachineAligned());
-		assertEquals(4, union.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, union.getPackingValue());
+		assertTrue(union.hasDefaultPacking());
+		assertTrue(union.hasExplicitMinimumAlignment());
+		assertEquals(4, union.getExplicitMinimumAlignment());
+
 		assertEquals(8, union.getComponent(0).getLength());
 		assertEquals(2, union.getComponent(1).getLength());
 		assertEquals(4, union.getComponent(2).getLength());
@@ -1216,11 +940,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
 		Category c = dtm.getCategory(new CategoryPath("/Category1/Category2"));
 		Union union = (Union) c.getDataType("CoolUnion");
-		assertEquals(true, union.isInternallyAligned());
-		assertEquals(true, union.isDefaultAligned());
-		assertEquals(false, union.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, union.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, union.getPackingValue());
+		assertTrue(union.hasDefaultPacking());
+		assertTrue(union.isDefaultAligned());
+
 		assertEquals(8, union.getComponent(0).getLength());
 		assertEquals(2, union.getComponent(1).getLength());
 		assertEquals(4, union.getComponent(2).getLength());
@@ -1233,90 +955,58 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 	public void setupUnionPack1VsPack2() throws Exception {
 
 		mtf.initialize("notepad", new OriginalProgramModifierListener() {
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.OriginalProgramModifierListener#modifyOriginal(ghidra.program.database.ProgramDB)
-			 */
+
 			@Override
 			public void modifyOriginal(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
-						"CoolUnion");
-					assertEquals(96, union.getLength());
-					assertEquals(1, union.getAlignment());
-					union.setInternallyAligned(true);
+				Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
+					"CoolUnion");
+				assertEquals(96, union.getLength());
+				assertEquals(1, union.getAlignment());
+				union.setPackingEnabled(true);
 
-					assertEquals(8, union.getComponent(0).getLength());
-					assertEquals(2, union.getComponent(1).getLength());
-					assertEquals(4, union.getComponent(2).getLength());
-					assertEquals(96, union.getComponent(3).getLength());
-					assertEquals(4, union.getComponent(4).getLength());
-					assertEquals(96, union.getLength());
-					assertEquals(4, union.getAlignment());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				assertEquals(8, union.getComponent(0).getLength());
+				assertEquals(2, union.getComponent(1).getLength());
+				assertEquals(4, union.getComponent(2).getLength());
+				assertEquals(96, union.getComponent(3).getLength());
+				assertEquals(4, union.getComponent(4).getLength());
+				assertEquals(96, union.getLength());
+				assertEquals(4, union.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyLatest(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
-						"CoolUnion");
-					union.setPackingValue(1);
+				Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
+					"CoolUnion");
+				union.pack(1);
 
-					assertEquals(8, union.getComponent(0).getLength());
-					assertEquals(2, union.getComponent(1).getLength());
-					assertEquals(4, union.getComponent(2).getLength());
-					assertEquals(96, union.getComponent(3).getLength());
-					assertEquals(4, union.getComponent(4).getLength());
-					assertEquals(96, union.getLength());
-					assertEquals(1, union.getAlignment());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				assertEquals(8, union.getComponent(0).getLength());
+				assertEquals(2, union.getComponent(1).getLength());
+				assertEquals(4, union.getComponent(2).getLength());
+				assertEquals(96, union.getComponent(3).getLength());
+				assertEquals(4, union.getComponent(4).getLength());
+				assertEquals(96, union.getLength());
+				assertEquals(1, union.getAlignment());
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyPrivate(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
-				try {
-					Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
-						"CoolUnion");
-					union.setPackingValue(2);
+				Union union = (Union) dtm.getDataType(new CategoryPath("/Category1/Category2"),
+					"CoolUnion");
+				union.pack(2);
 
-					assertEquals(8, union.getComponent(0).getLength());
-					assertEquals(2, union.getComponent(1).getLength());
-					assertEquals(4, union.getComponent(2).getLength());
-					assertEquals(96, union.getComponent(3).getLength());
-					assertEquals(4, union.getComponent(4).getLength());
-					assertEquals(96, union.getLength());
-					assertEquals(2, union.getAlignment());
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				assertEquals(8, union.getComponent(0).getLength());
+				assertEquals(2, union.getComponent(1).getLength());
+				assertEquals(4, union.getComponent(2).getLength());
+				assertEquals(96, union.getComponent(3).getLength());
+				assertEquals(4, union.getComponent(4).getLength());
+				assertEquals(96, union.getLength());
+				assertEquals(2, union.getAlignment());
 			}
 		});
 	}
@@ -1334,11 +1024,10 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
 		Category c = dtm.getCategory(new CategoryPath("/Category1/Category2"));
 		Union union = (Union) c.getDataType("CoolUnion");
-		assertEquals(true, union.isInternallyAligned());
-		assertEquals(true, union.isDefaultAligned());
-		assertEquals(false, union.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, union.getMinimumAlignment());
-		assertEquals(1, union.getPackingValue());
+		assertTrue(union.hasExplicitPackingValue());
+		assertEquals(1, union.getExplicitPackingValue());
+		assertTrue(union.isDefaultAligned());
+
 		assertEquals(8, union.getComponent(0).getLength());
 		assertEquals(2, union.getComponent(1).getLength());
 		assertEquals(4, union.getComponent(2).getLength());
@@ -1361,11 +1050,10 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
 		Category c = dtm.getCategory(new CategoryPath("/Category1/Category2"));
 		Union union = (Union) c.getDataType("CoolUnion");
-		assertEquals(true, union.isInternallyAligned());
-		assertEquals(true, union.isDefaultAligned());
-		assertEquals(false, union.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, union.getMinimumAlignment());
-		assertEquals(2, union.getPackingValue());
+		assertTrue(union.hasExplicitPackingValue());
+		assertEquals(2, union.getExplicitPackingValue());
+		assertTrue(union.isDefaultAligned());
+
 		assertEquals(8, union.getComponent(0).getLength());
 		assertEquals(2, union.getComponent(1).getLength());
 		assertEquals(4, union.getComponent(2).getLength());
@@ -1388,11 +1076,9 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
 		Category c = dtm.getCategory(new CategoryPath("/Category1/Category2"));
 		Union union = (Union) c.getDataType("CoolUnion");
-		assertEquals(true, union.isInternallyAligned());
-		assertEquals(true, union.isDefaultAligned());
-		assertEquals(false, union.isMachineAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, union.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, union.getPackingValue());
+		assertTrue(union.hasDefaultPacking());
+		assertTrue(union.isDefaultAligned());
+
 		assertEquals(8, union.getComponent(0).getLength());
 		assertEquals(2, union.getComponent(1).getLength());
 		assertEquals(4, union.getComponent(2).getLength());
@@ -1416,22 +1102,11 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		struct2.add(new StringDataType(), 4);
 
 		mtf.initialize("notepad", new ProgramModifierListener() {
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyLatest(ghidra.program.database.ProgramDB)
-			 */
+
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
-
-				try {
-					dtm.addDataType(struct1, null);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				dtm.addDataType(struct1, null);
 
 				Structure s =
 					(Structure) dtm.getDataType(new CategoryPath("/Category1"), "ABCStructure");
@@ -1444,25 +1119,13 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 				assertTrue(new PointerDataType(new FloatDataType()).isEquivalent(
 					s.getComponent(0).getDataType()));
 				assertTrue(new FloatDataType().isEquivalent(s.getComponent(1).getDataType()));
-				assertEquals(Composite.NOT_PACKING, s.getPackingValue());
+
 			}
 
-			/* (non-Javadoc)
-			 * @see ghidra.framework.data.ProgramModifierListener#modifyPrivate(ghidra.program.database.ProgramDB)
-			 */
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
-
-				try {
-					dtm.addDataType(struct2, null);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				dtm.addDataType(struct2, null);
 
 				Structure s =
 					(Structure) dtm.getDataType(new CategoryPath("/Category1"), "ABCStructure");
@@ -1474,7 +1137,6 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 				assertEquals(4, s.getComponent(1).getLength());
 				assertTrue(new CharDataType().isEquivalent(s.getComponent(0).getDataType()));
 				assertTrue(new StringDataType().isEquivalent(s.getComponent(1).getDataType()));
-				assertEquals(Composite.NOT_PACKING, s.getPackingValue());
 			}
 		});
 
@@ -1495,7 +1157,6 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		assertTrue(new PointerDataType(new FloatDataType()).isEquivalent(
 			s1.getComponent(0).getDataType()));
 		assertTrue(new FloatDataType().isEquivalent(s1.getComponent(1).getDataType()));
-		assertEquals(Composite.NOT_PACKING, s1.getPackingValue());
 
 		Structure s2 =
 			(Structure) dtm.getDataType(new CategoryPath("/Category1"), "ABCStructure.conflict");
@@ -1508,6 +1169,5 @@ public class DataTypeMerge6Test extends AbstractDataTypeMergeTest {
 		assertEquals(4, s2.getComponent(1).getLength());
 		assertTrue(new CharDataType().isEquivalent(s2.getComponent(0).getDataType()));
 		assertTrue(new StringDataType().isEquivalent(s2.getComponent(1).getDataType()));
-		assertEquals(Composite.NOT_PACKING, s2.getPackingValue());
 	}
 }

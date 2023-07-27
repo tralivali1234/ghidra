@@ -21,7 +21,7 @@ import java.util.*;
 
 import org.apache.commons.lang3.StringUtils;
 
-import db.Record;
+import db.DBRecord;
 import ghidra.program.database.*;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
@@ -30,10 +30,8 @@ import ghidra.program.model.listing.*;
 import ghidra.program.model.mem.*;
 import ghidra.program.model.symbol.*;
 import ghidra.program.model.util.*;
-import ghidra.program.util.ChangeManager;
 import ghidra.util.*;
 import ghidra.util.exception.*;
-import ghidra.util.prop.PropertyVisitor;
 
 /**
  * Database implementation of CodeUnit.
@@ -53,11 +51,10 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 	protected ReferenceManager refMgr;
 	protected ProgramDB program;
 
-	private Record commentRec;
+	private DBRecord commentRec;
 	private boolean checkedComments;
 	protected byte[] bytes;
 	private ProgramContext programContext;
-	protected ChangeManager changeMgr;
 	protected Lock lock;
 
 	/**
@@ -80,7 +77,6 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 		program = (ProgramDB) codeMgr.getProgram();
 		refMgr = program.getReferenceManager();
 		programContext = program.getProgramContext();
-		changeMgr = program;
 	}
 
 	@Override
@@ -89,7 +85,7 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 	}
 
 	@Override
-	protected boolean refresh(Record record) {
+	protected boolean refresh(DBRecord record) {
 		address = codeMgr.getAddressMap().decodeAddress(addr);
 		endAddr = null;
 		commentRec = null;
@@ -121,7 +117,7 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 	 * does NOT indicate existence and a record query may be required.
 	 * @return true if removal of code unit has been confirmed
 	 */
-	abstract protected boolean hasBeenDeleted(Record record);
+	abstract protected boolean hasBeenDeleted(DBRecord record);
 
 	@Override
 	public void addMnemonicReference(Address refAddr, RefType refType, SourceType sourceType) {
@@ -284,7 +280,7 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 	public Address getMaxAddress() {
 		refreshIfNeeded();
 		if (endAddr == null) {
-			endAddr = address.add(length - 1);
+			endAddr = getLength() == 0 ? address : address.add(getLength() - 1);
 		}
 		return endAddr;
 	}
@@ -311,11 +307,11 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 	@Override
 	public Saveable getObjectProperty(String name) {
 		PropertyMapManager upm = codeMgr.getPropertyMapManager();
-		ObjectPropertyMap pm = upm.getObjectPropertyMap(name);
+		ObjectPropertyMap<?> pm = upm.getObjectPropertyMap(name);
 		if (pm != null) {
 			try {
 				refreshIfNeeded();
-				return (Saveable) pm.getObject(address);
+				return pm.get(address);
 			}
 			catch (ConcurrentModificationException e) {
 			}
@@ -384,7 +380,7 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 	@Override
 	public boolean getVoidProperty(String name) {
 		PropertyMapManager upm = codeMgr.getPropertyMapManager();
-		PropertyMap pm = upm.getPropertyMap(name);
+		VoidPropertyMap pm = upm.getVoidPropertyMap(name);
 		if (pm != null) {
 			try {
 				refreshIfNeeded();
@@ -399,7 +395,7 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 	@Override
 	public boolean hasProperty(String name) {
 		PropertyMapManager upm = codeMgr.getPropertyMapManager();
-		PropertyMap pm = upm.getPropertyMap(name);
+		PropertyMap<?> pm = upm.getPropertyMap(name);
 		if (pm != null) {
 			try {
 				refreshIfNeeded();
@@ -453,7 +449,7 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 	@Override
 	public void removeProperty(String name) {
 		PropertyMapManager upm = codeMgr.getPropertyMapManager();
-		PropertyMap pm = upm.getPropertyMap(name);
+		PropertyMap<?> pm = upm.getPropertyMap(name);
 		if (pm != null) {
 			try {
 				refreshIfNeeded();
@@ -545,14 +541,14 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 		}
 	}
 
+	@SuppressWarnings("unchecked")
 	@Override
-	public void setProperty(String name, Saveable value) {
+	public <T extends Saveable> void setProperty(String name, T value) {
 		PropertyMapManager mgr = codeMgr.getPropertyMapManager();
 		lock.acquire();
 		try {
 			checkDeleted();
-			ObjectPropertyMap pm = mgr.getObjectPropertyMap(name);
-
+			ObjectPropertyMap<?> pm = mgr.getObjectPropertyMap(name);
 			if (pm == null) {
 				try {
 					pm = mgr.createObjectPropertyMap(name, value.getClass());
@@ -562,7 +558,8 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 						"Assert problem in CodeUnitImpl.setProperty(Stirng,Object)");
 				}
 			}
-			pm.add(address, value);
+			// Will throw IllegalArgumentException if map is not applicable for T
+			((ObjectPropertyMap<T>) pm).add(address, value);
 		}
 		finally {
 			lock.release();
@@ -630,20 +627,6 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 	}
 
 	@Override
-	public void visitProperty(PropertyVisitor visitor, String propertyName) {
-		PropertyMapManager upm = codeMgr.getPropertyMapManager();
-		PropertyMap pm = upm.getPropertyMap(propertyName);
-		if (pm != null) {
-			try {
-				refreshIfNeeded();
-				pm.applyValue(visitor, address);
-			}
-			catch (ConcurrentModificationException e) {
-			}
-		}
-	}
-
-	@Override
 	public int getBytes(byte[] b, int offset) {
 		lock.acquire();
 		try {
@@ -669,9 +652,10 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 		try {
 			checkIsValid();
 			populateByteArray();
-			byte[] b = new byte[length];
-			if (bytes.length < length) {
-				if (program.getMemory().getBytes(address, b) != length) {
+			int len = getLength();
+			byte[] b = new byte[len];
+			if (bytes.length < len) {
+				if (program.getMemory().getBytes(address, b) != len) {
 					throw new MemoryAccessException("Couldn't get all bytes for CodeUnit");
 				}
 			}
@@ -789,12 +773,11 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 	/**
 	 * Returns a string that represents this code unit with default markup.
 	 * Only the mnemonic and operands are included.
-	 * @see CodeUnitFormat#getRepresentationString(CodeUnit, boolean) for full mark-up formatting
 	 */
 	@Override
 	public abstract String toString();
 
-	Record getCommentRecord() {
+	DBRecord getCommentRecord() {
 		return commentRec;
 	}
 
@@ -829,7 +812,7 @@ abstract class CodeUnitDB extends DatabaseObject implements CodeUnit, ProcessorC
 	}
 
 	protected int getPreferredCacheLength() {
-		return length;
+		return getLength();
 	}
 
 	private void validateOpIndex(int opIndex) {

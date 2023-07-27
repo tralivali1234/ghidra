@@ -16,62 +16,156 @@
 package ghidra.app.util.bin.format.macho.dyld;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.format.macho.MachConstants;
+import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.data.*;
+import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.DuplicateNameException;
+import ghidra.util.task.TaskMonitor;
 
 /**
  * Represents a dyld_cache_slide_info3 structure.
- * 
- * @see <a href="https://opensource.apple.com/source/dyld/dyld-625.13/launch-cache/dyld_cache_format.h.auto.html">launch-cache/dyld_cache_format.h</a> 
+ * <p>
+ * Seen in iOS 12 and later. 
  */
 public class DyldCacheSlideInfo3 extends DyldCacheSlideInfoCommon {
 
-	private int page_size;
-	private int page_starts_count;
-	private long auth_value_add;
-	private short page_starts[];
+	private static final int DYLD_CACHE_SLIDE_V3_PAGE_ATTR_NO_REBASE = 0xFFFF;
 
+	private int pageSize;
+	private int pageStartsCount;
+	private long authValueAdd;
+	private short[] pageStarts;
+
+	/**
+	 * {@return The page size}
+	 */
 	public int getPageSize() {
-		return page_size;
+		return pageSize;
 	}
 
+	/**
+	 * {@return The page starts count}
+	 */
 	public int getPageStartsCount() {
-		return page_starts_count;
+		return pageStartsCount;
 	}
 
+	/**
+	 * {@return The "auth value add"}
+	 */
 	public long getAuthValueAdd() {
-		return auth_value_add;
+		return authValueAdd;
 	}
 
+	/**
+	 * {@return The page starts array}
+	 */
 	public short[] getPageStarts() {
-		return page_starts;
+		return pageStarts;
 	}
 
 	/**
 	 * Create a new {@link DyldCacheSlideInfo3}.
 	 * 
 	 * @param reader A {@link BinaryReader} positioned at the start of a DYLD slide info 3
+	 * @param mappingAddress The base address of where the slide fixups will take place
+	 * @param mappingSize The size of the slide fixups block
+	 * @param mappingFileOffset The base file offset of where the slide fixups will take place
 	 * @throws IOException if there was an IO-related problem creating the DYLD slide info 3
 	 */
-	public DyldCacheSlideInfo3(BinaryReader reader) throws IOException {
-		super(reader);
-		page_size = reader.readNextInt();
-		page_starts_count = reader.readNextInt();
-		auth_value_add = reader.readNextLong();
-		page_starts = reader.readNextShortArray(page_starts_count);
+	public DyldCacheSlideInfo3(BinaryReader reader, long mappingAddress, long mappingSize,
+			long mappingFileOffset) throws IOException {
+		super(reader, mappingAddress, mappingSize, mappingFileOffset);
+		pageSize = reader.readNextInt();
+		pageStartsCount = reader.readNextInt();
+		reader.readNextInt(); // padding
+		authValueAdd = reader.readNextLong();
+		pageStarts = reader.readNextShortArray(pageStartsCount);
+	}
+
+	@Override
+	public List<DyldCacheSlideFixup> getSlideFixups(BinaryReader reader, int pointerSize,
+			MessageLog log, TaskMonitor monitor) throws IOException, CancelledException {
+		List<DyldCacheSlideFixup> fixups = new ArrayList<>();
+
+		monitor.initialize(pageStartsCount, "Getting DYLD Cache V3 slide fixups...");
+		for (int index = 0; index < pageStartsCount; index++) {
+			monitor.increment();
+
+			long segmentOffset = pageSize * index;
+
+			int pageEntry = Short.toUnsignedInt(pageStarts[index]);
+			if (pageEntry == DYLD_CACHE_SLIDE_V3_PAGE_ATTR_NO_REBASE) {
+				continue;
+			}
+
+			long pageOffset = (pageEntry / 8) * 8; // first entry byte based;
+			fixups.addAll(processPointerChain(segmentOffset, pageOffset, reader, monitor));
+		}
+
+		return fixups;
+	}
+
+	/**
+	 * Walks the pointer chain at the given reader offset to find necessary 
+	 * {@link DyldCacheSlideFixup}s
+	 * 
+	 * @param segmentOffset The segment offset
+	 * @param pageOffset The page offset
+	 * @param reader A reader positioned at the start of the segment to fix
+	 * @param monitor A cancellable monitor
+	 * @return A {@link List} of {@link DyldCacheSlideFixup}s
+	 * @throws IOException If an IO-related error occurred
+	 * @throws CancelledException If the user cancelled the operation
+	 */
+	private List<DyldCacheSlideFixup> processPointerChain(long segmentOffset, long pageOffset,
+			BinaryReader reader, TaskMonitor monitor) throws IOException, CancelledException {
+
+		List<DyldCacheSlideFixup> fixups = new ArrayList<>(1024);
+
+		for (long delta = -1; delta != 0; pageOffset += delta * 8) {
+			monitor.checkCancelled();
+
+			long dataOffset = segmentOffset + pageOffset;
+			long chainValue = reader.readLong(dataOffset);
+
+			// if authenticated pointer
+			boolean isAuthenticated = chainValue >>> 63 != 0;
+			delta = (chainValue & (0x7FFL << 51L)) >> 51L;
+
+			if (isAuthenticated) {
+				long offsetFromSharedCacheBase = chainValue & 0xFFFFFFFFL;
+				//long diversityData = (chainValue >> 32L) & 0xFFFFL;
+				//long hasAddressDiversity = (chainValue >> 48L) & 0x1L;
+				//long key = (chainValue >> 49L) & 0x3L;
+				chainValue = offsetFromSharedCacheBase + authValueAdd /* + slide */;
+			}
+			else {
+				long top8Bits = chainValue & 0x0007F80000000000L;
+				long bottom43Bits = chainValue & 0x000007FFFFFFFFFFL;
+				chainValue = (top8Bits << 13) | bottom43Bits /* + slide */;
+			}
+
+			fixups.add(new DyldCacheSlideFixup(dataOffset, chainValue, 8));
+		}
+
+		return fixups;
 	}
 
 	@Override
 	public DataType toDataType() throws DuplicateNameException, IOException {
 		StructureDataType struct = new StructureDataType("dyld_cache_slide_info3", 0);
-		struct.add(DWORD, "version", "");
-		struct.add(DWORD, "page_size", "");
+		struct.add(DWORD, "version", "currently 3");
+		struct.add(DWORD, "page_size", "currently 4096 (may also be 16384)");
 		struct.add(DWORD, "page_starts_count", "");
+		struct.add(DWORD, "pad", "");
 		struct.add(QWORD, "auth_value_add", "");
-		struct.add(new ArrayDataType(WORD, page_starts_count, 1), "page_starts", "");
+		struct.add(new ArrayDataType(WORD, pageStartsCount, 1), "page_starts", "");
 		struct.setCategoryPath(new CategoryPath(MachConstants.DATA_TYPE_CATEGORY));
 		return struct;
 	}

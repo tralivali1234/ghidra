@@ -19,13 +19,17 @@ import ghidra.program.model.data.DataType;
 import ghidra.program.model.listing.VariableStorage;
 
 interface FunctionVariableData {
+
+	/**
+	 * {@return parameter ordinal or null for return variable.}
+	 */
 	public Integer getIndex();
 
 	public void setStorage(VariableStorage storage);
 
 	public void setName(String name);
 
-	public void setFormalDataType(DataType dataType);
+	public boolean setFormalDataType(DataType dataType);
 
 	public VariableStorage getStorage();
 

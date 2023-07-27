@@ -21,6 +21,7 @@ import java.util.*;
 
 import javax.swing.text.*;
 
+import generic.theme.GColor;
 import ghidra.program.database.properties.UnsupportedMapDB;
 import ghidra.program.model.address.*;
 import ghidra.program.model.data.*;
@@ -29,9 +30,9 @@ import ghidra.program.model.listing.*;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.symbol.*;
-import ghidra.program.model.util.TypeMismatchException;
 import ghidra.util.*;
 import ghidra.util.exception.NoValueException;
+import ghidra.util.map.TypeMismatchException;
 
 /**
  * ProgramDiffDetails is used to determine the detailed differences between
@@ -43,20 +44,17 @@ public class ProgramDiffDetails {
 	private static final int INDENT_SIZE = 4;
 	private static final String STANDARD_NEW_LINE = "\n";
 
-	public static Color RED = new Color(0xff, 0x00, 0x00);
-	public static Color MAROON = new Color(0x99, 0x00, 0x00);
-	public static Color GREEN = new Color(0x00, 0x99, 0x00);
-	public static Color BLUE = new Color(0x00, 0x00, 0x99);
-	public static Color PURPLE = new Color(0x99, 0x00, 0x99);
-	public static Color DARK_CYAN = new Color(0x00, 0x99, 0x99);
-	public static Color OLIVE = new Color(0x99, 0x99, 0x00);
-	public static Color ORANGE = new Color(0xff, 0x99, 0x00);
-	public static Color PINK = new Color(0xff, 0x99, 0x99);
-	public static Color YELLOW = new Color(0xff, 0xff, 0x00);
-	public static Color GRAY = new Color(0x88, 0x88, 0x88);
-	private static final Color EMPHASIZE_COLOR = GREEN;
-	private static final Color ADDRESS_COLOR = DARK_CYAN;
-	private static final Color COMMENT_COLOR = GREEN;
+	//@formatter:off
+	private static Color FG_COLOR_ADDRESS = new GColor("color.fg.plugin.programdiff.details.address");
+	private static Color FG_COLOR_COMMENT = new GColor("color.fg.plugin.programdiff.details.comment");
+	private static Color FG_COLOR_DANGER = new GColor("color.fg.plugin.programdiff.details.danger");
+	private static Color FG_COLOR_EMPHASIZE = new GColor("color.fg.plugin.programdiff.details.emphasize");
+	private static Color FG_COLOR_PROGRAM = new GColor("color.fg.plugin.programdiff.details.program");
+	//@formatter:on
+
+	private static final Color EMPHASIZE_COLOR = FG_COLOR_EMPHASIZE;
+	private static final Color ADDRESS_COLOR = FG_COLOR_ADDRESS;
+	private static final Color COMMENT_COLOR = FG_COLOR_COMMENT;
 
 	private static final BookmarkComparator BOOKMARK_COMPARATOR = new BookmarkComparator();
 
@@ -123,12 +121,9 @@ public class ProgramDiffDetails {
 		return buf.toString();
 	}
 
-	/**
-	 *
-	 */
 	private void initAttributes() {
 		textAttrSet = new SimpleAttributeSet();
-		textAttrSet.addAttribute(StyleConstants.FontSize, new Integer(12));
+		textAttrSet.addAttribute(StyleConstants.FontSize, 12);
 	}
 
 	/**
@@ -690,9 +685,6 @@ public class ProgramDiffDetails {
 		return list.toArray(new Symbol[list.size()]);
 	}
 
-	/**
-	 * @param addr
-	 */
 	private void addEntryPtLine(Address addr) {
 		addText(indent2);
 		addColorAddress(addr);
@@ -744,7 +736,6 @@ public class ProgramDiffDetails {
 	 * @param nameLength the length of the name field.
 	 * @param typeLength the length of the type field.
 	 * @param sourceLength the length of the source field.
-	 * @return the string with the label name and attributes.
 	 */
 	private void addDisplayLabel(Symbol symbol, int nameLength, int typeLength, int sourceLength) {
 		String name = "";
@@ -882,22 +873,6 @@ public class ProgramDiffDetails {
 		for (int index2 = i; index2 < compDt2.length; index2++) {
 			getComponentInfo(compDt2[index2], buf2, newIndent);
 		}
-
-		if (dt1 instanceof Structure) {
-			// dt2 is also Structure - check for flex array component
-			DataTypeComponent flexDtc1 = ((Structure) dt1).getFlexibleArrayComponent();
-			DataTypeComponent flexDtc2 = ((Structure) dt2).getFlexibleArrayComponent();
-			if (flexDtc1 != null) {
-				getComponentInfo(flexDtc1, buf1, newIndent);
-			}
-			if (flexDtc2 != null) {
-				getComponentInfo(flexDtc2, buf2, newIndent);
-			}
-			if (flexDtc1 != null && flexDtc2 != null) {
-				compareSubDataTypes(flexDtc1.getDataType(), flexDtc2.getDataType(), buf1, buf2,
-					newIndent);
-			}
-		}
 	}
 
 	private void compareDataCUs(Data d1, Data d2, StringBuffer buf1, StringBuffer buf2,
@@ -926,22 +901,13 @@ public class ProgramDiffDetails {
 		if (fieldName == null) {
 			fieldName = dtc.getDefaultFieldName();
 		}
-		if (dtc.isFlexibleArrayComponent()) {
-			buf.append(indent + "Offset=" + DiffUtility.toSignedHexString(offset) + " " +
-				"Ordinal=" + ordinal + " " + fieldName + " " +
-				actualDt.getMnemonic(actualDt.getDefaultSettings()) + "[]" + "  " +
-				getCategoryName(actualDt) + " " + "DataTypeSize=" + actualDt.getLength() +
-				" (flexible array) " + ((comment != null) ? comment : "") + " " + newLine);
-		}
-		else {
-			// TODO: how should we display bitfields?
-			buf.append(indent + "Offset=" + DiffUtility.toSignedHexString(offset) + " " +
-				"Ordinal=" + ordinal + " " + fieldName + " " +
-				actualDt.getMnemonic(actualDt.getDefaultSettings()) + "  " +
-				getCategoryName(actualDt) + " " + "DataTypeSize=" + actualDt.getLength() + " " +
-				"ComponentSize=" + dtc.getLength() + " " + ((comment != null) ? comment : "") +
-				" " + newLine);
-		}
+		// TODO: how should we display bitfields?
+		buf.append(indent + "Offset=" + DiffUtility.toSignedHexString(offset) + " " + "Ordinal=" +
+			ordinal + " " + fieldName + " " + actualDt.getMnemonic(actualDt.getDefaultSettings()) +
+			"  " + getCategoryName(actualDt) + " " + "DataTypeSize=" +
+			(actualDt.isZeroLength() ? 0 : actualDt.getLength()) + " " + "ComponentSize=" +
+			dtc.getLength() + " " + ((comment != null) ? comment : "") +
+			" " + newLine);
 		return actualDt;
 	}
 
@@ -983,18 +949,17 @@ public class ProgramDiffDetails {
 				Data data = (Data) cu;
 				DataType dt = data.getDataType();
 				if (dt instanceof Composite) {
-					DataTypeComponent[] compDt = ((Composite) dt).getComponents();
-					for (DataTypeComponent element : compDt) {
-						int offset = element.getOffset();
-						String comment = element.getComment();
-						String fieldName = element.getFieldName();
+					DataTypeComponent[] components = ((Composite) dt).getComponents();
+					for (DataTypeComponent dtc : components) {
+						int offset = dtc.getOffset();
+						String comment = dtc.getComment();
+						String fieldName = dtc.getFieldName();
 						if (fieldName == null) {
 							fieldName = "field" + offset;
 						}
-						buf.append(newIndent + min.add(offset) + " " + element.getFieldName() +
-							" " + element.getDataType().getName() + " " + "length=" +
-							element.getLength() + " " +
-
+						buf.append(newIndent + min.add(offset) + " " + dtc.getFieldName() + " " +
+							dtc.getDataType().getName() + " " + "length=" +
+							dtc.getLength() + " " +
 							((comment != null) ? comment : "") + " " + newLine);
 					}
 				}
@@ -1217,9 +1182,6 @@ public class ProgramDiffDetails {
 		return hasAddrDiffs;
 	}
 
-	/**
-	 * @param opIndex
-	 */
 	private void addOperandText(int opIndex) {
 		addText(indent2);
 		addText("Operand: ");
@@ -1471,8 +1433,8 @@ public class ProgramDiffDetails {
 	 * tags passed-in. If a comment is present in the tag object, it will be shown
 	 * in parenthesis.
 	 *
-	 * @param tags
-	 * @return
+	 * @param tags the tags
+	 * @return the info
 	 */
 	private String getTagInfo(Collection<FunctionTag> tags) {
 		if (tags == null || tags.size() == 0) {
@@ -2205,8 +2167,10 @@ public class ProgramDiffDetails {
 			for (String propertyName : names1) {
 				if (cu.hasProperty(propertyName)) {
 					// Handle case where the class for a Saveable property is missing (unsupported).
-					if (cu.getProgram().getListing().getPropertyMap(
-						propertyName) instanceof UnsupportedMapDB) {
+					if (cu.getProgram()
+							.getListing()
+							.getPropertyMap(
+								propertyName) instanceof UnsupportedMapDB) {
 						buf.append(
 							indent2 + propertyName + " is an unsupported property." + newLine);
 						continue;
@@ -2577,7 +2541,7 @@ public class ProgramDiffDetails {
 	}
 
 	private void addColorProgram(StyledDocument doc, String text) {
-		color(PURPLE);
+		color(FG_COLOR_PROGRAM);
 		try {
 			doc.insertString(doc.getLength(), text, textAttrSet);
 		}
@@ -2601,7 +2565,7 @@ public class ProgramDiffDetails {
 	}
 
 	private void addDangerColorText(String text) {
-		addColorText(RED, detailsDoc, text);
+		addColorText(FG_COLOR_DANGER, detailsDoc, text);
 	}
 
 	private void addColorText(Color color, StyledDocument doc, String text) {

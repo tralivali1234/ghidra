@@ -40,20 +40,45 @@ public class MDMang {
 
 	protected String mangled;
 	protected MDCharacterIterator iter;
-	protected int numCharsRemaining = 0;
 	protected String errorMessage = "";
 	protected MDParsableItem item;
 
 	protected List<MDContext> contextStack = new ArrayList<>();
 
+	public enum ProcessingMode {
+		DEFAULT_STANDARD, LLVM
+	}
+
+	private ProcessingMode processingMode = ProcessingMode.DEFAULT_STANDARD;
+
+	public void setProcessingMode(ProcessingMode processingMode) {
+		this.processingMode = processingMode;
+	}
+
+	public ProcessingMode getProcessingMode() {
+		return processingMode;
+	}
+
+	public boolean isProcessingModeActive(ProcessingMode mode) {
+		switch (mode) {
+			case LLVM:
+				return processingMode == mode && (getIndex() == 0);
+			default:
+				break;
+		}
+		return processingMode == mode;
+	}
+
 	/**
-	 * Demangles the string passed in.
-	 * 
+	 * Demangles the string passed in and returns a parsed item.
+	 *
 	 * @param mangledIn
 	 *            the string to be demangled.
 	 * @param errorOnRemainingChars
 	 *            boolean flag indicating whether remaining characters causes an
 	 *            error.
+	 * @return the item that has been parsed.
+	 * @throws MDException upon parsing error
 	 */
 	public MDParsableItem demangle(String mangledIn, boolean errorOnRemainingChars)
 			throws MDException {
@@ -65,24 +90,25 @@ public class MDMang {
 	}
 
 	/**
-	 * Demangles the string passed in.
-	 * 
+	 * Demangles the string already stored and returns a parsed item.
+	 *
 	 * @param errorOnRemainingChars
 	 *            boolean flag indicating whether remaining characters causes an
 	 *            error.
+	 * @return item detected and parsed
+	 * @throws MDException upon error parsing item
 	 */
 	public MDParsableItem demangle(boolean errorOnRemainingChars) throws MDException {
 		if (mangled == null) {
 			throw new MDException("MDMang: Mangled string is null.");
 		}
 		pushContext();
-		item = MDMangObjectParser.parse(this);
-		item.parse();
+		item = MDMangObjectParser.determineItemAndParse(this);
 		if (item instanceof MDObjectCPP) {
 			// MDMANG SPECIALIZATION USED.
 			item = getEmbeddedObject((MDObjectCPP) item);
 		}
-		numCharsRemaining = iter.getLength() - iter.getIndex();
+		int numCharsRemaining = getNumCharsRemaining();
 		popContext();
 		if (errorOnRemainingChars && (numCharsRemaining > 0)) {
 			throw new MDException(
@@ -93,7 +119,7 @@ public class MDMang {
 
 	/**
 	 * Sets the mangled string to be demangled.
-	 * 
+	 *
 	 * @param mangledIn
 	 *            the string to be demangled.
 	 */
@@ -104,7 +130,7 @@ public class MDMang {
 
 	/**
 	 * Gets the mangled string being demangled.
-	 * 
+	 *
 	 * @return the string being demangled.
 	 */
 	public String getMangledSymbol() {
@@ -113,7 +139,7 @@ public class MDMang {
 
 	/**
 	 * Returns the error message when demangle() returns null.
-	 * 
+	 *
 	 * @return the error message for the demangle() call.
 	 */
 	public String getErrorMessage() {
@@ -124,11 +150,11 @@ public class MDMang {
 	 * Returns the number of unprocessed mangled characters. Note that
 	 * demangle() has a flag controlling whether remaining characters causes an
 	 * error.
-	 * 
+	 *
 	 * @return the integer number of characters that remain.
 	 */
 	public int getNumCharsRemaining() {
-		return numCharsRemaining;
+		return iter.getLength() - iter.getIndex();
 	}
 
 	/******************************************************************************/
@@ -164,7 +190,6 @@ public class MDMang {
 
 	/**
 	 * Returns the current index.
-	 * 
 	 * @return the current index.
 	 */
 	public int getIndex() {
@@ -172,8 +197,17 @@ public class MDMang {
 	}
 
 	/**
+	 * Sets the current index.
+	 * @param index the position to set.
+	 * @throws IllegalArgumentException if index is not in range from 0 to string.length()-1
+	 */
+	public void setIndex(int index) {
+		iter.setIndex(index);
+	}
+
+	/**
 	 * Returns the next character without incrementing the current index.
-	 * 
+	 *
 	 * @return the next character without incrementing the current index
 	 */
 	public char peek() {
@@ -184,7 +218,7 @@ public class MDMang {
 	/**
 	 * Peeks at the character current index + lookAhead. Returns DONE if the
 	 * computed position is out of range.
-	 * 
+	 *
 	 * @param lookAhead
 	 *            number of characters to look ahead
 	 * @return the character at index+lookAhead
@@ -200,7 +234,7 @@ public class MDMang {
 	 * current index is reset to the end index and a value of DONE is returned.
 	 * For extended reasons, the user should try not to use this method--and use
 	 * of it should be selective, based on extended class reasons.
-	 * 
+	 *
 	 * @return the character at the new position or DONE
 	 */
 	public char next() {
@@ -212,7 +246,7 @@ public class MDMang {
 	 * Returns the character at the current index and then increments the index
 	 * by one. If the resulting index is greater or equal to the end index, the
 	 * current index is reset to the end index and a value of DONE is returned.
-	 * 
+	 *
 	 * @return the character at the new position or DONE
 	 */
 	public char getAndIncrement() {
@@ -232,7 +266,7 @@ public class MDMang {
 	/**
 	 * Moves to the next character in the iterator.
 	 * Does no testing for whether it surpasses the length of the string.
-	 * 
+	 *
 	 * @param count
 	 *            number of characters to move ahead
 	 */
@@ -475,6 +509,7 @@ public class MDMang {
 	 *  embedded object (see MDBasicName).  In this default case, we do not
 	 *  return the embedded object, but just return the object itself.  A
 	 *  derived class can elect to return the embedded.
+	 * @param obj the object from which to the embedded object is retrieved for return.
 	 * @return An MDObjectCPP representing the original or the embedded object.
 	 */
 	public MDObjectCPP getEmbeddedObject(MDObjectCPP obj) {
@@ -486,6 +521,8 @@ public class MDMang {
 	 *  object.  In this default case (MDMang), we properly process the
 	 *  hashed object.  Overridden methods might just throw an exception,
 	 *  allowing a failed demangling.
+	 * @param obj the MDObjectCPP for which to process as a hashed object
+	 * @throws MDException on parsing error.
 	 */
 	public void processHashedObject(MDObjectCPP obj) throws MDException {
 		obj.processHashedObject();

@@ -15,10 +15,11 @@
  */
 package ghidra.program.model.data;
 
+import java.util.*;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
-import java.util.*;
 
 import org.jdom.*;
 import org.jdom.input.SAXBuilder;
@@ -97,15 +98,17 @@ public class CharsetInfo {
 	 * Application initialization overhead.
 	 */
 	private void registerStandardCharsets() {
-		addCharset(USASCII, 1);
-		addCharset(UTF8, 1);
-		addCharset("ISO-8859-1", 1);
-		addCharset(UTF16, 2);
-		addCharset("UTF-16BE", 2);
-		addCharset("UTF-16LE", 2);
-		addCharset(UTF32, 4);
-		addCharset("UTF-32BE", 4);
-		addCharset("UTF-32LE", 4);
+		if (charsetInfoRecsByName.isEmpty()) {
+			addCharset(USASCII, 1);
+			addCharset(UTF8, 1);
+			addCharset("ISO-8859-1", 1);
+			addCharset(UTF16, 2);
+			addCharset("UTF-16BE", 2);
+			addCharset("UTF-16LE", 2);
+			addCharset(UTF32, 4);
+			addCharset("UTF-32BE", 4);
+			addCharset("UTF-32LE", 4);
+		}
 	}
 
 	private void addCharset(String name, int charSize) {
@@ -134,6 +137,21 @@ public class CharsetInfo {
 	public int getCharsetCharSize(String charsetName) {
 		CharsetInfoRec rec = charsetInfoRecsByName.get(charsetName);
 		return (rec != null) ? rec.charSize : 1;
+	}
+
+	/**
+	 * Returns list of {@link Charset}s that encode with the number of bytes specified.
+	 * @param size the number of bytes for the {@link Charset} encoding.
+	 * @return Charsets that encode one byte characters.
+	 */
+	public List<String> getCharsetNamesWithCharSize(int size) {
+		List<String> names = new ArrayList<>();
+		for (String name : charsetNames) {
+			if (getCharsetCharSize(name) == size) {
+				names.add(name);
+			}
+		}
+		return names;
 	}
 
 	private void addJVMAvailableCharsets() {

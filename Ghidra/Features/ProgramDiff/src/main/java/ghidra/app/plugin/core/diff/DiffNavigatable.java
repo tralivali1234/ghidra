@@ -15,16 +15,16 @@
  */
 package ghidra.app.plugin.core.diff;
 
+import javax.swing.Icon;
+
 import ghidra.app.nav.*;
 import ghidra.app.plugin.core.codebrowser.CodeViewerLocationMemento;
-import ghidra.app.util.HighlightProvider;
+import ghidra.app.util.ListingHighlightProvider;
 import ghidra.program.model.listing.Program;
 import ghidra.program.util.ProgramLocation;
 import ghidra.program.util.ProgramSelection;
 import ghidra.util.datastruct.WeakDataStructureFactory;
 import ghidra.util.datastruct.WeakSet;
-
-import javax.swing.Icon;
 
 /**
  * This is a navigatable for use by the right-hand listing of the Diff.
@@ -141,6 +141,11 @@ class DiffNavigatable implements Navigatable {
 	}
 
 	@Override
+	public String getTextSelection() {
+		return navigatable.getTextSelection();
+	}
+
+	@Override
 	public void addNavigatableListener(NavigatableRemovalListener listener) {
 		navigationListeners.add(listener);
 	}
@@ -168,13 +173,13 @@ class DiffNavigatable implements Navigatable {
 	}
 
 	@Override
-	public void setHighlightProvider(HighlightProvider highlightProvider, Program program) {
+	public void setHighlightProvider(ListingHighlightProvider highlightProvider, Program program) {
 		// CodeViewerProvider handles the other listing (the Diff listing) highlights.
 		navigatable.setHighlightProvider(highlightProvider, program);
 	}
 
 	@Override
-	public void removeHighlightProvider(HighlightProvider highlightProvider, Program program) {
+	public void removeHighlightProvider(ListingHighlightProvider highlightProvider, Program program) {
 		// CodeViewerProvider handles the other listing (the Diff listing) highlights.
 		navigatable.removeHighlightProvider(highlightProvider, program);
 	}

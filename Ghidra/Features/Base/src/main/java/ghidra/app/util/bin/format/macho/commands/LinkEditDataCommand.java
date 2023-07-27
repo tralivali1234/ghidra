@@ -17,51 +17,53 @@ package ghidra.app.util.bin.format.macho.commands;
 
 import java.io.IOException;
 
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.format.macho.MachConstants;
 import ghidra.app.util.bin.format.macho.MachHeader;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.flatapi.FlatProgramAPI;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.*;
-import ghidra.program.model.listing.ProgramModule;
+import ghidra.program.model.listing.*;
+import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.task.TaskMonitor;
 
 /**
- * Represents a linkedit_data_command structure.
- * 
- * @see <a href="https://opensource.apple.com/source/xnu/xnu-4570.71.2/EXTERNAL_HEADERS/mach-o/loader.h.auto.html">mach-o/loader.h</a> 
+ * Represents a linkedit_data_command structure 
  */
 public class LinkEditDataCommand extends LoadCommand {
-	private int dataoff;
-	private int datasize;
-
-	static LinkEditDataCommand createLinkEditDataCommand(FactoryBundledWithBinaryReader reader)
-			throws IOException {
-		LinkEditDataCommand command =
-			(LinkEditDataCommand) reader.getFactory().create(LinkEditDataCommand.class);
-		command.initLinkEditDataCommand(reader);
-		return command;
-	}
+	protected int dataoff;
+	protected int datasize;
+	protected BinaryReader dataReader;
 
 	/**
-	 * DO NOT USE THIS CONSTRUCTOR, USE create*(GenericFactory ...) FACTORY METHODS INSTEAD.
+	 * Creates and parses a new {@link LinkEditDataCommand}.  Sets <code>dataReader</code> to the
+	 * data offset.
+	 * 
+	 * @param loadCommandReader A {@link BinaryReader reader} that points to the start of the load
+	 *   command
+	 * @param dataReader A {@link BinaryReader reader} that can read the data that the load command
+	 *   references.  Note that this might be in a different underlying provider.
+	 * @throws IOException if an IO-related error occurs while parsing
 	 */
-	public LinkEditDataCommand() {
+	LinkEditDataCommand(BinaryReader loadCommandReader, BinaryReader dataReader)
+			throws IOException {
+		super(loadCommandReader);
+		this.dataoff = loadCommandReader.readNextInt();
+		this.datasize = loadCommandReader.readNextInt();
+		this.dataReader = dataReader;
+		this.dataReader.setPointerIndex(dataoff);
 	}
 
-	private void initLinkEditDataCommand(FactoryBundledWithBinaryReader reader) throws IOException {
-		initLoadCommand(reader);
-		dataoff = reader.readNextInt();
-		datasize = reader.readNextInt();
-	}
-
-	public int getDataOffset() {
+	@Override
+	public int getLinkerDataOffset() {
 		return dataoff;
 	}
 
-	public int getDataSize() {
+	@Override
+	public int getLinkerDataSize() {
 		return datasize;
 	}
 
@@ -71,23 +73,40 @@ public class LinkEditDataCommand extends LoadCommand {
 	}
 
 	@Override
-	public void markup(MachHeader header, FlatProgramAPI api, Address baseAddress, boolean isBinary,
+	public Address getDataAddress(MachHeader header, AddressSpace space) {
+		if (dataoff != 0 && datasize != 0) {
+			SegmentCommand segment = getContainingSegment(header, dataoff);
+			if (segment != null) {
+				return space
+						.getAddress(segment.getVMaddress() + (dataoff - segment.getFileOffset()));
+			}
+		}
+		return null;
+	}
+
+	@Override
+	public void markup(Program program, MachHeader header, Address addr, String source,
+			TaskMonitor monitor, MessageLog log) throws CancelledException {
+		if (addr == null || datasize == 0) {
+			return;
+		}
+		String name = LoadCommandTypes.getLoadCommandName(getCommandType());
+		if (source != null) {
+			name += " - " + source;
+		}
+		program.getListing().setComment(addr, CodeUnit.PLATE_COMMENT, name);
+	}
+
+	@Override
+	public void markupRawBinary(MachHeader header, FlatProgramAPI api, Address baseAddress,
 			ProgramModule parentModule, TaskMonitor monitor, MessageLog log) {
-		updateMonitor(monitor);
 		try {
-			if (isBinary) {
-				createFragment(api, baseAddress, parentModule);
-				Address address = baseAddress.getNewAddress(getStartIndex());
-				api.createData(address, toDataType());
-				api.setPlateComment(address,
-					LoadCommandTypes.getLoadCommentTypeName(getCommandType()));
+			super.markupRawBinary(header, api, baseAddress, parentModule, monitor, log);
 
-//TODO markup actual data
-
-				if (datasize > 0) {
-					Address start = baseAddress.getNewAddress(dataoff);
-					api.createFragment(parentModule, getCommandName() + "_DATA", start, datasize);
-				}
+			if (datasize > 0) {
+				Address start = baseAddress.getNewAddress(dataoff);
+				api.createFragment(parentModule,
+					LoadCommandTypes.getLoadCommandName(getCommandType()), start, datasize);
 			}
 		}
 		catch (Exception e) {

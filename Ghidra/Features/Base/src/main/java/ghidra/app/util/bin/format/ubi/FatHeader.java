@@ -19,12 +19,13 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import generic.continues.GenericFactory;
-import ghidra.app.util.bin.ByteProvider;
-import ghidra.app.util.bin.ByteProviderWrapper;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
+import ghidra.app.util.bin.*;
+import ghidra.app.util.bin.format.coff.CoffException;
+import ghidra.app.util.bin.format.coff.archive.CoffArchiveHeader;
+import ghidra.app.util.bin.format.coff.archive.CoffArchiveMemberHeader;
 import ghidra.app.util.bin.format.macho.MachException;
 import ghidra.app.util.bin.format.macho.MachHeader;
+import ghidra.util.task.TaskMonitor;
 
 /**
  * Represents a fat_header structure.
@@ -40,20 +41,9 @@ public class FatHeader {
 	private List<FatArch> architectures = new ArrayList<FatArch>();
 	private List<MachHeader> machHeaders = new ArrayList<MachHeader>();
 
-    public static FatHeader createFatHeader(GenericFactory factory, ByteProvider provider)
+	public FatHeader(ByteProvider provider)
             throws IOException, UbiException, MachException {
-        FatHeader fatHeader = (FatHeader) factory.create(FatHeader.class);
-        fatHeader.initFatHeader(factory, provider);
-        return fatHeader;
-    }
-
-    /**
-     * DO NOT USE THIS CONSTRUCTOR, USE create*(GenericFactory ...) FACTORY METHODS INSTEAD.
-     */
-    public FatHeader() {}
-
-	private void initFatHeader(GenericFactory factory, ByteProvider provider) throws IOException, UbiException, MachException {
-		FactoryBundledWithBinaryReader reader = new FactoryBundledWithBinaryReader(factory, provider, false/*always big endian*/);
+		BinaryReader reader = new BinaryReader(provider, false/*always big endian*/);
 
 		magic = reader.readNextInt();
 
@@ -67,13 +57,36 @@ public class FatHeader {
 		}
 
 		for (int i = 0 ; i < nfat_arch ; ++i) {
-			architectures.add(FatArch.createFatArch(reader));
+			architectures.add(new FatArch(reader));
 		}
 
 		for (FatArch fatarch : architectures) {
-			ByteProviderWrapper wrapper = new ByteProviderWrapper(provider, fatarch.getOffset(), fatarch.getSize());
-			MachHeader machHeader = MachHeader.createMachHeader(factory, wrapper);
-			machHeaders.add(machHeader);
+			ByteProviderWrapper wrapper =
+				new ByteProviderWrapper(provider, fatarch.getOffset(), fatarch.getSize());
+
+			// It could be a Mach-O or a COFF archive
+			CoffArchiveHeader caf = null;
+			try {
+				caf = CoffArchiveHeader.read(wrapper, TaskMonitor.DUMMY);
+			}
+			catch (CoffException e) {
+				throw new UbiException(e);
+			}
+			if (caf != null) {
+				for (CoffArchiveMemberHeader camh : caf.getArchiveMemberHeaders()) {
+					wrapper = new ByteProviderWrapper(provider,
+						fatarch.getOffset() + camh.getPayloadOffset(), camh.getSize());
+					try {
+						machHeaders.add(new MachHeader(wrapper));
+					}
+					catch (MachException e) {
+						// Could be __.SYMDEF archive member instead of a Mach-O
+					}
+				}
+			}
+			else {
+				machHeaders.add(new MachHeader(wrapper));
+			}
 		}
 	}
 

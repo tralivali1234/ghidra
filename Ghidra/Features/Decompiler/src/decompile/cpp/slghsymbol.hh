@@ -13,11 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef __SLGHSYMBOL__
-#define __SLGHSYMBOL__
+#ifndef __SLGHSYMBOL_HH__
+#define __SLGHSYMBOL_HH__
 
 #include "semantics.hh"
 #include "slghpatexpress.hh"
+
+namespace ghidra {
 
 class SleighBase;		// Forward declaration
 class SleighSymbol {
@@ -25,7 +27,7 @@ class SleighSymbol {
 public:
   enum symbol_type { space_symbol, token_symbol, userop_symbol, value_symbol, valuemap_symbol,
 		     name_symbol, varnode_symbol, varnodelist_symbol, operand_symbol,
-		     start_symbol, end_symbol, subtable_symbol, macro_symbol, section_symbol,
+		     start_symbol, end_symbol, next2_symbol, subtable_symbol, macro_symbol, section_symbol,
                      bitrange_symbol, context_symbol, epsilon_symbol, label_symbol,
 		     dummy_symbol };
 private:
@@ -391,6 +393,23 @@ public:
   virtual void restoreXml(const Element *el,SleighBase *trans);
 };
 
+class Next2Symbol : public SpecificSymbol {
+  AddrSpace *const_space;
+  PatternExpression *patexp;
+public:
+  Next2Symbol(void) { patexp = (PatternExpression *)0; } // For use with restoreXml
+  Next2Symbol(const string &nm,AddrSpace *cspc);
+  virtual ~Next2Symbol(void);
+  virtual VarnodeTpl *getVarnode(void) const;
+  virtual PatternExpression *getPatternExpression(void) const { return patexp; }
+  virtual void getFixedHandle(FixedHandle &hand,ParserWalker &walker) const;
+  virtual void print(ostream &s,ParserWalker &walker) const;
+  virtual symbol_type getType(void) const { return next2_symbol; }
+  virtual void saveXml(ostream &s) const;
+  virtual void saveXmlHeader(ostream &s) const;
+  virtual void restoreXml(const Element *el,SleighBase *trans);
+};
+
 class FlowDestSymbol : public SpecificSymbol {
   AddrSpace *const_space;
 public:
@@ -477,6 +496,7 @@ class Constructor {		// This is NOT a symbol
   int4 firstwhitespace;		// Index of first whitespace piece in -printpiece-
   int4 flowthruindex;		// if >=0 then print only a single operand no markup
   int4 lineno;
+  int4 src_index;           //source file index
   mutable bool inerror;                 // An error is associated with this Constructor
   void orderOperands(void);
 public:
@@ -491,6 +511,8 @@ public:
   uintm getId(void) const { return id; }
   void setLineno(int4 ln) { lineno = ln; }
   int4 getLineno(void) const { return lineno; }
+  void setSrcIndex(int4 index) {src_index = index;}
+  int4 getSrcIndex(void) {return src_index;}
   void addContext(const vector<ContextChange *> &vec) { context = vec; }
   void addOperand(OperandSymbol *sym);
   void addInvisibleOperand(OperandSymbol *sym);
@@ -619,4 +641,5 @@ public:
   virtual symbol_type getType(void) const { return label_symbol; }
 };
 
+} // End namespace ghidra
 #endif

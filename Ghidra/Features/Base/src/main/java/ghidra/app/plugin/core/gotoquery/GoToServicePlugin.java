@@ -24,8 +24,8 @@ import ghidra.app.nav.*;
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.plugin.ProgramPlugin;
 import ghidra.app.services.*;
-import ghidra.app.util.HighlightProvider;
-import ghidra.app.util.PluginConstants;
+import ghidra.app.util.ListingHighlightProvider;
+import ghidra.app.util.SearchConstants;
 import ghidra.app.util.navigation.GoToServiceImpl;
 import ghidra.app.util.query.TableService;
 import ghidra.framework.options.Options;
@@ -53,19 +53,27 @@ import ghidra.program.util.ProgramSelection;
 )
 //@formatter:on
 public final class GoToServicePlugin extends ProgramPlugin {
+
 	private GoToServiceImpl gotoService;
 	private boolean disposed;
 
 	/**
 	 * Creates a new instance of the <CODE>GoToServicePlugin</CODE>
+	 * @param tool the tool
 	 */
-	public GoToServicePlugin(PluginTool plugintool) {
-		super(plugintool, true, true);
+	public GoToServicePlugin(PluginTool tool) {
+		super(tool);
+
+		Options opt = tool.getOptions(SearchConstants.SEARCH_OPTION_NAME);
+
+		// we register this option here, since the other search plugins all depend on this service
+		opt.registerOption(GhidraOptions.OPTION_SEARCH_LIMIT,
+			SearchConstants.DEFAULT_SEARCH_LIMIT, null,
+			"The maximum number of search results.");
 
 		gotoService = new GoToServiceImpl(this, new DefaultNavigatable());
 
 		registerServiceProvided(GoToService.class, gotoService);
-
 	}
 
 	@Override
@@ -80,9 +88,9 @@ public final class GoToServicePlugin extends ProgramPlugin {
 	}
 
 	int getMaxHits() {
-		Options opt = tool.getOptions(PluginConstants.SEARCH_OPTION_NAME);
+		Options opt = tool.getOptions(SearchConstants.SEARCH_OPTION_NAME);
 		int maxSearchHits =
-				opt.getInt(GhidraOptions.OPTION_SEARCH_LIMIT, PluginConstants.DEFAULT_SEARCH_LIMIT);
+			opt.getInt(GhidraOptions.OPTION_SEARCH_LIMIT, SearchConstants.DEFAULT_SEARCH_LIMIT);
 
 		return maxSearchHits;
 	}
@@ -125,7 +133,7 @@ public final class GoToServicePlugin extends ProgramPlugin {
 		@Override
 		public void setMemento(LocationMemento memento) {
 			DefaultNavigatableLocationMemento defaultMemento =
-					(DefaultNavigatableLocationMemento) memento;
+				(DefaultNavigatableLocationMemento) memento;
 			defaultMemento.setMementos();
 			focusedNavigatable = defaultMemento.getFocusedNavigatable();
 		}
@@ -176,11 +184,13 @@ public final class GoToServicePlugin extends ProgramPlugin {
 
 		@Override
 		public void addNavigatableListener(NavigatableRemovalListener listener) {
-		} // do nothing, default Navigatable never goes away
+			// do nothing, default Navigatable never goes away
+		}
 
 		@Override
 		public void removeNavigatableListener(NavigatableRemovalListener listener) {
-		}// do nothing, default Navigatable never goes away
+			// do nothing, default Navigatable never goes away
+		}
 
 		@Override
 		public void setHighlight(ProgramSelection highlight) {
@@ -210,7 +220,12 @@ public final class GoToServicePlugin extends ProgramPlugin {
 		}
 
 		@Override
-		public void removeHighlightProvider(HighlightProvider highlightProvider, Program program) {
+		public String getTextSelection() {
+			return null;
+		}
+
+		@Override
+		public void removeHighlightProvider(ListingHighlightProvider highlightProvider, Program program) {
 			CodeViewerService service = tool.getService(CodeViewerService.class);
 			if (service != null) {
 				service.removeHighlightProvider(highlightProvider, program);
@@ -218,7 +233,7 @@ public final class GoToServicePlugin extends ProgramPlugin {
 		}
 
 		@Override
-		public void setHighlightProvider(HighlightProvider highlightProvider, Program program) {
+		public void setHighlightProvider(ListingHighlightProvider highlightProvider, Program program) {
 			CodeViewerService service = tool.getService(CodeViewerService.class);
 			if (service != null) {
 				service.setHighlightProvider(highlightProvider, program);

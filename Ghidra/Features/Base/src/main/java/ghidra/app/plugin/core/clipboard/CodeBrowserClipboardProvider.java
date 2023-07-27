@@ -24,6 +24,8 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
+import org.apache.commons.lang3.StringUtils;
+
 import docking.ActionContext;
 import docking.ComponentProvider;
 import docking.dnd.GenericDataFlavor;
@@ -47,7 +49,9 @@ import ghidra.program.model.listing.*;
 import ghidra.program.model.symbol.*;
 import ghidra.program.util.*;
 import ghidra.util.Msg;
+import ghidra.util.task.CancellableIterator;
 import ghidra.util.task.TaskMonitor;
+import util.CollectionUtils;
 
 public class CodeBrowserClipboardProvider extends ByteCopier
 		implements ClipboardContentProviderService {
@@ -57,6 +61,8 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 
 	public static final ClipboardType ADDRESS_TEXT_TYPE =
 		new ClipboardType(DataFlavor.stringFlavor, "Address");
+	public static final ClipboardType ADDRESS_TEXT_WITH_OFFSET_TYPE =
+		new ClipboardType(DataFlavor.stringFlavor, "Address w/ Offset");
 	public static final ClipboardType CODE_TEXT_TYPE =
 		new ClipboardType(DataFlavor.stringFlavor, "Formatted Code");
 	public static final ClipboardType LABELS_COMMENTS_TYPE =
@@ -77,21 +83,11 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 		list.add(COMMENTS_TYPE);
 		list.add(BYTE_STRING_TYPE);
 		list.add(BYTE_STRING_NO_SPACE_TYPE);
+		list.add(PYTHON_BYTE_STRING_TYPE);
+		list.add(PYTHON_LIST_TYPE);
+		list.add(CPP_BYTE_ARRAY_TYPE);
 		list.add(ADDRESS_TEXT_TYPE);
-
-		return list;
-	}
-
-	private static final List<ClipboardType> PASTE_TYPES = createPasteTypesList();
-
-	private static List<ClipboardType> createPasteTypesList() {
-		List<ClipboardType> list = new LinkedList<>();
-
-		list.add(LABELS_COMMENTS_TYPE);
-		list.add(LABELS_TYPE);
-		list.add(COMMENTS_TYPE);
-		list.add(BYTE_STRING_TYPE);
-		list.add(BYTE_STRING_NO_SPACE_TYPE);
+		list.add(ADDRESS_TEXT_WITH_OFFSET_TYPE);
 
 		return list;
 	}
@@ -154,10 +150,6 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 				else if (element.equals(COMMENTS_TYPE.getFlavor())) {
 					return pasteLabelsComments(pasteData, false, true);
 				}
-				else if (element.equals(BYTE_STRING_FLAVOR)) {
-					String data = (String) pasteData.getTransferData(BYTE_STRING_FLAVOR);
-					return pasteByteString(data);
-				}
 				else if (element.equals(LabelStringTransferable.labelStringFlavor)) {
 					return pasteLabelString(pasteData);
 				}
@@ -166,10 +158,8 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 				}
 			}
 
-			// last ditch effort, try to paste as a byte string
-			String string = (String) pasteData.getTransferData(DataFlavor.stringFlavor);
-			if (string != null) {
-				return pasteByteString(string);
+			if (super.pasteBytes(pasteData)) {
+				return true;
 			}
 
 			tool.setStatusInfo("Paste failed: unsupported data type", true);
@@ -178,32 +168,10 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 			String msg = e.getMessage();
 			if (msg == null) {
 				msg = e.toString();
-				Msg.error(this, "Unexpected Exception: " + e.getMessage(), e);
 			}
+
+			Msg.error(this, "Unexpected Exception: " + msg, e);
 			tool.setStatusInfo("Paste failed: " + msg, true);
-		}
-		return false;
-	}
-
-	@Override
-	protected boolean supportsPasteTransferable(Transferable transferable) {
-		DataFlavor[] flavors = transferable.getTransferDataFlavors();
-		for (DataFlavor element : flavors) {
-			if (isPasteFlavorMatch(element, transferable)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private boolean isPasteFlavorMatch(DataFlavor flavor, Transferable transferable) {
-		for (ClipboardType type : PASTE_TYPES) {
-			if (flavor.equals(type.getFlavor())) {
-				if (type == BYTE_STRING_TYPE) { // our parent handles validating bytes
-					return isValidBytesTransferable(transferable);
-				}
-				return true;
-			}
 		}
 		return false;
 	}
@@ -217,44 +185,25 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 	public Transferable copySpecial(ClipboardType copyType, TaskMonitor monitor) {
 
 		if (copyType == ADDRESS_TEXT_TYPE) {
-			return copyAddress();
+			return copyAddress(monitor);
+		}
+		else if (copyType == ADDRESS_TEXT_WITH_OFFSET_TYPE) {
+			return copySymbolString(monitor);
 		}
 		else if (copyType == CODE_TEXT_TYPE) {
 			return copyCode(monitor);
 		}
 		else if (copyType == LABELS_COMMENTS_TYPE) {
-			return copyLabelsComments(true, true);
+			return copyLabelsComments(true, true, monitor);
 		}
 		else if (copyType == LABELS_TYPE) {
-			return copyLabelsComments(true, false);
+			return copyLabelsComments(true, false, monitor);
 		}
 		else if (copyType == COMMENTS_TYPE) {
-			return copyLabelsComments(false, true);
-		}
-		else if (copyType == BYTE_STRING_TYPE) {
-			String byteString = copyBytesAsString(getSelectedAddresses(), true, monitor);
-			return new ByteViewerTransferable(byteString);
-		}
-		else if (copyType == BYTE_STRING_NO_SPACE_TYPE) {
-			String byteString = copyBytesAsString(getSelectedAddresses(), false, monitor);
-			return new ByteViewerTransferable(byteString);
+			return copyLabelsComments(false, true, monitor);
 		}
 
-		return null;
-	}
-
-	private AddressSetView getSelectedAddresses() {
-		AddressSetView addressSet = currentSelection;
-		if (addressSet == null || addressSet.isEmpty()) {
-			return new AddressSet(currentLocation.getAddress());
-		}
-		return currentSelection;
-	}
-
-	public void setSelection(ProgramSelection selection) {
-		currentSelection = selection;
-		copyFromSelectionEnabled = selection != null && !selection.isEmpty();
-		notifyStateChanged();
+		return copyBytes(copyType, monitor);
 	}
 
 	public void setStringContent(String text) {
@@ -267,6 +216,12 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 
 	public void setLocation(ProgramLocation location) {
 		currentLocation = location;
+	}
+
+	public void setSelection(ProgramSelection selection) {
+		currentSelection = selection;
+		copyFromSelectionEnabled = selection != null && !selection.isEmpty();
+		notifyStateChanged();
 	}
 
 	public void setProgram(Program p) {
@@ -305,11 +260,6 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 		}
 		else if (currentLocation instanceof BytesFieldLocation) {
 			// bytes are special--let them get copied and pasted as normal
-//			AddressSet addressSet = new AddressSet(currentProgram.getAddressFactory(), address);
-//			String byteString =
-//				copyBytesAsString(addressSet.getAddressRanges(), false,
-//					TaskMonitorAdapter.DUMMY_MONITOR);
-//			return new ByteViewerTransferable(byteString);
 			return copyByteString(address);
 		}
 		else if (currentLocation instanceof OperandFieldLocation) {
@@ -359,87 +309,94 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 		return new NonLabelStringTransferable(location.getOperandRepresentation());
 	}
 
-	private Transferable copyAddress() {
+	private Transferable copyAddress(TaskMonitor monitor) {
+		AddressSetView addrs = getSelectedAddresses();
+		Iterable<Address> iterable = addrs.getAddresses(true);
+		CancellableIterator<Address> it = new CancellableIterator<>(iterable.iterator(), monitor);
+		return createStringTransferable(StringUtils.join(it, "\n"));
+	}
 
-		AddressSetView addressSet = getSelectedAddresses();
-		StringBuilder buffy = new StringBuilder();
-		AddressIterator it = addressSet.getAddresses(true);
-		while (it.hasNext()) {
-			buffy.append(it.next()).append('\n');
+	private Transferable copySymbolString(TaskMonitor monitor) {
+		Listing listing = currentProgram.getListing();
+		List<String> strings = new ArrayList<>();
+		CodeUnitIterator codeUnits = listing.getCodeUnits(getSelectedAddresses(), true);
+		while (codeUnits.hasNext() && !monitor.isCancelled()) {
+			CodeUnit cu = codeUnits.next();
+			Address addr = cu.getAddress();
+			Function function = listing.getFunctionContaining(addr);
+			if (function == null) {
+				strings.add(addr.toString());
+				continue;
+			}
+
+			String name = function.getName(true);
+			Address entry = function.getEntryPoint();
+			int delta = addr.compareTo(entry);
+			if (delta == 0) {
+				strings.add(name);
+			}
+			else if (delta > 0) {
+				strings.add(String.format("%s + %#x", name, addr.subtract(entry)));
+			}
+			else {
+				strings.add(String.format("%s - %#x", name, entry.subtract(addr)));
+			}
 		}
-		return createStringTransferable(buffy.toString());
+		return createStringTransferable(StringUtils.join(strings, "\n"));
 	}
 
 	protected Transferable copyCode(TaskMonitor monitor) {
 
 		AddressSetView addressSet = getSelectedAddresses();
-		try {
-			TextLayoutGraphics g = new TextLayoutGraphics();
+		ListingModel listingModel = getListingModel();
+		TextLayoutGraphics g = new TextLayoutGraphics();
+		LayoutBackgroundColorManager colorMap =
+			new EmptyLayoutBackgroundColorManager(PAINT_CONTEXT.getBackground());
+		Rectangle rect = new Rectangle(Integer.MAX_VALUE, Integer.MAX_VALUE);
+		AddressRangeIterator ranges = addressSet.getAddressRanges();
+		while (ranges.hasNext() && !monitor.isCancelled()) {
+			AddressRange curRange = ranges.next();
+			Address address = curRange.getMinAddress();
+			Address maxAddress = curRange.getMaxAddress();
 
-			Rectangle rect = new Rectangle(Integer.MAX_VALUE, Integer.MAX_VALUE);
-
-			AddressRangeIterator rangeItr = addressSet.getAddressRanges();
-			while (rangeItr.hasNext()) {
-				AddressRange curRange = rangeItr.next();
-				Address curAddress = curRange.getMinAddress();
-				Address maxAddress = curRange.getMaxAddress();
-
-				// getAddressAfter(curAddress) returns null in certain situations
-				while (curAddress != null && curAddress.compareTo(maxAddress) <= 0) {
-					if (monitor.isCancelled()) {
-						break;
-					}
-
-					//Add the layout for the present address
-					Layout layout = getListingModel().getLayout(curAddress, false);
-					if (layout != null) {
-						LayoutBackgroundColorManager layoutColorMap =
-							new EmptyLayoutBackgroundColorManager(PAINT_CONTEXT.getBackground());
-						layout.paint(null, g, PAINT_CONTEXT, rect, layoutColorMap, null);
-						g.flush();
-					}
-					// may be null
-					curAddress = getListingModel().getAddressAfter(curAddress);
+			while (address != null && address.compareTo(maxAddress) <= 0) {
+				if (monitor.isCancelled()) {
+					break;
 				}
-			}
 
-			return createStringTransferable(g.getBuffer().toString());
-		}
-		catch (Exception e) {
-			String msg = e.getMessage();
-			if (msg == null) {
-				msg = e.toString();
+				Layout layout = listingModel.getLayout(address, false);
+				if (layout != null) {
+					layout.paint(null, g, PAINT_CONTEXT, rect, colorMap, null);
+					g.flush();
+				}
+				address = listingModel.getAddressAfter(address);
 			}
-
-			String message = "Copy failed: " + msg;
-			Msg.error(this, message, e);
-			tool.setStatusInfo(message, true);
 		}
 
-		return null;
+		return createStringTransferable(g.getBuffer());
 	}
 
 	private Transferable copyByteString(Address address) {
 		AddressSet set = new AddressSet(address);
-		return copyBytes(set, false, TaskMonitor.DUMMY);
+		return createStringTransferable(copyBytesAsString(set, false, TaskMonitor.DUMMY));
 	}
 
-	private CodeUnitInfoTransferable copyLabelsComments(boolean copyLabels, boolean copyComments) {
-
+	private CodeUnitInfoTransferable copyLabelsComments(boolean copyLabels, boolean copyComments,
+			TaskMonitor monitor) {
 		AddressSetView addressSet = getSelectedAddresses();
 		List<CodeUnitInfo> list = new ArrayList<>();
 		Address startAddr = addressSet.getMinAddress();
-		getCodeUnitInfo(addressSet, startAddr, list, copyLabels, copyComments);
+		getCodeUnitInfo(addressSet, startAddr, list, copyLabels, copyComments, monitor);
 		return new CodeUnitInfoTransferable(list);
 	}
 
-	@SuppressWarnings("unchecked") // assumed correct data; handled in exception case
 	private boolean pasteLabelsComments(Transferable pasteData, boolean pasteLabels,
 			boolean pasteComments) {
 		try {
-			List<CodeUnitInfo> list = (List<CodeUnitInfo>) pasteData.getTransferData(
-				CodeUnitInfoTransferable.localDataTypeFlavor);
-			Command cmd = new CodeUnitInfoPasteCmd(currentLocation.getAddress(), list, pasteLabels,
+			List<?> list =
+				(List<?>) pasteData.getTransferData(CodeUnitInfoTransferable.localDataTypeFlavor);
+			List<CodeUnitInfo> infos = CollectionUtils.asList(list, CodeUnitInfo.class);
+			Command cmd = new CodeUnitInfoPasteCmd(currentLocation.getAddress(), infos, pasteLabels,
 				pasteComments);
 			return tool.execute(cmd, currentProgram);
 		}
@@ -476,39 +433,42 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 			return tool.execute(cmd, currentProgram);
 		}
 		else if (currentLocation instanceof OperandFieldLocation) {
-			OperandFieldLocation operandLocation = (OperandFieldLocation) currentLocation;
-			int opIndex = operandLocation.getOperandIndex();
-			Listing listing = currentProgram.getListing();
-			Instruction instruction = listing.getInstructionAt(operandLocation.getAddress());
-			if (instruction == null) {
-				return false;
-			}
-
-			Reference reference = instruction.getPrimaryReference(opIndex);
-			if (reference == null) {
-				return false;
-			}
-
-			Variable var = currentProgram.getReferenceManager().getReferencedVariable(reference);
-			if (var != null) {
-				SetVariableNameCmd cmd =
-					new SetVariableNameCmd(var, labelName, SourceType.USER_DEFINED);
-				return tool.execute(cmd, currentProgram);
-			}
-
-			SymbolTable symbolTable = currentProgram.getSymbolTable();
-			Symbol symbol = symbolTable.getSymbol(reference);
-			if ((symbol instanceof CodeSymbol) || (symbol instanceof FunctionSymbol)) {
-				String oldName = symbol.getName();
-				Namespace namespace = symbol.getParentNamespace();
-				Address symbolAddress = symbol.getAddress();
-				RenameLabelCmd cmd = new RenameLabelCmd(symbolAddress, oldName, labelName,
-					namespace, SourceType.USER_DEFINED);
-				return tool.execute(cmd, currentProgram);
-			}
+			return pasteOperandField((OperandFieldLocation) currentLocation, labelName);
 		}
 
-		// try pasting onto something that is not a label		
+		// try pasting onto something that is not a label
+		return maybePasteNonLabelString(labelName);
+	}
+
+	private boolean pasteOperandField(OperandFieldLocation operandLocation, String labelName) {
+
+		int opIndex = operandLocation.getOperandIndex();
+		Listing listing = currentProgram.getListing();
+		Instruction instruction = listing.getInstructionAt(operandLocation.getAddress());
+		if (instruction == null) {
+			return false;
+		}
+
+		Reference reference = instruction.getPrimaryReference(opIndex);
+		if (reference == null) {
+			return false;
+		}
+
+		Variable var = currentProgram.getReferenceManager().getReferencedVariable(reference);
+		if (var != null) {
+			SetVariableNameCmd cmd =
+				new SetVariableNameCmd(var, labelName, SourceType.USER_DEFINED);
+			return tool.execute(cmd, currentProgram);
+		}
+
+		SymbolTable symbolTable = currentProgram.getSymbolTable();
+		Symbol symbol = symbolTable.getSymbol(reference);
+		if ((symbol instanceof CodeSymbol) || (symbol instanceof FunctionSymbol)) {
+			RenameLabelCmd cmd = new RenameLabelCmd(symbol, labelName, SourceType.USER_DEFINED);
+			return tool.execute(cmd, currentProgram);
+		}
+
+		// try pasting onto something that is not a label
 		return maybePasteNonLabelString(labelName);
 	}
 
@@ -532,23 +492,23 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 	}
 
 	private void getCodeUnitInfo(AddressSetView set, Address startAddr, List<CodeUnitInfo> list,
-			boolean copyLabels, boolean copyComments) {
+			boolean copyLabels, boolean copyComments, TaskMonitor monitor) {
 		Map<Address, CodeUnitInfo> map = new HashMap<>();
 		if (copyLabels) {
-			getFunctions(startAddr, set, list, map);
-			getLabels(startAddr, set, list, map);
+			getFunctions(startAddr, set, list, map, monitor);
+			getLabels(startAddr, set, list, map, monitor);
 		}
 		if (copyComments) {
-			getComments(startAddr, set, list, map);
+			getComments(startAddr, set, list, map, monitor);
 		}
 	}
 
 	private void getFunctions(Address startAddr, AddressSetView set, List<CodeUnitInfo> list,
-			Map<Address, CodeUnitInfo> map) {
+			Map<Address, CodeUnitInfo> map, TaskMonitor monitor) {
 
-		FunctionIterator iter = currentProgram.getListing().getFunctions(set, true);
-		while (iter.hasNext()) {
-			Function function = iter.next();
+		FunctionIterator it = currentProgram.getListing().getFunctions(set, true);
+		while (it.hasNext() && !monitor.isCancelled()) {
+			Function function = it.next();
 			Address entry = function.getEntryPoint();
 			CodeUnitInfo info = getInfoFromMap(list, map, entry, startAddr);
 			info.setFunction(function);
@@ -556,13 +516,12 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 	}
 
 	private void getComments(Address startAddr, AddressSetView set, List<CodeUnitInfo> list,
-			Map<Address, CodeUnitInfo> map) {
+			Map<Address, CodeUnitInfo> map, TaskMonitor monitor) {
 
-		CodeUnitIterator iter =
-			currentProgram.getListing().getCodeUnitIterator(CodeUnit.COMMENT_PROPERTY, set, true);
-
-		while (iter.hasNext()) {
-			CodeUnit cu = iter.next();
+		Listing listing = currentProgram.getListing();
+		CodeUnitIterator it = listing.getCodeUnitIterator(CodeUnit.COMMENT_PROPERTY, set, true);
+		while (it.hasNext() && !monitor.isCancelled()) {
+			CodeUnit cu = it.next();
 			Address minAddress = cu.getMinAddress();
 			CodeUnitInfo info = getInfoFromMap(list, map, minAddress, startAddr);
 			setCommentInfo(cu, info);
@@ -580,12 +539,11 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 	}
 
 	private void getLabels(Address startAddr, AddressSetView set, List<CodeUnitInfo> list,
-			Map<Address, CodeUnitInfo> map) {
+			Map<Address, CodeUnitInfo> map, TaskMonitor monitor) {
 
-		SymbolIterator iter = currentProgram.getSymbolTable().getPrimarySymbolIterator(set, true);
-
-		while (iter.hasNext()) {
-			Symbol symbol = iter.next();
+		SymbolIterator it = currentProgram.getSymbolTable().getPrimarySymbolIterator(set, true);
+		while (it.hasNext() && !monitor.isCancelled()) {
+			Symbol symbol = it.next();
 			Address minAddress = symbol.getAddress();
 			Symbol[] symbols = currentProgram.getSymbolTable().getSymbols(minAddress);
 			CodeUnitInfo info = getInfoFromMap(list, map, minAddress, startAddr);
@@ -689,8 +647,7 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 					return true;
 				}
 				if (flavor.equals(DataFlavor.stringFlavor)) {
-					// TODO: check if it is a valid hex string...
-					return true;
+					return true; // check if it is a valid hex string?
 				}
 			}
 		}
@@ -699,7 +656,7 @@ public class CodeBrowserClipboardProvider extends ByteCopier
 
 //==================================================================================================
 // Unsupported Operations
-//==================================================================================================    
+//==================================================================================================
 
 	@Override
 	public void lostOwnership(Transferable transferable) {

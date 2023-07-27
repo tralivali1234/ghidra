@@ -17,13 +17,15 @@ package ghidra.app.util.opinion;
 
 import java.util.*;
 
-import ghidra.app.util.bin.format.pdb.*;
-import ghidra.app.util.bin.format.pe.FileHeader;
-import ghidra.app.util.bin.format.pe.SectionHeader;
+import ghidra.app.util.Option;
+import ghidra.app.util.bin.ByteProvider;
+import ghidra.app.util.bin.format.pdb.PdbInfoCodeView;
+import ghidra.app.util.bin.format.pdb.PdbInfoDotNet;
+import ghidra.app.util.bin.format.pe.*;
 import ghidra.app.util.bin.format.pe.debug.*;
-import ghidra.app.util.datatype.microsoft.GUID;
 import ghidra.app.util.demangler.DemangledObject;
 import ghidra.app.util.demangler.DemanglerUtil;
+import ghidra.framework.model.DomainObject;
 import ghidra.framework.options.Options;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.DWordDataType;
@@ -36,11 +38,54 @@ import ghidra.util.Msg;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
-abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
+abstract class AbstractPeDebugLoader extends AbstractOrdinalSupportLoader {
+
+	/** Loader option to display line numbers */
+	public static final String SHOW_LINE_NUMBERS_OPTION_NAME = "Show Debug Line Number Comments";
+	static final boolean SHOW_LINE_NUMBERS_OPTION_DEFAULT = false;
+
 	private HashMap<Address, StringBuffer> plateCommentMap = new HashMap<>();
 	private HashMap<Address, StringBuffer> preCommentMap = new HashMap<>();
 	private HashMap<Address, StringBuffer> postCommentMap = new HashMap<>();
 	private HashMap<Address, StringBuffer> eolCommentMap = new HashMap<>();
+
+	@Override
+	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
+			DomainObject domainObject, boolean loadIntoProgram) {
+		List<Option> list =
+			super.getDefaultOptions(provider, loadSpec, domainObject, loadIntoProgram);
+		list.add(new Option(SHOW_LINE_NUMBERS_OPTION_NAME, SHOW_LINE_NUMBERS_OPTION_DEFAULT,
+			Boolean.class, Loader.COMMAND_LINE_ARG_PREFIX + "-showDebugLineNumbers"));
+		return list;
+	}
+
+	@Override
+	public String validateOptions(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
+			Program program) {
+		if (options != null) {
+			for (Option option : options) {
+				String name = option.getName();
+				if (name.equals(SHOW_LINE_NUMBERS_OPTION_NAME)) {
+					if (!Boolean.class.isAssignableFrom(option.getValueClass())) {
+						return "Invalid type for option: " + name + " - " + option.getValueClass();
+					}
+				}
+			}
+		}
+		return super.validateOptions(provider, loadSpec, options, program);
+	}
+
+	private boolean shouldShowDebugLineNumbers(List<Option> options) {
+		if (options != null) {
+			for (Option option : options) {
+				String optName = option.getName();
+				if (optName.equals(SHOW_LINE_NUMBERS_OPTION_NAME)) {
+					return (Boolean) option.getValue();
+				}
+			}
+		}
+		return SHOW_LINE_NUMBERS_OPTION_DEFAULT;
+	}
 
 	protected void processComments(Listing listing, TaskMonitor monitor) {
 		List<HashMap<Address, StringBuffer>> maps = new ArrayList<>();
@@ -81,8 +126,9 @@ abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
 		return list;
 	}
 
-	protected void processDebug(DebugDirectoryParser parser, FileHeader fileHeader,
-			Map<SectionHeader, Address> sectionToAddress, Program program, TaskMonitor monitor) {
+	protected void processDebug(DebugDirectoryParser parser, NTHeader ntHeader,
+			Map<SectionHeader, Address> sectionToAddress, Program program, List<Option> options,
+			TaskMonitor monitor) {
 
 		if (parser == null) {
 			return;
@@ -95,16 +141,17 @@ abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
 		processDebugFixup(parser.getDebugFixup());
 
 		monitor.setMessage("Processing code view debug...");
-		processDebugCodeView(parser.getDebugCodeView(), fileHeader, sectionToAddress, program,
-			monitor);
+		processDebugCodeView(parser.getDebugCodeView(), ntHeader, sectionToAddress, program,
+			options, monitor);
 
 		monitor.setMessage("Processing coff debug...");
-		processDebugCOFF(parser.getDebugCOFFSymbolsHeader(), fileHeader, sectionToAddress, program,
-			monitor);
+		processDebugCOFF(parser.getDebugCOFFSymbolsHeader(), ntHeader, sectionToAddress, program,
+			options, monitor);
 	}
 
-	private void processDebugCodeView(DebugCodeView dcv, FileHeader fileHeader,
-			Map<SectionHeader, Address> sectionToAddress, Program program, TaskMonitor monitor) {
+	private void processDebugCodeView(DebugCodeView dcv, NTHeader ntHeader,
+			Map<SectionHeader, Address> sectionToAddress, Program program, List<Option> options,
+			TaskMonitor monitor) {
 
 		if (dcv == null) {
 			return;
@@ -112,56 +159,14 @@ abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
 
 		Options proplist = program.getOptions(Program.PROGRAM_INFO);
 
-		PdbInfoIface cvPdbInfo = dcv.getPdbInfo();
+		PdbInfoCodeView cvPdbInfo = dcv.getPdbInfo();
 		if (cvPdbInfo != null) {
-			byte[] magic = cvPdbInfo.getMagic();
-			int sig = cvPdbInfo.getSig();
-			int age = cvPdbInfo.getAge();
-			String name = cvPdbInfo.getPdbName();
-
-			proplist.setString(PdbParserConstants.PDB_VERSION, Conv.toString(magic));
-			proplist.setString(PdbParserConstants.PDB_SIGNATURE, Conv.toHexString(sig));
-			proplist.setString(PdbParserConstants.PDB_AGE, Conv.toHexString(age));
-			proplist.setString(PdbParserConstants.PDB_FILE, name);
-/*
-			DebugDirectory dd = dcv.getDebugDirectory();
-			if (dd.getAddressOfRawData() > 0) {
-				Address address = space.getAddress(imageBase + dd.getAddressOfRawData());
-				listing.setComment(address, CodeUnit.PLATE_COMMENT, "CodeView PDB Info");
-				try {
-					listing.createData(address, cvPdbInfo.toDataType());
-				}
-				catch (IOException e) {}
-				catch (DuplicateNameException e) {}
-				catch (CodeUnitInsertionException e) {}
-			}
-*/
+			cvPdbInfo.serializeToOptions(proplist);
 		}
 
-		PdbInfoDotNetIface dotnetPdbInfo = dcv.getDotNetPdbInfo();
+		PdbInfoDotNet dotnetPdbInfo = dcv.getDotNetPdbInfo();
 		if (dotnetPdbInfo != null) {
-			byte[] magic = dotnetPdbInfo.getMagic();
-			GUID guid = dotnetPdbInfo.getGUID();
-			int age = dotnetPdbInfo.getAge();
-			String name = dotnetPdbInfo.getPdbName();
-
-			proplist.setString(PdbParserConstants.PDB_VERSION, Conv.toString(magic));
-			proplist.setString(PdbParserConstants.PDB_GUID, guid.toString());
-			proplist.setString(PdbParserConstants.PDB_AGE, Conv.toHexString(age));
-			proplist.setString(PdbParserConstants.PDB_FILE, name);
-/*
-			DebugDirectory dd = dcv.getDebugDirectory();
-			if (dd.getAddressOfRawData() > 0) {
-				Address address = space.getAddress(imageBase + dd.getAddressOfRawData());
-				listing.setComment(address, CodeUnit.PLATE_COMMENT, ".NET PDB Info");
-				try {
-					listing.createData(address, dotnetPdbInfo.toDataType());
-				}
-				catch (IOException e) {}
-				catch (DuplicateNameException e) {}
-				catch (CodeUnitInsertionException e) {}
-			}
-*/
+			dotnetPdbInfo.serializeToOptions(proplist);
 		}
 
 		DebugCodeViewSymbolTable dcvst = dcv.getSymbolTable();
@@ -169,6 +174,7 @@ abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
 			return;
 		}
 
+		FileHeader fileHeader = ntHeader.getFileHeader();
 		List<OMFSrcModule> srcModules = dcvst.getOMFSrcModules();
 		for (OMFSrcModule module : srcModules) {
 			short[] segs = module.getSegments();
@@ -178,7 +184,7 @@ abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
 			for (OMFSrcModuleFile file : files) {
 				processFiles(file, segs[segIndex++], fileHeader, sectionToAddress, monitor);
 				processLineNumbers(fileHeader, sectionToAddress, file.getOMFSrcModuleLines(),
-					monitor);
+					options, monitor);
 
 				if (monitor.isCancelled()) {
 					return;
@@ -300,7 +306,10 @@ abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
 
 	private void processLineNumbers(FileHeader fileHeader,
 			Map<SectionHeader, Address> sectionToAddress, OMFSrcModuleLine[] lines,
-			TaskMonitor monitor) {//TODO revisit this method for accuracy
+			List<Option> options, TaskMonitor monitor) {//TODO revisit this method for accuracy
+		if (!shouldShowDebugLineNumbers(options)) {
+			return;
+		}
 		for (OMFSrcModuleLine line : lines) {
 			if (monitor.isCancelled()) {
 				return;
@@ -329,8 +338,9 @@ abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
 		}
 	}
 
-	private void processDebugCOFF(DebugCOFFSymbolsHeader dcsh, FileHeader fileHeader,
-			Map<SectionHeader, Address> sectionToAddress, Program program, TaskMonitor monitor) {
+	private void processDebugCOFF(DebugCOFFSymbolsHeader dcsh, NTHeader ntHeader,
+			Map<SectionHeader, Address> sectionToAddress, Program program, List<Option> options,
+			TaskMonitor monitor) {
 		if (dcsh == null) {
 			return;
 		}
@@ -344,7 +354,7 @@ abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
 			if (monitor.isCancelled()) {
 				return;
 			}
-			if (!processDebugCoffSymbol(symbol, fileHeader, sectionToAddress, program, monitor)) {
+			if (!processDebugCoffSymbol(symbol, ntHeader, sectionToAddress, program, monitor)) {
 				++errorCount;
 			}
 		}
@@ -355,7 +365,7 @@ abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
 		}
 
 		DebugCOFFLineNumber[] lineNumbers = dcsh.getLineNumbers();
-		if (lineNumbers != null) {
+		if (shouldShowDebugLineNumbers(options) && lineNumbers != null) {
 			for (DebugCOFFLineNumber lineNumber : lineNumbers) {
 				if (monitor.isCancelled()) {
 					return;
@@ -373,7 +383,7 @@ abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
 		}
 	}
 
-	protected boolean processDebugCoffSymbol(DebugCOFFSymbol symbol, FileHeader fileHeader,
+	protected boolean processDebugCoffSymbol(DebugCOFFSymbol symbol, NTHeader ntHeader,
 			Map<SectionHeader, Address> sectionToAddress, Program program,
 			TaskMonitor monitor) {
 
@@ -399,16 +409,27 @@ abstract class AbstractPeDebugLoader extends AbstractLibrarySupportLoader {
 			return true;
 		}
 
+		FileHeader fileHeader = ntHeader.getFileHeader();
 		SectionHeader section = fileHeader.getSectionHeader(symbol.getSectionNumber() - 1);
 		if (section == null) {
 			return false;
 		}
-		Address address = sectionToAddress.get(section);
+
+		Address address = null;
+		PeSubsystem subsystem = PeSubsystem.parse(ntHeader.getOptionalHeader().getSubsystem());
+		if (subsystem == PeSubsystem.IMAGE_SUBSYSTEM_NATIVE) {
+			// We've observed that drivers add symbol values to the image base rather than the start
+			// of their reported section.
+			address = program.getImageBase();
+		}
+		else {
+			address = sectionToAddress.get(section);
+		}
 		if (address == null) {
 			return false;
 		}
 
-		address = address.add(Conv.intToLong(val));
+		address = address.add(Integer.toUnsignedLong(val));
 
 		try {
 			Symbol newSymbol =

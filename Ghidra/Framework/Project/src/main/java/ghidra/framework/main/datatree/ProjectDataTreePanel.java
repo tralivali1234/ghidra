@@ -27,18 +27,15 @@ import javax.swing.tree.TreeSelectionModel;
 
 import docking.ActionContext;
 import docking.ComponentProvider;
-import docking.help.Help;
-import docking.help.HelpService;
-import docking.widgets.tree.*;
-import docking.widgets.tree.support.DepthFirstIterator;
+import docking.widgets.tree.GTreeNode;
 import docking.widgets.tree.support.GTreeSelectionListener;
 import ghidra.framework.main.FrontEndPlugin;
 import ghidra.framework.main.FrontEndTool;
 import ghidra.framework.model.*;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.util.HelpLocation;
-import ghidra.util.exception.CancelledException;
-import ghidra.util.task.TaskMonitor;
+import help.Help;
+import help.HelpService;
 
 /**
  * Panel that contains a DataTree for showing project data.
@@ -47,6 +44,7 @@ import ghidra.util.task.TaskMonitor;
 public class ProjectDataTreePanel extends JPanel {
 
 	private static final String EXPANDED_PATHS_SEPARATOR = ":";
+	private static final int MAX_PROJECT_SIZE_TO_SEARCH = 1000;
 
 	private DataTree tree;
 	private ProjectData projectData;
@@ -149,45 +147,39 @@ public class ProjectDataTreePanel extends JPanel {
 	}
 
 	public void selectDomainFolder(DomainFolder domainFolder) {
-		Iterator<GTreeNode> it = root.iterator(true);
-		while (it.hasNext()) {
-			GTreeNode child = it.next();
-			if (child instanceof DomainFolderNode) {
-				DomainFolder nodeFolder = ((DomainFolderNode) child).getDomainFolder();
-				if (nodeFolder.equals(domainFolder)) {
-					tree.expandPath(child);
-					tree.setSelectedNode(child);
-					return;
-				}
-			}
+		TreePath treePath = getTreePath(domainFolder);
+		tree.setSelectionPath(treePath);
+	}
+
+	private List<TreePath> getTreePaths(Set<DomainFile> files) {
+		List<TreePath> results = new ArrayList<>();
+		for (DomainFile file : files) {
+			results.add(getTreePath(file));
 		}
+		return results;
 	}
 
-	public void selectDomainFiles(final Set<DomainFile> files) {
-		tree.runTask(new SelectDomainFilesTask(tree, files));
-	}
-
-	private void doSelectDomainFiles(Set<DomainFile> files) {
-
-		List<GTreeNode> nodes = getNodesForFiles(files);
-		tree.setSelectedNodes(nodes);
-	}
-
-	private List<GTreeNode> getNodesForFiles(Set<DomainFile> files) {
-		List<GTreeNode> nodes = new ArrayList<>();
-		DepthFirstIterator it = new DepthFirstIterator(root);
-		while (it.hasNext()) {
-			GTreeNode node = it.next();
-			if (node instanceof DomainFileNode) {
-				DomainFile nodeFile = ((DomainFileNode) node).getDomainFile();
-				if (files.contains(nodeFile)) {
-					// it was in the list, add the the nodes list
-					nodes.add(node);
-				}
-			}
+	private TreePath getTreePath(DomainFile domainFile) {
+		DomainFileNode node = new DomainFileNode(domainFile);
+		DomainFolder parent = domainFile.getParent();
+		if (parent != null) {
+			return getTreePath(parent).pathByAddingChild(node);
 		}
+		return new TreePath(node);
+	}
 
-		return nodes;
+	private TreePath getTreePath(DomainFolder domainFolder) {
+		DomainFolder parent = domainFolder.getParent();
+		if (parent != null) {
+			return getTreePath(parent).pathByAddingChild(new DomainFolderNode(domainFolder, null));
+		}
+		return new TreePath(root);
+
+	}
+
+	public void selectDomainFiles(Set<DomainFile> files) {
+		List<TreePath> treePaths = getTreePaths(files);
+		tree.setSelectionPaths(treePaths);
 	}
 
 	public void selectDomainFile(DomainFile domainFile) {
@@ -337,7 +329,7 @@ public class ProjectDataTreePanel extends JPanel {
 				domainFileList.add(((DomainFileNode) node).getDomainFile());
 			}
 		}
-		
+
 		// provider is null when called from the DataTreeDialog, use different context
 		if (provider == null) {
 			return new DialogProjectTreeContext(projectData, selectionPaths, domainFolderList,
@@ -361,12 +353,8 @@ public class ProjectDataTreePanel extends JPanel {
 		tree.setFilterVisible(enabled);
 	}
 
-	boolean domainFolderListenerAdded() {
-		return changeMgr != null;
-	}
-
-	DomainFolderChangeListener getFolderChangeListener() {
-		return changeMgr;
+	public Component getFilterField() {
+		return tree.getFilterField();
 	}
 
 	public String[] getExpandedPathsByNodeName() {
@@ -430,19 +418,14 @@ public class ProjectDataTreePanel extends JPanel {
 		return null;
 	}
 
-	FrontEndTool getFrontEndTool() {
-		return tool;
-	}
-
-	boolean isInActiveProject() {
-		return isActiveProject;
-	}
-
 	private void create(String projectName) {
 
 		root = createRootNode(projectName);
 
 		tree = new DataTree(tool, root);
+		if (!isActiveProject) {
+			tree.setName(tree.getName() + ": " + projectName);
+		}
 
 		if (plugin != null) {
 			tree.addGTreeSelectionListener(e -> {
@@ -504,13 +487,14 @@ public class ProjectDataTreePanel extends JPanel {
 	 * @param s node name
 	 */
 	public void findAndSelect(String s) {
-		tree.expandTree(root);
-		Iterator<GTreeNode> it = root.iterator(true);
-		while (it.hasNext()) {
-			GTreeNode node = it.next();
-			if (node.getName().equals(s)) {
-				tree.setSelectedNode(node);
-				return;
+		if (projectData.getFileCount() < MAX_PROJECT_SIZE_TO_SEARCH) {
+			tree.expandTree(root);
+			for (Iterator<GTreeNode> it = root.iterator(true); it.hasNext();) {
+				GTreeNode node = it.next();
+				if (node.getName().equals(s)) {
+					tree.setSelectedNode(node);
+					return;
+				}
 			}
 		}
 	}
@@ -526,18 +510,4 @@ public class ProjectDataTreePanel extends JPanel {
 		}
 	}
 
-	private class SelectDomainFilesTask extends GTreeTask {
-
-		private final Set<DomainFile> files;
-
-		public SelectDomainFilesTask(GTree tree, Set<DomainFile> files) {
-			super(tree);
-			this.files = files;
-		}
-
-		@Override
-		public void run(TaskMonitor monitor) throws CancelledException {
-			doSelectDomainFiles(files);
-		}
-	}
 }

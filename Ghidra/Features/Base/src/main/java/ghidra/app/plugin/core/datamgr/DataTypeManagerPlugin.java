@@ -17,7 +17,6 @@ package ghidra.app.plugin.core.datamgr;
 
 import java.awt.Component;
 import java.awt.datatransfer.Clipboard;
-import java.awt.event.ActionListener;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
@@ -25,6 +24,8 @@ import java.util.Map.Entry;
 
 import javax.swing.SwingUtilities;
 import javax.swing.tree.TreePath;
+
+import org.apache.commons.lang3.StringUtils;
 
 import docking.ActionContext;
 import docking.Tool;
@@ -36,14 +37,15 @@ import generic.util.Path;
 import ghidra.app.CorePluginPackage;
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.plugin.ProgramPlugin;
-import ghidra.app.plugin.core.datamgr.actions.*;
+import ghidra.app.plugin.core.datamgr.actions.RecentlyOpenedArchiveAction;
+import ghidra.app.plugin.core.datamgr.actions.UpdateSourceArchiveNamesAction;
+import ghidra.app.plugin.core.datamgr.actions.associate.*;
 import ghidra.app.plugin.core.datamgr.archive.*;
 import ghidra.app.plugin.core.datamgr.editor.DataTypeEditorManager;
 import ghidra.app.plugin.core.datamgr.tree.ArchiveNode;
 import ghidra.app.plugin.core.datamgr.util.DataDropOnBrowserHandler;
 import ghidra.app.plugin.core.datamgr.util.DataTypeChooserDialog;
-import ghidra.app.services.CodeViewerService;
-import ghidra.app.services.DataTypeManagerService;
+import ghidra.app.services.*;
 import ghidra.app.util.HelpTopics;
 import ghidra.framework.Application;
 import ghidra.framework.main.OpenVersionedFileDialog;
@@ -52,16 +54,17 @@ import ghidra.framework.options.SaveState;
 import ghidra.framework.plugintool.PluginInfo;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.framework.plugintool.util.PluginStatus;
-import ghidra.program.database.DataTypeArchiveContentHandler;
 import ghidra.program.database.data.ProgramDataTypeManager;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.data.*;
 import ghidra.program.model.listing.DataTypeArchive;
 import ghidra.program.model.listing.Program;
-import ghidra.util.HelpLocation;
-import ghidra.util.Msg;
+import ghidra.util.*;
 import ghidra.util.datastruct.LRUMap;
+import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.VersionException;
 import ghidra.util.task.TaskLauncher;
+import ghidra.util.task.TaskMonitor;
 
 /**
  * Plugin to pop up the dialog to manage data types in the program
@@ -77,13 +80,16 @@ import ghidra.util.task.TaskLauncher;
 	description = "Provides the window for managing and categorizing dataTypes.  " +
 			"The datatype display shows all built-in datatypes, datatypes in the " +
 			"current program, and datatypes in all open archives.",
-	servicesProvided = { DataTypeManagerService.class }
+	servicesProvided = { DataTypeManagerService.class, DataTypeArchiveService.class }
 )
 //@formatter:on
 public class DataTypeManagerPlugin extends ProgramPlugin
-		implements DomainObjectListener, DataTypeManagerService, PopupActionProvider {
+		implements DomainObjectListener, DataTypeManagerService, DataTypeArchiveService,
+		PopupActionProvider {
 
-	private static final String SEACH_PROVIDER_NAME = "Search DataTypes Provider";
+	private static final String EXTENSIONS_PATH_PREFIX = Path.GHIDRA_HOME + "/Extensions";
+
+	private static final String SEARCH_PROVIDER_NAME = "Search DataTypes Provider";
 	private static final int RECENTLY_USED_CACHE_SIZE = 10;
 
 	private static final String STANDARD_ARCHIVE_MENU = "Standard Archive";
@@ -91,7 +97,6 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 
 	private DataTypeManagerHandler dataTypeManagerHandler;
 	private DataTypesProvider provider;
-	private OpenVersionedFileDialog openDialog;
 
 	private Map<String, DockingAction> recentlyOpenedArchiveMap;
 	private Map<String, DockingAction> installArchiveMap;
@@ -100,7 +105,7 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 	private DataTypePropertyManager dataTypePropertyManager;
 
 	public DataTypeManagerPlugin(PluginTool tool) {
-		super(tool, true, true);
+		super(tool);
 	}
 
 	@Override
@@ -128,6 +133,8 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 					ProjectArchive projectArchive = (ProjectArchive) archive;
 					projectArchive.getDomainObject().removeListener(DataTypeManagerPlugin.this);
 				}
+
+				provider.archiveClosed(archive.getDataTypeManager());
 			}
 
 			@Override
@@ -144,12 +151,12 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 
 			@Override
 			public void archiveDataTypeManagerChanged(Archive archive) {
-				// don't care
+				provider.archiveChanged(archive);
 			}
 
 			@Override
 			public void archiveStateChanged(Archive archive) {
-				// don't care
+				provider.archiveChanged(archive);
 			}
 		});
 
@@ -197,7 +204,7 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 	/**
 	 * Add project archive name to recently opened list
 	 * @param projectName the project name
-	 * @param pathname the pathname 
+	 * @param pathname the pathname
 	 */
 	public void addRecentlyOpenedProjectArchive(String projectName, String pathname) {
 		String projectPathname = DataTypeManagerHandler.getProjectPathname(projectName, pathname);
@@ -215,7 +222,7 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 
 	/**
 	 * Add project archive to recently opened list provided it is contained within the
-	 * active project and is not a specific version (i.e., only latest version can be 
+	 * active project and is not a specific version (i.e., only latest version can be
 	 * remembered).
 	 * @param pa project archive
 	 */
@@ -238,8 +245,7 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 		Project project = tool.getProjectManager().getActiveProject();
 		if (project != null && project.getName().equals(projectName)) {
 			DomainFile df = project.getProjectData().getFile(pathname);
-			if (df != null && DataTypeArchiveContentHandler.DATA_TYPE_ARCHIVE_CONTENT_TYPE.equals(
-				df.getContentType())) {
+			if (df != null && DataTypeArchive.class.isAssignableFrom(df.getDomainObjectClass())) {
 				return df;
 			}
 		}
@@ -305,7 +311,7 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 
 	@Override
 	protected void programClosed(Program program) {
-		// assumption: at this point programDeactivated(Program) has been called, so we don't 
+		// assumption: at this point programDeactivated(Program) has been called, so we don't
 		// have to perform any cleanup that is done by that method.
 		provider.programClosed();
 		editorManager.dismissEditors(program.getDataTypeManager());
@@ -356,26 +362,44 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 	}
 
 	public DataTypesProvider createProvider() {
-		return new DataTypesProvider(this, SEACH_PROVIDER_NAME);
-	}
 
-	public void closeProvider(DataTypesProvider providerToClose) {
-		if (providerToClose != provider) {
-			providerToClose.removeFromTool(); // remove any transient providers when closed
-			providerToClose.dispose();
-		}
-		else {
-			provider.setVisible(false);
-		}
+		DataTypesProvider newProvider = new DataTypesProvider(this, SEARCH_PROVIDER_NAME, true);
+		newProvider.setIncludeDataTypeMembersInFilter(provider.includeDataMembersInSearch());
+		newProvider.setFilteringArrays(provider.isFilteringArrays());
+		newProvider.setFilteringPointers(provider.isFilteringPointers());
+		return newProvider;
 	}
 
 	public Program getProgram() {
 		return currentProgram;
 	}
 
-//**********************************************************************************************
-//  Private Methods
-//**********************************************************************************************
+	public DataTypeConflictHandler getConflictHandler() {
+		return provider.getConflictHandler();
+	}
+
+	void setStatus(String message) {
+		tool.setStatusInfo(message);
+	}
+
+	public static boolean isValidTypeDefBaseType(Component parent, DataType dataType) {
+		if (dataType instanceof FactoryDataType) {
+			Msg.showError(DataTypeManagerPlugin.class, parent, "TypeDef not allowed",
+				"TypeDef not allowed on a Factory data-type: " + dataType.getName());
+			return false;
+		}
+		if (dataType instanceof Dynamic) {
+			Msg.showError(DataTypeManagerPlugin.class, parent, "TypeDef not allowed",
+				"TypeDef not allowed on a Dynamic data-type: " + dataType.getName());
+			return false;
+		}
+		if (dataType.getLength() <= 0) {
+			Msg.showError(DataTypeManagerPlugin.class, parent, "TypeDef not allowed",
+				"Data-type has unknown length: " + dataType.getName());
+			return false;
+		}
+		return true;
+	}
 
 	// rebuilds the recently opened archive menu
 	private void updateRecentlyOpenedArchivesMenu() {
@@ -395,8 +419,8 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 
 	private void createStandardArchivesMenu() {
 		installArchiveMap = new TreeMap<>();
-		for (ResourceFile archiveFile : Application.findFilesByExtensionInApplication(
-			FileDataTypeManager.SUFFIX)) {
+		for (ResourceFile archiveFile : Application
+				.findFilesByExtensionInApplication(FileDataTypeManager.SUFFIX)) {
 			Path path = new Path(archiveFile);
 			String absoluteFilePath = path.getPathAsString();
 			if (absoluteFilePath.indexOf("data/typeinfo") < 0) {
@@ -411,8 +435,6 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 			tool.addLocalAction(provider, action);
 		}
 	}
-
-	private static final String EXTENSIONS_PATH_PREFIX = Path.GHIDRA_HOME + "/Extensions";
 
 	private String getShortArchivePath(String fullPath) {
 		String path = fullPath;
@@ -500,8 +522,13 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 	@Override
 	public DataType getDataType(String filterText) {
 		DataTypeChooserDialog dialog = new DataTypeChooserDialog(this);
-		dialog.setFilterText(filterText);
-		tool.showDialog(dialog);
+		if (!StringUtils.isBlank(filterText)) {
+			dialog.showPrepopulatedDialog(tool, filterText);
+		}
+		else {
+			tool.showDialog(dialog);
+		}
+
 		return dialog.getSelectedDataType();
 	}
 
@@ -524,6 +551,7 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 	@Override
 	public void closeArchive(DataTypeManager dtm) {
 		dataTypeManagerHandler.closeArchive(dtm);
+		provider.archiveClosed(dtm);
 	}
 
 	@Override
@@ -532,29 +560,43 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 		return dataTypeManagerHandler.openArchive(archiveName);
 	}
 
+	@Override
+	public DataTypeManager openArchive(ResourceFile file, boolean acquireWriteLock)
+			throws IOException, DuplicateIdException {
+		Archive archive = openArchive(file.getFile(true), acquireWriteLock);
+		return archive.getDataTypeManager();
+	}
+
+	@Override
+	public DataTypeManager openArchive(DomainFile domainFile, TaskMonitor monitor)
+			throws VersionException, CancelledException, IOException, DuplicateIdException {
+		DataTypeArchive archive = openArchive(domainFile);
+		return archive.getDataTypeManager();
+	}
+
+	public List<Archive> getAllArchives() {
+		return dataTypeManagerHandler.getAllArchives();
+	}
+
 	public void openProjectDataTypeArchive() {
-		if (openDialog == null) {
-			ActionListener listener = ev -> {
-				DomainFile domainFile = openDialog.getDomainFile();
-				int version = openDialog.getVersion();
-				if (domainFile == null) {
-					openDialog.setStatusText("Please choose a Project Data Type Archive");
-				}
-				else {
-					openDialog.close();
-					openArchive(domainFile, version);
-				}
-			};
-			DomainFileFilter filter = f -> {
-				Class<?> c = f.getDomainObjectClass();
-				return DataTypeArchive.class.isAssignableFrom(c);
-			};
-			openDialog =
-				new OpenVersionedFileDialog(tool, "Open Project Data Type Archive", filter);
-			openDialog.setHelpLocation(new HelpLocation(HelpTopics.PROGRAM, "Open_File_Dialog"));
-			openDialog.addOkActionListener(listener);
-		}
-		tool.showDialog(openDialog);
+
+		OpenVersionedFileDialog<DataTypeArchive> dialog =
+			new OpenVersionedFileDialog<>(tool, "Open Project Data Type Archive",
+				DataTypeArchive.class);
+		dialog.setHelpLocation(new HelpLocation(HelpTopics.PROGRAM, "Open_File_Dialog"));
+		dialog.addOkActionListener(ev -> {
+			DomainFile domainFile = dialog.getDomainFile();
+			int version = dialog.getVersion();
+			if (domainFile == null) {
+				dialog.setStatusText("Please choose a Project Data Type Archive");
+			}
+			else {
+				dialog.close();
+				openArchive(domainFile, version);
+			}
+		});
+
+		tool.showDialog(dialog);
 	}
 
 	@Override
@@ -575,17 +617,23 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 	@Override
 	public void setDataTypeSelected(DataType dataType) {
 		if (provider.isVisible()) {
-			provider.setDataTypeSelected(dataType);
+			// this is a service method, ensure it is on the Swing thread, since it interacts with
+			// Swing components
+			Swing.runIfSwingOrRunLater(() -> provider.setDataTypeSelected(dataType));
 		}
+	}
+
+	@Override
+	public List<DataType> getSelectedDatatypes() {
+		if (provider.isVisible()) {
+			return provider.getSelectedDataTypes();
+		}
+		return Collections.emptyList();
 	}
 
 	@Override
 	public void setRecentlyUsed(DataType dt) {
 		dataTypeManagerHandler.setRecentlyUsedDataType(dt);
-	}
-
-	public boolean includeDataMembersInSearch() {
-		return provider.includeDataMembersInSearch();
 	}
 
 	@Override
@@ -683,7 +731,7 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 			return null;
 		}
 		DataTypesActionContext dtContext = (DataTypesActionContext) context;
-		GTreeNode selectedNode = dtContext.getSelectedNode();
+		GTreeNode selectedNode = dtContext.getClickedNode();
 		if (!(selectedNode instanceof ArchiveNode)) {
 			return null;
 		}
@@ -763,33 +811,6 @@ public class DataTypeManagerPlugin extends ProgramPlugin
 	protected boolean saveData() {
 		if (!ArchiveUtils.canClose(dataTypeManagerHandler.getAllFileOrProjectArchives(),
 			provider.getComponent())) {
-			return false;
-		}
-		return true;
-	}
-
-	public DataTypeConflictHandler getConflictHandler() {
-		return provider.getConflictHandler();
-	}
-
-	void setStatus(String message) {
-		tool.setStatusInfo(message);
-	}
-
-	public static boolean isValidTypeDefBaseType(Component parent, DataType dataType) {
-		if (dataType instanceof FactoryDataType) {
-			Msg.showError(DataTypeManagerPlugin.class, parent, "TypeDef not allowed",
-				"TypeDef not allowed on a Factory data-type: " + dataType.getName());
-			return false;
-		}
-		if (dataType instanceof Dynamic) {
-			Msg.showError(DataTypeManagerPlugin.class, parent, "TypeDef not allowed",
-				"TypeDef not allowed on a Dynamic data-type: " + dataType.getName());
-			return false;
-		}
-		if (dataType.getLength() <= 0) {
-			Msg.showError(DataTypeManagerPlugin.class, parent, "TypeDef not allowed",
-				"Data-type has unknown length: " + dataType.getName());
 			return false;
 		}
 		return true;

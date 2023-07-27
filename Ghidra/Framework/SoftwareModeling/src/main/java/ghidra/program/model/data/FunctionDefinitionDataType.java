@@ -19,11 +19,12 @@ import java.util.ArrayList;
 
 import ghidra.docking.settings.Settings;
 import ghidra.program.database.data.DataTypeUtilities;
-import ghidra.program.model.lang.PrototypeModel;
+import ghidra.program.model.lang.*;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.mem.MemBuffer;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.util.UniversalID;
+import ghidra.util.exception.InvalidInputException;
 
 /**
  * Definition of a function for things like function pointers.
@@ -34,7 +35,8 @@ public class FunctionDefinitionDataType extends GenericDataType implements Funct
 	private ParameterDefinition[] params;
 	private String comment;
 	private boolean hasVarArgs;
-	private GenericCallingConvention genericCallingConvention = GenericCallingConvention.unknown;
+	private boolean hasNoReturn;
+	private String callingConventionName = CompilerSpec.CALLING_CONVENTION_unknown;
 
 	public FunctionDefinitionDataType(String name) {
 		this(CategoryPath.ROOT, name, null, null);
@@ -97,30 +99,27 @@ public class FunctionDefinitionDataType extends GenericDataType implements Funct
 		Parameter[] parameters = function.getParameters();
 
 		ArrayList<ParameterDefinition> paramList = new ArrayList<ParameterDefinition>();
-		for (int i = 0; i < parameters.length; i++) {
-			if (formalSignature && parameters[i].isAutoParameter()) {
+		int ordinalAdjustment = 0;
+		for (Parameter parameter : parameters) {
+			if (formalSignature && parameter.isAutoParameter()) {
+				--ordinalAdjustment;
 				continue;
 			}
-			paramList.add(getParameterDefinition(parameters[i], formalSignature));
+			paramList.add(getParameterDefinition(parameter, formalSignature, ordinalAdjustment));
 		}
 		params = paramList.toArray(new ParameterDefinition[paramList.size()]);
 
 		hasVarArgs = function.hasVarArgs();
+		hasNoReturn = function.hasNoReturn();
 
-		PrototypeModel prototypeModel = function.getCallingConvention();
-
-		if (prototypeModel == null) {
-			genericCallingConvention = GenericCallingConvention.unknown;
-		}
-		else {
-			genericCallingConvention = prototypeModel.getGenericCallingConvention();
-		}
+		callingConventionName = function.getCallingConventionName();
 	}
 
-	private ParameterDefinition getParameterDefinition(Parameter param, boolean useFormalType) {
+	private ParameterDefinition getParameterDefinition(Parameter param, boolean useFormalType,
+			int ordinalAdjustment) {
 		return new ParameterDefinitionImpl(param.getName(),
 			useFormalType ? param.getFormalDataType() : param.getDataType(), param.getComment(),
-			param.getOrdinal());
+			param.getOrdinal() + ordinalAdjustment);
 	}
 
 	private void init(FunctionSignature sig) {
@@ -137,7 +136,8 @@ public class FunctionDefinitionDataType extends GenericDataType implements Funct
 		setReturnType(rtnType.clone(getDataTypeManager()));
 		setArguments(sig.getArguments());
 		hasVarArgs = sig.hasVarArgs();
-		genericCallingConvention = sig.getGenericCallingConvention();
+		hasNoReturn = sig.hasNoReturn();
+		callingConventionName = sig.getCallingConventionName();
 	}
 
 	@Override
@@ -148,11 +148,6 @@ public class FunctionDefinitionDataType extends GenericDataType implements Funct
 			params[i] = new ParameterDefinitionImpl(args[i].getName(),
 				dt.clone(getDataTypeManager()), args[i].getComment(), i);
 		}
-	}
-
-	@Override
-	public boolean isDynamicallySized() {
-		return false;
 	}
 
 	@Override
@@ -171,14 +166,58 @@ public class FunctionDefinitionDataType extends GenericDataType implements Funct
 	}
 
 	@Override
-	public void setGenericCallingConvention(GenericCallingConvention genericCallingConvention) {
-		this.genericCallingConvention = genericCallingConvention;
+	public void setNoReturn(boolean hasNoReturn) {
+		this.hasNoReturn = hasNoReturn;
 	}
 
 	@Override
-	public GenericCallingConvention getGenericCallingConvention() {
-		return genericCallingConvention != null ? genericCallingConvention
-				: GenericCallingConvention.unknown;
+	public void setGenericCallingConvention(GenericCallingConvention genericCallingConvention) {
+		this.callingConventionName = genericCallingConvention.getDeclarationName();
+	}
+
+	@Override
+	public void setCallingConvention(String conventionName) throws InvalidInputException {
+
+		if (conventionName == null ||
+			CompilerSpec.CALLING_CONVENTION_unknown.equals(conventionName)) {
+			this.callingConventionName = CompilerSpec.CALLING_CONVENTION_unknown;
+			return;
+		}
+		if (CompilerSpec.CALLING_CONVENTION_default.equals(conventionName)) {
+			this.callingConventionName = CompilerSpec.CALLING_CONVENTION_default;
+			return;
+		}
+
+		if (GenericCallingConvention
+				.getGenericCallingConvention(conventionName) != GenericCallingConvention.unknown) {
+			ProgramArchitecture arch = dataMgr != null ? dataMgr.getProgramArchitecture() : null;
+			if (arch != null) {
+				CompilerSpec compilerSpec = arch.getCompilerSpec();
+				PrototypeModel callingConvention =
+					compilerSpec.getCallingConvention(conventionName);
+				if (callingConvention == null) {
+					throw new InvalidInputException(
+						"Invalid calling convention name: " + conventionName);
+				}
+			}
+		}
+
+		this.callingConventionName = conventionName;
+	}
+
+	@Override
+	public PrototypeModel getCallingConvention() {
+		ProgramArchitecture arch = dataMgr != null ? dataMgr.getProgramArchitecture() : null;
+		if (arch == null) {
+			return null;
+		}
+		CompilerSpec compilerSpec = arch.getCompilerSpec();
+		return compilerSpec.getCallingConvention(callingConventionName);
+	}
+
+	@Override
+	public String getCallingConventionName() {
+		return callingConventionName;
 	}
 
 	@Override
@@ -229,11 +268,15 @@ public class FunctionDefinitionDataType extends GenericDataType implements Funct
 	@Override
 	public String getPrototypeString(boolean includeCallingConvention) {
 		StringBuffer buf = new StringBuffer();
+		if (includeCallingConvention && hasNoReturn) {
+			buf.append(NORETURN_DISPLAY_STRING);
+			buf.append(" ");
+		}
 		buf.append((returnType != null ? returnType.getDisplayName() : "void"));
 		buf.append(" ");
 		if (includeCallingConvention &&
-			genericCallingConvention != GenericCallingConvention.unknown) {
-			buf.append(genericCallingConvention.name());
+			!Function.UNKNOWN_CALLING_CONVENTION_STRING.equals(callingConventionName)) {
+			buf.append(callingConventionName);
 			buf.append(" ");
 		}
 		buf.append(name);
@@ -281,6 +324,11 @@ public class FunctionDefinitionDataType extends GenericDataType implements Funct
 		return hasVarArgs;
 	}
 
+	@Override
+	public boolean hasNoReturn() {
+		return hasNoReturn;
+	}
+
 	/**
 	 * Compare the comment of the given function signature to my comment.
 	 * 
@@ -318,7 +366,8 @@ public class FunctionDefinitionDataType extends GenericDataType implements Funct
 			(DataTypeUtilities.isSameOrEquivalentDataType(signature.getReturnType(),
 				this.returnType)) &&
 			(hasVarArgs == signature.hasVarArgs()) &&
-			(genericCallingConvention == signature.getGenericCallingConvention())) {
+			(hasNoReturn == signature.hasNoReturn()) &&
+			callingConventionName.equals(signature.getCallingConventionName())) {
 			ParameterDefinition[] args = signature.getArguments();
 			if (args.length == this.params.length) {
 				for (int i = 0; i < args.length; i++) {
@@ -350,8 +399,7 @@ public class FunctionDefinitionDataType extends GenericDataType implements Funct
 				return;
 			}
 		}
-		for (int i = 0; i < params.length; i++) {
-			ParameterDefinition param = params[i];
+		for (ParameterDefinition param : params) {
 			if (param.getDataType() == oldDt) {
 				try {
 					param.setDataType(newDt);
@@ -391,9 +439,9 @@ public class FunctionDefinitionDataType extends GenericDataType implements Funct
 		if (returnType == dt) {
 			returnType = DataType.DEFAULT;
 		}
-		for (int i = 0; i < params.length; i++) {
-			if (params[i].getDataType() == dt) {
-				params[i].setDataType(DataType.DEFAULT);
+		for (ParameterDefinition param : params) {
+			if (param.getDataType() == dt) {
+				param.setDataType(DataType.DEFAULT);
 			}
 		}
 	}

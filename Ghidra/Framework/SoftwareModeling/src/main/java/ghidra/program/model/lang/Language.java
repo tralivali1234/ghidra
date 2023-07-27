@@ -24,7 +24,6 @@ import ghidra.program.model.address.*;
 import ghidra.program.model.listing.DefaultProgramContext;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemBuffer;
-import ghidra.program.model.util.AddressLabelInfo;
 import ghidra.util.ManualEntry;
 import ghidra.util.task.TaskMonitor;
 
@@ -254,7 +253,7 @@ public interface Language {
 	/**
 	 * Returns processor context base register or null if one has not been defined by the
 	 * language. 
-	 * @return base context register or null if not defined
+	 * @return base context register or Register.NO_CONTEXT if not defined
 	 */
 	public Register getContextBaseRegister();
 
@@ -393,7 +392,8 @@ public interface Language {
 	 * 
 	 * @param instructionMnemonic
 	 *            the instruction mnemonic
-	 * @return the ManualEntry or null if instruction mnemonic not found
+	 * @return the ManualEntry or null.  A default manual entry will be returned if 
+	 * an instruction can not be found within the index and a manual exists.
 	 */
 	public ManualEntry getManualEntry(String instructionMnemonic);
 
@@ -416,5 +416,11 @@ public interface Language {
 	 * @return unmodifiable list of vector registers.
 	 */
 	public List<Register> getSortedVectorRegisters();
+
+	/**
+	 * Returns address set of all registers.
+	 * @return the address set.
+	 */
+	public AddressSetView getRegisterAddresses();
 
 }

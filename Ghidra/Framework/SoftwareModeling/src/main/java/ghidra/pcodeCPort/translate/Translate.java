@@ -28,7 +28,7 @@ import ghidra.pcodeCPort.pcoderaw.VarnodeData;
 import ghidra.pcodeCPort.space.*;
 import ghidra.pcodeCPort.utils.AddrSpaceToIdSymmetryMap;
 import ghidra.pcodeCPort.xml.DocumentStorage;
-import ghidra.program.model.lang.BasicCompilerSpec;
+import ghidra.program.model.lang.SpaceNames;
 
 public abstract class Translate implements BasicSpaceProvider {
 
@@ -215,12 +215,11 @@ public abstract class Translate implements BasicSpaceProvider {
 	public abstract void initialize(DocumentStorage store);
 
 	protected void registerContext(String name, int sbit, int ebit) {
+		// Base implementation (for compiling) doesn't need to keep track of context symbol
 	}
 
-	public void setContextDefault(String name, int val) {
-	}
-
-	public abstract void addRegister(String nm, AddrSpace base, long offset, int size);
+//	public void setContextDefault(String name, int val) {
+//	}
 
 	public abstract VarnodeData getRegister(String nm);
 
@@ -259,11 +258,11 @@ public abstract class Translate implements BasicSpaceProvider {
 
 	protected void restoreXmlSpaces(Element el) {
 		// The first space should always be the constant space
-		insertSpace(new ConstantSpace(this, "const", BasicCompilerSpec.CONSTANT_SPACE_INDEX));
+		insertSpace(new ConstantSpace(this));
 
 		// The second space should always be the other space
-		insertSpace(new OtherSpace(this, BasicCompilerSpec.OTHER_SPACE_NAME,
-			BasicCompilerSpec.OTHER_SPACE_INDEX));
+		insertSpace(
+			new OtherSpace(this, SpaceNames.OTHER_SPACE_NAME, SpaceNames.OTHER_SPACE_INDEX));
 
 		String defname = el.getAttributeValue("defaultspace");
 		List<?> children = el.getChildren();
@@ -291,15 +290,6 @@ public abstract class Translate implements BasicSpaceProvider {
 			}
 		}
 		return null;
-	}
-
-	void addRegisterList(String[] nms, int num, AddrSpace base, long offset, int size, int skip) { // Add names assigning indices in order
-		// allocating -size- space for each starting at -offset-
-		int i;
-
-		for (i = 0; i < num; ++i) {
-			addRegister(nms[i], base, offset + skip * i, size);
-		}
 	}
 
 	// Associate a particular register or memory location with an address space
@@ -361,7 +351,7 @@ public abstract class Translate implements BasicSpaceProvider {
 		boolean duplicatedefine = false;
 		switch (spc.getType()) {
 			case IPTR_CONSTANT:
-				if (!spc.getName().equals("const")) {
+				if (!spc.getName().equals(SpaceNames.CONSTANT_SPACE_NAME)) {
 					nametype_mismatch = true;
 				}
 				if (baselist.size() != 0) {
@@ -370,7 +360,7 @@ public abstract class Translate implements BasicSpaceProvider {
 				constantspace = spc;
 				break;
 			case IPTR_INTERNAL:
-				if (!spc.getName().equals("unique")) {
+				if (!spc.getName().equals(SpaceNames.UNIQUE_SPACE_NAME)) {
 					nametype_mismatch = true;
 				}
 				if (uniqspace != null) {
@@ -379,7 +369,7 @@ public abstract class Translate implements BasicSpaceProvider {
 				uniqspace = spc;
 				break;
 			case IPTR_FSPEC:
-				if (!spc.getName().equals("fspec")) {
+				if (!spc.getName().equals(SpaceNames.FSPEC_SPACE_NAME)) {
 					nametype_mismatch = true;
 				}
 				if (fspecspace != null) {
@@ -388,7 +378,7 @@ public abstract class Translate implements BasicSpaceProvider {
 				fspecspace = spc;
 				break;
 			case IPTR_IOP:
-				if (!spc.getName().equals("iop")) {
+				if (!spc.getName().equals(SpaceNames.IOP_SPACE_NAME)) {
 					nametype_mismatch = true;
 				}
 				if (iopspace != null) {
@@ -397,18 +387,16 @@ public abstract class Translate implements BasicSpaceProvider {
 				iopspace = spc;
 				break;
 			case IPTR_SPACEBASE:
-				if (spc.getName().equals("stack")) {
+				if (spc.getName().equals(SpaceNames.STACK_SPACE_NAME)) {
 					if (stackspace != null) {
 						duplicatedefine = true;
 					}
 					stackspace = spc;
 				}
-				else {
-				}
 				// fallthru
 			case IPTR_PROCESSOR:
 				if (spc.isOtherSpace()) {
-					if (spc.getIndex() != BasicCompilerSpec.OTHER_SPACE_INDEX) {
+					if (spc.getIndex() != SpaceNames.OTHER_SPACE_INDEX) {
 						throw new LowlevelError("OTHER space must be assigned index 1");
 					}
 				}
@@ -492,7 +480,8 @@ public abstract class Translate implements BasicSpaceProvider {
 
 		// Get data for the stackpointer
 		VarnodeData point = getRegister(el.getAttributeValue("register"));
-		spc = new SpacebaseSpace("stack", ind, point.size, basespace, point.space.getDelay() + 1);
+		spc = new SpacebaseSpace(SpaceNames.STACK_SPACE_NAME, ind, point.size, basespace,
+			point.space.getDelay() + 1);
 		insertSpace(spc);
 		addSpacebase(stackspace, point.space, point.offset, point.size);
 	}
@@ -542,8 +531,8 @@ public abstract class Translate implements BasicSpaceProvider {
 
 	public AddrSpace getSpaceBySpacebase(Address loc, int size) { // Get space associated with spacebase register
 		AddrSpace id;
-		for (int i = 0; i < baselist.size(); ++i) {
-			id = baselist.get(i);
+		for (AddrSpace element : baselist) {
+			id = element;
 			int numspace = numSpacebase(id);
 			for (int j = 0; j < numspace; ++j) {
 				VarnodeData point = getSpacebase(id, j);
@@ -565,7 +554,7 @@ public abstract class Translate implements BasicSpaceProvider {
 //		spaceOrderMap = SpaceOrderMap.getSpaceOrderMapForProcessor( processorFile );		
 	}
 
-	public void allowContextSet(boolean val) {
-	}
+//	public void allowContextSet(boolean val) {
+//	}
 
 }

@@ -57,21 +57,19 @@
 
 import ghidra.app.script.GhidraScript;
 import ghidra.app.util.bin.format.dwarf4.next.*;
-import ghidra.program.model.data.BuiltInDataTypeManager;
 
 public class DWARF_ExtractorScript extends GhidraScript {
 
 	@Override
 	public void run() throws Exception {
-		if (!DWARFProgram.isDWARF(currentProgram, monitor)) {
+		if (!DWARFProgram.isDWARF(currentProgram)) {
 			popup("Unable to find DWARF information, aborting");
 			return;
 		}
 		DWARFImportOptions importOptions = new DWARFImportOptions();
 		importOptions.setImportLimitDIECount(Integer.MAX_VALUE);
 		try (DWARFProgram dwarfProg = new DWARFProgram(currentProgram, importOptions, monitor)) {
-			BuiltInDataTypeManager dtms = BuiltInDataTypeManager.getDataTypeManager();
-			DWARFParser dp = new DWARFParser(dwarfProg, dtms, monitor);
+			DWARFParser dp = new DWARFParser(dwarfProg, monitor);
 			DWARFImportSummary importSummary = dp.parse();
 			importSummary.logSummaryResults();
 		}

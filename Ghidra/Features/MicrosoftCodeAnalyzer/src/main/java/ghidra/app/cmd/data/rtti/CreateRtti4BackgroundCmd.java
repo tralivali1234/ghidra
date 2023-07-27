@@ -102,7 +102,7 @@ public class CreateRtti4BackgroundCmd extends AbstractCreateDataBackgroundCmd<Rt
 	@Override
 	protected boolean createAssociatedData() throws CancelledException {
 
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 		boolean createRtti0Success;
 		try {
@@ -129,7 +129,7 @@ public class CreateRtti4BackgroundCmd extends AbstractCreateDataBackgroundCmd<Rt
 
 	private boolean createRtti0() throws CancelledException, InvalidDataTypeException {
 
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 		CreateTypeDescriptorBackgroundCmd cmd =
 			new CreateTypeDescriptorBackgroundCmd(model.getRtti0Model(), applyOptions);
@@ -138,7 +138,7 @@ public class CreateRtti4BackgroundCmd extends AbstractCreateDataBackgroundCmd<Rt
 
 	private boolean createRtti3() throws CancelledException, InvalidDataTypeException {
 
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 		CreateRtti3BackgroundCmd cmd =
 			new CreateRtti3BackgroundCmd(model.getRtti3Model(), applyOptions);
@@ -169,7 +169,7 @@ public class CreateRtti4BackgroundCmd extends AbstractCreateDataBackgroundCmd<Rt
 		// did the search, now process the results
 		boolean didSome = false;
 		for (Address rtti4Address : goodRtti4Locations) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 
 			VfTableModel vfTableModel = foundVFtables.get(rtti4Address);
 			if (vfTableModel == null) {
@@ -239,27 +239,30 @@ public class CreateRtti4BackgroundCmd extends AbstractCreateDataBackgroundCmd<Rt
 	@Override
 	protected boolean createMarkup() throws CancelledException, InvalidDataTypeException {
 
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 		Program program = model.getProgram();
 		TypeDescriptorModel rtti0Model = model.getRtti0Model();
 
-		monitor.checkCanceled();
-
-		if (rtti0Model != null) {
-
-			// Plate Comment
-			// Plate Comment
-			EHDataTypeUtilities.createPlateCommentIfNeeded(program, RttiUtil.CONST_PREFIX +
-				RttiUtil.getDescriptorTypeNamespace(rtti0Model) + Namespace.DELIMITER, RTTI_4_NAME,
-				null, getDataAddress(), applyOptions);
-			monitor.checkCanceled();
-
-			// Label
-			if (applyOptions.shouldCreateLabel()) {
-				RttiUtil.createSymbolFromDemangledType(program, getDataAddress(), rtti0Model,
+		if (rtti0Model == null) {
+			return true;
+		}
+		
+		monitor.checkCancelled();
+		
+		// Label
+		boolean shouldCreateComment = true;
+		if (applyOptions.shouldCreateLabel()) {
+			shouldCreateComment = RttiUtil.createSymbolFromDemangledType(program, getDataAddress(), rtti0Model,
 					RTTI_4_NAME);
-			}
+		}
+
+		// Plate Comment
+		if (shouldCreateComment) {
+			// comment created if a label was created, or createLabel option off
+			EHDataTypeUtilities.createPlateCommentIfNeeded(program, RttiUtil.CONST_PREFIX +
+					RttiUtil.getDescriptorTypeNamespace(rtti0Model) + Namespace.DELIMITER, RTTI_4_NAME,
+					null, getDataAddress(), applyOptions);
 		}
 
 		return true;

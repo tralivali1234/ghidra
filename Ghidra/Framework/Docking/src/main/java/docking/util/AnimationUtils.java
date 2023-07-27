@@ -25,13 +25,15 @@ import org.jdesktop.animation.timing.Animator.RepeatBehavior;
 import org.jdesktop.animation.timing.TimingTargetAdapter;
 import org.jdesktop.animation.timing.interpolation.PropertySetter;
 
+import generic.theme.GIcon;
+import generic.theme.GThemeDefaults.Colors;
+import generic.theme.GThemeDefaults.Colors.Palette;
 import generic.util.WindowUtilities;
 import generic.util.image.ImageUtils;
 import ghidra.util.Msg;
 import ghidra.util.bean.GGlassPane;
 import ghidra.util.bean.GGlassPanePainter;
 import ghidra.util.exception.AssertException;
-import resources.ResourceManager;
 
 public class AnimationUtils {
 
@@ -392,12 +394,11 @@ public class AnimationUtils {
 
 		@Override
 		public void paint(GGlassPane glassPane, Graphics g) {
-			Color gray = Color.GRAY;
+			Color gray = Palette.GRAY;
 //			double darknessFudge = .95;
 //			double progress = percentComplete * darknessFudge; // emphasis starts at 1			
 //			int alpha = Math.min(255, (int) (255 * progress));
-//			gray = new Color(gray.getRed(), gray.getGreen(), gray.getBlue(), alpha);
-			gray = new Color(gray.getRed(), gray.getGreen(), gray.getBlue());
+//			gray = ColorUtils.fromRgba(gray.getRed(), gray.getGreen(), gray.getBlue(), alpha);
 
 			Graphics2D g2d = (Graphics2D) g;
 			Composite originaComposite = g2d.getComposite();
@@ -496,6 +497,13 @@ public class AnimationUtils {
 			}
 
 			Rectangle startBounds = component.getBounds();
+			Container parent = component.getParent();
+			if (parent == null) {
+				// the given component is a Window; make it be the root
+				startBounds.x = 0;
+				startBounds.y = 0;
+			}
+
 			Point relativeStartCenter =
 				new Point((int) startBounds.getCenterX(), (int) startBounds.getCenterY());
 			return SwingUtilities.convertPoint(component.getParent(), relativeStartCenter,
@@ -556,11 +564,20 @@ public class AnimationUtils {
 			int scaledWidth = (int) (defaultBounds.width * percentComplete);
 			int scaledHeight = (int) (defaultBounds.height * percentComplete);
 
+			// gains opacity as it gets closer to the end; capped at the given percentage
+			float opacity = (float) Math.min(.65, percentComplete);
+			Composite originalComposite = g2d.getComposite();
+			AlphaComposite alphaComposite = AlphaComposite.getInstance(
+				AlphaComposite.SrcOver.getRule(), opacity);
+			g2d.setComposite(alphaComposite);
+
 			// 
 			// Calculate the position of the image.   At 100% we want to be in the center of
 			// the display; at 0% we want to be at our default location
 			// 
 			g2d.drawImage(image, (int) currentX, (int) currentY, scaledWidth, scaledHeight, null);
+
+			g2d.setComposite(originalComposite);
 		}
 	}
 
@@ -803,7 +820,7 @@ public class AnimationUtils {
 		@Override
 		public void paint(GGlassPane glassPane, Graphics g) {
 
-			Color background = new Color(218, 232, 250);
+			Color background = Palette.getColor("lightsteelblue");
 			g.setColor(background);
 
 			Rectangle defaultBounds = component.getBounds();
@@ -861,7 +878,7 @@ public class AnimationUtils {
 			double cx = emphasizedBounds.getCenterX();
 			double cy = emphasizedBounds.getCenterY();
 			g2d.rotate(rad, cx, cy);
-			g.setColor(Color.BLACK);
+			g.setColor(Colors.BORDER);
 
 			int iw = emphasizedBounds.width;
 			int ih = emphasizedBounds.height;
@@ -1154,6 +1171,7 @@ public class AnimationUtils {
 
 	private static class DragonImagePainter implements GGlassPanePainter {
 
+		private static final GIcon ICON = new GIcon("icon.dragon.256");
 		private Component component;
 		private double percentComplete = 0.0;
 
@@ -1179,9 +1197,7 @@ public class AnimationUtils {
 				AlphaComposite.getInstance(AlphaComposite.SrcOver.getRule(), alpha);
 			g2d.setComposite(alphaComposite);
 
-			ImageIcon ghidra = ResourceManager.loadImage("images/GhidraIcon256.png");
-			Image ghidraImage = ghidra.getImage();
-
+			Image ghidraImage = ICON.getImageIcon().getImage();
 			Rectangle fullBounds = component.getBounds();
 			fullBounds =
 				SwingUtilities.convertRectangle(component.getParent(), fullBounds, glassPane);

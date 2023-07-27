@@ -20,25 +20,22 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.format.macho.MachConstants;
 import ghidra.app.util.bin.format.macho.MachHeader;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.flatapi.FlatProgramAPI;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.*;
-import ghidra.program.model.listing.Data;
-import ghidra.program.model.listing.ProgramModule;
-import ghidra.program.model.symbol.RefType;
-import ghidra.program.model.symbol.Reference;
-import ghidra.util.Msg;
+import ghidra.program.model.listing.*;
+import ghidra.program.model.symbol.*;
+import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.task.TaskMonitor;
 
 /**
- * Represents a symtab_command structure.
- * 
- * @see <a href="https://opensource.apple.com/source/xnu/xnu-4570.71.2/EXTERNAL_HEADERS/mach-o/loader.h.auto.html">mach-o/loader.h</a> 
+ * Represents a symtab_command structure
  */
 public class SymbolTableCommand extends LoadCommand {
 	private int symoff;
@@ -48,57 +45,44 @@ public class SymbolTableCommand extends LoadCommand {
 
 	private List<NList> symbols = new ArrayList<NList>();
 
-	public static SymbolTableCommand createSymbolTableCommand(FactoryBundledWithBinaryReader reader,
-			MachHeader header) throws IOException {
-		SymbolTableCommand symbolTableCommand =
-			(SymbolTableCommand) reader.getFactory().create(SymbolTableCommand.class);
-		symbolTableCommand.initSymbolTableCommand(reader, header);
-		return symbolTableCommand;
-	}
-
 	/**
-	 * DO NOT USE THIS CONSTRUCTOR, USE create*(GenericFactory ...) FACTORY METHODS INSTEAD.
+	 * Creates and parses a new {@link SymbolTableCommand}
+	 * 
+	 * @param loadCommandReader A {@link BinaryReader reader} that points to the start of the load
+	 *   command
+	 * @param dataReader A {@link BinaryReader reader} that can read the data that the load command
+	 *   references.  Note that this might be in a different underlying provider.
+	 * @param header The {@link MachHeader header} associated with this load command
+	 * @throws IOException if an IO-related error occurs while parsing
 	 */
-	public SymbolTableCommand() {
-	}
+	public SymbolTableCommand(BinaryReader loadCommandReader, BinaryReader dataReader,
+			MachHeader header) throws IOException {
+		super(loadCommandReader);
 
-	private void initSymbolTableCommand(FactoryBundledWithBinaryReader reader, MachHeader header)
-			throws IOException {
-		initLoadCommand(reader);
-
-		symoff = reader.readNextInt();
-		nsyms = reader.readNextInt();
-		stroff = reader.readNextInt();
-		strsize = reader.readNextInt();
-
-		long index = reader.getPointerIndex();
-
-		reader.setPointerIndex(header.getStartIndexInProvider() + symoff);
+		symoff = loadCommandReader.readNextInt();
+		nsyms = loadCommandReader.readNextInt();
+		stroff = loadCommandReader.readNextInt();
+		strsize = loadCommandReader.readNextInt();
 
 		List<NList> nlistList = new ArrayList<>(nsyms);
-		long startIndex = header.getStartIndexInProvider();
-		boolean is32bit = header.is32bit();
-		reader.setPointerIndex(startIndex + symoff);
-
+		dataReader.setPointerIndex(header.getStartIndex() + symoff);
 		for (int i = 0; i < nsyms; ++i) {
-			nlistList.add(NList.createNList(reader, is32bit));
+			nlistList.add(new NList(dataReader, header.is32bit()));
 		}
+		
 		// sort the entries by the index in the string table, so don't jump around reading
 		List<NList> sortedList =
 			nlistList.stream().sorted((o1, o2) -> Integer.compare(o1.getStringTableIndex(),
 				o2.getStringTableIndex())).collect(Collectors.toList());
-
+		
 		// initialize the sorted NList strings from string table
-		long stringTableOffset = stroff;
 		for (NList nList : sortedList) {
-			nList.initString(reader, stringTableOffset);
+			nList.initString(dataReader, stroff);
 		}
-
+		
 		// the symbol table should be in the original order.
 		// The table is indexed by other tables in the MachO headers
 		symbols = nlistList;
-
-		reader.setPointerIndex(index);
 	}
 
 	/**
@@ -146,7 +130,6 @@ public class SymbolTableCommand extends LoadCommand {
 			return null;
 		}
 		if (index > symbols.size()) {
-			Msg.error(this, "Attempt to get symbols at " + Integer.toHexString(index));
 			return null;
 		}
 		return symbols.get(index);
@@ -171,61 +154,130 @@ public class SymbolTableCommand extends LoadCommand {
 	}
 
 	@Override
-	public void markup(MachHeader header, FlatProgramAPI api, Address baseAddress, boolean isBinary,
+	public int getLinkerDataOffset() {
+		return symoff;
+	}
+
+	@Override
+	public int getLinkerDataSize() {
+		if (!symbols.isEmpty()) {
+			int totalStringSize = 0;
+			for (NList nlist : symbols) {
+				totalStringSize += nlist.getString().length() + 1; // Add 1 for null terminator
+			}
+			return nsyms * symbols.get(0).getSize() + totalStringSize;
+		}
+		return 0;
+	}
+
+	@Override
+	public Address getDataAddress(MachHeader header, AddressSpace space) {
+		if (symoff != 0 && nsyms != 0) {
+			SegmentCommand segment = getContainingSegment(header, symoff);
+			if (segment != null) {
+				return space
+						.getAddress(segment.getVMaddress() + (symoff - segment.getFileOffset()));
+			}
+		}
+		return null;
+	}
+
+	@Override
+	public void markup(Program program, MachHeader header, Address symbolTableAddr,
+			String source, TaskMonitor monitor, MessageLog log) throws CancelledException {
+		if (symbolTableAddr == null) {
+			return;
+		}
+		Address stringTableAddr = stroff != 0 ? symbolTableAddr.add(stroff - symoff) : null;
+
+		Listing listing = program.getListing();
+		ReferenceManager referenceManager = program.getReferenceManager();
+		String symbolsName = LoadCommandTypes.getLoadCommandName(getCommandType()) + " (symbols)";
+		String stringsName = LoadCommandTypes.getLoadCommandName(getCommandType()) + " (strings)";
+		if (source != null) {
+			symbolsName += " - " + source;
+			stringsName += " - " + source;
+		}
+		try {
+			listing.setComment(symbolTableAddr, CodeUnit.PLATE_COMMENT, symbolsName);
+			if (stringTableAddr != null) {
+				listing.setComment(stringTableAddr, CodeUnit.PLATE_COMMENT, stringsName);
+			}
+			for (int i = 0; i < nsyms; i++) {
+				NList nlist = symbols.get(i);
+				DataType dt = nlist.toDataType();
+				Address nlistAddr = symbolTableAddr.add(i * dt.getLength());
+				Data d = DataUtilities.createData(program, nlistAddr, dt, -1,
+					DataUtilities.ClearDataMode.CHECK_FOR_SPACE);
+
+				if (stringTableAddr != null) {
+					Address strAddr = stringTableAddr.add(nlist.getStringTableIndex());
+					DataUtilities.createData(program, strAddr, STRING, -1,
+						DataUtilities.ClearDataMode.CHECK_FOR_SPACE);
+					Reference ref = referenceManager.addMemoryReference(d.getMinAddress(), strAddr,
+						RefType.DATA, SourceType.IMPORTED, 0);
+					referenceManager.setPrimary(ref, true);
+				}
+			}
+
+		}
+		catch (Exception e) {
+			log.appendMsg(SymbolTableCommand.class.getSimpleName(),
+				"Failed to markup %s.".formatted(symbolsName));
+		}
+	}
+
+	@Override
+	public void markupRawBinary(MachHeader header, FlatProgramAPI api, Address baseAddress,
 			ProgramModule parentModule, TaskMonitor monitor, MessageLog log) {
-		updateMonitor(monitor);
-		if (isBinary) {
-			try {
-				createFragment(api, baseAddress, parentModule);
-				Address address = baseAddress.getNewAddress(getStartIndex());
-				api.createData(address, toDataType());
+		try {
+			super.markupRawBinary(header, api, baseAddress, parentModule, monitor, log);
 
-				if (getStringTableSize() > 0) {
-					Address stringTableStart = baseAddress.getNewAddress(getStringTableOffset());
-					api.createFragment(parentModule, "string_table", stringTableStart,
-						getStringTableSize());
-				}
-
-				int symbolIndex = 0;
-				Address symbolStartAddr = baseAddress.getNewAddress(getSymbolOffset());
-				long offset = 0;
-				for (NList symbol : symbols) {
-					if (monitor.isCancelled()) {
-						return;
-					}
-
-					DataType symbolDT = symbol.toDataType();
-					Address symbolAddr = symbolStartAddr.add(offset);
-					Data symbolData = api.createData(symbolAddr, symbolDT);
-
-					Address stringAddress = baseAddress.getNewAddress(
-						getStringTableOffset() + symbol.getStringTableIndex());
-					Data stringData = api.createAsciiString(stringAddress);
-					String string = (String) stringData.getValue();
-
-					Reference ref =
-						api.createMemoryReference(symbolData, stringAddress, RefType.DATA);
-					api.setReferencePrimary(ref, false);
-
-					api.setPlateComment(symbolAddr,
-						string + "\n" + "Index:           0x" + Integer.toHexString(symbolIndex) +
-							"\n" + "Value:           0x" + Long.toHexString(symbol.getValue()) +
-							"\n" + "Description:     0x" +
-							Long.toHexString(symbol.getDescription() & 0xffff) + "\n" +
-							"Library Ordinal: 0x" +
-							Long.toHexString(symbol.getLibraryOrdinal() & 0xff));
-
-					offset += symbolDT.getLength();
-					++symbolIndex;
-				}
-
-				if (getNumberOfSymbols() > 0) {
-					api.createFragment(parentModule, "symbols", symbolStartAddr, offset);
-				}
+			if (getStringTableSize() > 0) {
+				Address stringTableStart = baseAddress.getNewAddress(getStringTableOffset());
+				api.createFragment(parentModule, "string_table", stringTableStart,
+					getStringTableSize());
 			}
-			catch (Exception e) {
-				log.appendMsg("Unable to create " + getCommandName() + " - " + e.getMessage());
+
+			int symbolIndex = 0;
+			Address symbolStartAddr = baseAddress.getNewAddress(getSymbolOffset());
+			long offset = 0;
+			for (NList symbol : symbols) {
+				if (monitor.isCancelled()) {
+					return;
+				}
+
+				DataType symbolDT = symbol.toDataType();
+				Address symbolAddr = symbolStartAddr.add(offset);
+				Data symbolData = api.createData(symbolAddr, symbolDT);
+
+				Address stringAddress = baseAddress.getNewAddress(
+					getStringTableOffset() + symbol.getStringTableIndex());
+				Data stringData = api.createAsciiString(stringAddress);
+				String string = (String) stringData.getValue();
+
+				Reference ref =
+					api.createMemoryReference(symbolData, stringAddress, RefType.DATA);
+				api.setReferencePrimary(ref, false);
+
+				api.setPlateComment(symbolAddr,
+					string + "\n" + "Index:           0x" + Integer.toHexString(symbolIndex) +
+						"\n" + "Value:           0x" + Long.toHexString(symbol.getValue()) +
+						"\n" + "Description:     0x" +
+						Long.toHexString(symbol.getDescription() & 0xffff) + "\n" +
+						"Library Ordinal: 0x" +
+						Long.toHexString(symbol.getLibraryOrdinal() & 0xff));
+
+				offset += symbolDT.getLength();
+				++symbolIndex;
 			}
+
+			if (getNumberOfSymbols() > 0) {
+				api.createFragment(parentModule, "symbols", symbolStartAddr, offset);
+			}
+		}
+		catch (Exception e) {
+			log.appendMsg("Unable to create " + getCommandName() + " - " + e.getMessage());
 		}
 	}
 }

@@ -29,9 +29,10 @@ import javax.swing.*;
 import org.apache.commons.collections4.map.LazyMap;
 import org.jdom.Element;
 
+import docking.action.ActionContextProvider;
 import docking.action.DockingActionIf;
 import docking.actions.*;
-import docking.help.HelpService;
+import docking.widgets.PasswordDialog;
 import generic.util.WindowUtilities;
 import ghidra.framework.OperatingSystem;
 import ghidra.framework.Platform;
@@ -40,21 +41,22 @@ import ghidra.util.*;
 import ghidra.util.datastruct.*;
 import ghidra.util.exception.AssertException;
 import ghidra.util.task.SwingUpdateManager;
+import help.Help;
+import help.HelpService;
 import util.CollectionUtils;
-import utilities.util.reflection.ReflectionUtilities;
 
 /**
- * Manages the "Docking" arrangement of a set of components and actions. The components can be "docked" 
- * together or exist in their own window.  Actions can be associated with components so they
+ * Manages the "Docking" arrangement of a set of components and actions. The components can be
+ * "docked" together or exist in their own window. Actions can be associated with components so they
  * "move" with the component as it moved from one location to another.
  * <P>
- * Components are added via ComponentProviders.  A ComponentProvider is an interface for getting
- * a component and its related information.  The docking window manager will get the component
- * from the provider as needed.  It is up to the provider if it wants to reuse the component or
- * recreate a new one when the component is requested.  When the user hides a component (by using 
- * the x button on the component header), the docking window manager removes all
- * knowledge of the component and will request it again from the provider if the component
- * is again shown.  The provider is also notified whenever a component is hidden and shown. 
+ * Components are added via ComponentProviders. A ComponentProvider is an interface for getting a
+ * component and its related information. The docking window manager will get the component from the
+ * provider as needed. It is up to the provider if it wants to reuse the component or recreate a new
+ * one when the component is requested. When the user hides a component (by using the x button on
+ * the component header), the docking window manager removes all knowledge of the component and will
+ * request it again from the provider if the component is again shown. The provider is also notified
+ * whenever a component is hidden and shown.
  */
 public class DockingWindowManager implements PropertyChangeListener, PlaceholderInstaller {
 
@@ -64,17 +66,13 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	private static Object objectUnderMouse;
 
 	/**
-	 * The owner name for docking windows actions.  
-	 * <p>Warning: Any action with this owner will get removed every time the 'Window' menu is
-	 * rebuilt, with the exception if reserved key bindings. 
+	 * The owner name for docking windows actions.
+	 * <p>
+	 * Warning: Any action with this owner will get removed every time the 'Window' menu is rebuilt,
+	 * with the exception if reserved key bindings.
 	 */
 	public static final String DOCKING_WINDOWS_OWNER = "DockingWindows";
 	public static final String TOOL_PREFERENCES_XML_NAME = "PREFERENCES";
-
-	/**
-	 * The helpService field should be set to the appropriate help service provider.
-	 */
-	private static HelpService helpService = new DefaultHelpService();
 
 	// we use a list to maintain order
 	private static List<DockingWindowManager> instances = new ArrayList<>();
@@ -111,8 +109,12 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	private Window lastActiveWindow;
 
+	private Map<Class<? extends ActionContext>, ActionContextProvider> defaultContextProviderMap =
+		new HashMap<>();
+
 	/**
 	 * Constructs a new DockingWindowManager
+	 *
 	 * @param tool the tool
 	 * @param images the images to use for windows in this window manager
 	 */
@@ -122,17 +124,17 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Constructs a new DockingWindowManager
-	 * 
+	 *
 	 * @param tool the tool
 	 * @param images the list of icons to set on the window
 	 * @param modal if true then the root window will be a modal dialog instead of a frame
 	 * @param isDocking true for normal operation, false to suppress docking support(removes
-	 * component headers and window menu)
+	 *            component headers and window menu)
 	 * @param hasStatusBar if true a status bar will be created for the main window
 	 * @param factory the drop target factory
 	 */
-	public DockingWindowManager(Tool tool, List<Image> images, boolean modal,
-			boolean isDocking, boolean hasStatusBar, DropTargetFactory factory) {
+	public DockingWindowManager(Tool tool, List<Image> images, boolean modal, boolean isDocking,
+			boolean hasStatusBar, DropTargetFactory factory) {
 
 		KeyBindingOverrideKeyEventDispatcher.install();
 
@@ -160,22 +162,12 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Sets the help service for the all docking window managers.
-	 * @param helpSvc the help service to use.
-	 */
-	public static void setHelpService(HelpService helpSvc) {
-		if (helpSvc == null) {
-			throw new IllegalArgumentException("HelpService may not be null");
-		}
-		helpService = helpSvc;
-	}
-
-	/**
 	 * Returns the global help service.
+	 *
 	 * @return the global help service.
 	 */
 	public static HelpService getHelpService() {
-		return helpService;
+		return Help.getHelpService();
 	}
 
 	private static synchronized void addInstance(DockingWindowManager winMgr) {
@@ -188,6 +180,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Get the docking window manager instance which corresponds to the specified window.
+	 *
 	 * @param win the window for which to find its parent docking window manager.
 	 * @return docking window manager or null if unknown.
 	 */
@@ -221,8 +214,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	/**
 	 * A convenience method for getting the window for <code>component</code> and then calling
 	 * {@link #getInstanceForWindow(Window)}.
+	 *
 	 * @param component The component for which to get the associated {@link DockingWindowManager}
-	 *        instance.
+	 *            instance.
 	 * @return The {@link DockingWindowManager} instance associated with <code>component</code>
 	 */
 	public static synchronized DockingWindowManager getInstance(Component component) {
@@ -240,11 +234,12 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns the last active docking window manager which is visible.
+	 *
 	 * @return the last active docking window manager which is visible.
 	 */
 	public static synchronized DockingWindowManager getActiveInstance() {
 		//
-		// Assumption: the managers are put into the list in the order they are created.  The 
+		// Assumption: the managers are put into the list in the order they are created.  The
 		//             most recently created manager is the last shown manager, making it the
 		//             most active.  Any time we change the active manager, it will be placed
 		//             in the back of the list.
@@ -259,7 +254,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Returns a new list of all DockingWindowManager instances know to exist.
+	 * Returns a new list of all DockingWindowManager instances known to exist, ordered from least
+	 * to most-recently active.
+	 *
 	 * @return a new list of all DockingWindowManager instances know to exist.
 	 */
 	public static synchronized List<DockingWindowManager> getAllDockingWindowManagers() {
@@ -268,6 +265,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * The specified docking window manager has just become active
+	 *
 	 * @param mgr the window manager that became active.
 	 */
 	static synchronized void setActiveManager(DockingWindowManager mgr) {
@@ -277,9 +275,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Register a specific Help content URL for a component.
-	 * The DocWinListener will be notified with the helpURL if the specified
-	 * component 'c' has focus and the help key is pressed. 
+	 * Register a specific Help content URL for a component. The DocWinListener will be notified
+	 * with the helpURL if the specified component 'c' has focus and the help key is pressed.
+	 *
 	 * @param c component on which to set help.
 	 * @param helpLocation help content location
 	 */
@@ -288,8 +286,8 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Set the tool name which is displayed as the title
-	 * for all windows.
+	 * Set the tool name which is displayed as the title for all windows.
+	 *
 	 * @param toolName tool name / title
 	 */
 	public void setToolName(String toolName) {
@@ -298,6 +296,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Set the Icon for all windows.
+	 *
 	 * @param icon image icon
 	 */
 	public void setIcon(ImageIcon icon) {
@@ -306,7 +305,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns true if this manager contains the given provider.
-	 * 
+	 *
 	 * @param provider the provider for which to check
 	 * @return true if this manager contains the given provider.
 	 */
@@ -328,6 +327,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns the tool that owns this manager
+	 *
 	 * @return the tool
 	 */
 	public Tool getTool() {
@@ -336,6 +336,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns the root window frame.
+	 *
 	 * @return the root window frame.
 	 */
 	public JFrame getRootFrame() {
@@ -347,6 +348,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Sets the provider that should get the default focus when no component has focus.
+	 *
 	 * @param provider the provider that should get the default focus when no component has focus.
 	 */
 	public void setDefaultComponent(ComponentProvider provider) {
@@ -354,7 +356,36 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
+	 * Registers an action context provider as the default provider for a specific action
+	 * context type. Note that this registers a default provider for exactly
+	 * that type and not a subclass of that type. If the provider want to support a hierarchy of
+	 * types, then it must register separately for each type. See {@link ActionContext} for details
+	 * on how the action context system works.
+	 * @param type the ActionContext class to register a default provider for
+	 * @param provider the ActionContextProvider that provides default tool context for actions
+	 * that consume the given ActionContext type
+	 */
+	public void registerDefaultContextProvider(Class<? extends ActionContext> type,
+			ActionContextProvider provider) {
+		defaultContextProviderMap.put(type, provider);
+	}
+
+	/**
+	 * Removes the default provider for the given ActionContext type.
+	 * @param type the subclass of ActionContext to remove a provider for
+	 * @param provider the ActionContextProvider to remove for the given ActionContext type
+	 */
+	public void unregisterDefaultContextProvider(Class<? extends ActionContext> type,
+			ActionContextProvider provider) {
+		ActionContextProvider currentProvider = defaultContextProviderMap.get(type);
+		if (Objects.equals(provider, currentProvider)) {
+			defaultContextProviderMap.remove(type);
+		}
+	}
+
+	/**
 	 * Get the window that contains the specified Provider's component
+	 *
 	 * @param provider component provider
 	 * @return window or null if component is not visible or not found
 	 */
@@ -368,6 +399,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Get the provider that contains the specified component
+	 *
 	 * @param c the component
 	 * @return the provider; null if now containing provider is found
 	 */
@@ -390,6 +422,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns the active window (or the root window if nobody has yet been made active).
+	 *
 	 * @return the active window.
 	 */
 	public Window getActiveWindow() {
@@ -402,6 +435,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns the current active component.
+	 *
 	 * @return the current active component.
 	 */
 	public Component getActiveComponent() {
@@ -413,6 +447,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns the component which has focus
+	 *
 	 * @return the placeholder
 	 */
 	public ComponentPlaceholder getFocusedComponent() {
@@ -432,8 +467,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Sets the visible state of the set of docking windows.
-	 * @param state if true the main window and all sub-windows are set to be visible.  If
-	 * state is false, then all windows are set to be invisible.
+	 *
+	 * @param state if true the main window and all sub-windows are set to be visible. If state is
+	 *            false, then all windows are set to be invisible.
 	 */
 	public synchronized void setVisible(boolean state) {
 		if (state != isVisible) {
@@ -447,6 +483,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns true if the set of windows associated with this window manager are visible.
+	 *
 	 * @return true if the set of windows associated with this window manager are visible.
 	 */
 	public boolean isVisible() {
@@ -455,6 +492,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns true if the specified provider's component is visible
+	 *
 	 * @param provider component provider
 	 * @return true if the specified provider's component is visible
 	 */
@@ -467,8 +505,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Adds a new component (via the provider) to be managed by this docking window manager.
-	 * The component is initially hidden.
+	 * Adds a new component (via the provider) to be managed by this docking window manager. The
+	 * component is initially hidden.
+	 *
 	 * @param provider the component provider
 	 */
 	public void addComponent(ComponentProvider provider) {
@@ -476,8 +515,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Adds a new component (vial the provider) to be managed by this docking window manager.
-	 * The component will be initially shown or hidden based on the the "show" parameter.
+	 * Adds a new component (vial the provider) to be managed by this docking window manager. The
+	 * component will be initially shown or hidden based on the the "show" parameter.
+	 *
 	 * @param provider the component provider.
 	 * @param show indicates whether or not the component should be initially shown.
 	 */
@@ -492,6 +532,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	private void registerHelpLocation(ComponentProvider provider, HelpLocation helpLocation) {
+		HelpService helpService = Help.getHelpService();
 		HelpLocation registeredHelpLocation = helpService.getHelpLocation(provider);
 		if (registeredHelpLocation != null) {
 			return; // nothing to do; location already registered
@@ -512,8 +553,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Returns the ComponentProvider with the given name.  If more than one provider exists with the name,
-	 * one will be returned, but it could be any one of them.
+	 * Returns the ComponentProvider with the given name. If more than one provider exists with the
+	 * name, one will be returned, but it could be any one of them.
+	 *
 	 * @param name the name of the provider to return.
 	 * @return a provider with the given name, or null if no providers with that name exist.
 	 */
@@ -538,7 +580,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * The <b>first</b> provider instance with a class equal to that of the given class
-	 * 
+	 *
 	 * @param clazz the class of the desired provider
 	 * @return the <b>first</b> provider instance with a class equal to that of the given class.
 	 * @see #getComponentProviders(Class)
@@ -549,9 +591,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Gets all components providers with a matching class.  Some component providers will have
+	 * Gets all components providers with a matching class. Some component providers will have
 	 * multiple instances in the tool
-	 * 
+	 *
 	 * @param clazz The class of the provider
 	 * @return all found provider instances
 	 */
@@ -567,10 +609,10 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Returns the component provider that is the conceptual parent of the given component.  More
-	 * precisely, this will return the component provider whose 
+	 * Returns the component provider that is the conceptual parent of the given component. More
+	 * precisely, this will return the component provider whose
 	 * {@link ComponentProvider#getComponent() component} is the parent of the given component.
-	 * 
+	 *
 	 * @param component the component for which to find a provider
 	 * @return the provider; null if the component is not the child of a provider
 	 */
@@ -595,9 +637,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Set whether a component's header should be shown; the header is the
-	 * component that is dragged in order to move the component within the
-	 * tool, or out of the tool into a separate window.
+	 * Set whether a component's header should be shown; the header is the component that is dragged
+	 * in order to move the component within the tool, or out of the tool into a separate window.
+	 *
 	 * @param provider provider of the visible component in the tool
 	 * @param b true means to show the header
 	 */
@@ -630,7 +672,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		placeholder.update();
 		scheduleUpdate();
 
-		DetachedWindowNode wNode = placeholder.getWindowNode();
+		DetachedWindowNode wNode = placeholder.getDetachedWindowNode();
 		if (wNode != null) {
 			wNode.updateTitle();
 		}
@@ -638,6 +680,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns the current subtitle for the component for the given provider.
+	 *
 	 * @param provider the component provider of the component for which to get its subtitle.
 	 * @return the current subtitle for the component for the given provider.
 	 */
@@ -650,11 +693,15 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Removes the ComponentProvider (component) from the docking windows manager.  The location
-	 * of the window will be remember and reused if the provider is added back in later.
+	 * Removes the ComponentProvider (component) from the docking windows manager. The location of
+	 * the window will be remember and reused if the provider is added back in later.
+	 *
 	 * @param provider the provider to be removed.
 	 */
 	public void removeComponent(ComponentProvider provider) {
+		if (provider == defaultProvider) {
+			defaultProvider = null;
+		}
 		placeholderManager.removeComponent(provider);
 	}
 
@@ -700,6 +747,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	/**
 	 * Returns any action that is bound to the given keystroke for the tool associated with this
 	 * DockingWindowManager instance.
+	 *
 	 * @param keyStroke The keystroke to check for key bindings.
 	 * @return The action that is bound to the keystroke, or null of there is no binding for the
 	 *         given keystroke.
@@ -707,8 +755,8 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	Action getActionForKeyStroke(KeyStroke keyStroke) {
 		DockingToolActions toolActions = tool.getToolActions();
 		if (toolActions instanceof ToolActions) {
-			// Using a cast here; it didn't make sense to include this 'getAction' on the 
-			// DockingToolActions 
+			// Using a cast here; it didn't make sense to include this 'getAction' on the
+			// DockingToolActions
 			return ((ToolActions) toolActions).getAction(keyStroke);
 		}
 		return null;
@@ -725,10 +773,11 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Hides or shows the component associated with the given provider.
-	 * <p><br>
+	 * <p>
+	 * <br>
 	 * <b>Note: </b> This method will not show the given provider if it has not previously been
 	 * added via <code>addComponent(...)</code>.
-	 * 
+	 *
 	 * @param provider the provider of the component to be hidden or shown.
 	 * @param visibleState true to show the component, false to hide it.
 	 * @see #addComponent(ComponentProvider)
@@ -767,7 +816,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 			//
 			// Handle the window being minimized (Windows doesn't always raise the window when
 			// calling setVisible()
-			// 
+			//
 			if (window instanceof Frame) {
 				Frame frame = (Frame) window;
 				int state = frame.getState();
@@ -784,7 +833,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 			//
 			// Handle the window being minimized (Linux doesn't always raise the window when
 			// calling setVisible()
-			// 
+			//
 			if (window instanceof Frame) {
 				Frame frame = (Frame) window;
 				int state = frame.getState();
@@ -802,8 +851,8 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Releases all resources used by this docking window manager.  Once the dispose method
-	 * is called, no other calls to this object should be made.
+	 * Releases all resources used by this docking window manager. Once the dispose method is
+	 * called, no other calls to this object should be made.
 	 */
 	public synchronized void dispose() {
 		if (root == null) {
@@ -823,6 +872,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		setNextFocusPlaceholder(null);
 		removeInstance(this);
 		root = null;
+		lastActiveWindow = null;
 	}
 
 	void showComponent(ComponentProvider provider, boolean visibleState, boolean shouldEmphasize) {
@@ -843,8 +893,8 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Shows or hides the component associated with the given placeholder object. 
-	 * 
+	 * Shows or hides the component associated with the given placeholder object.
+	 *
 	 * @param placeholder the component placeholder object for the component to be shown or hidden.
 	 * @param visibleState true to show or false to hide.
 	 * @param requestFocus True signals that the system should request focus on the component.
@@ -901,6 +951,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Generates a JDOM element object for saving the window managers state to XML.
+	 *
 	 * @param rootXMLElement The root element to which to save XML data.
 	 */
 	public void saveToXML(Element rootXMLElement) {
@@ -921,6 +972,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Save this docking window manager's window layout and positioning information as XML.
+	 *
 	 * @return An XML element with the above information.
 	 */
 	public Element saveWindowingDataToXml() {
@@ -929,36 +981,40 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Restores the docking window managers state from the XML information.
+	 *
 	 * @param rootXMLElement JDOM element from which to extract the state information.
 	 */
 	public void restoreFromXML(Element rootXMLElement) {
-		Element rootNodeElement = rootXMLElement.getChild(RootNode.ROOT_NODE_ELEMENT_NAME);
-		restoreWindowDataFromXml(rootNodeElement);
-		// load the tool preferences
+		restoreWindowDataFromXml(rootXMLElement);
 		restorePreferencesFromXML(rootXMLElement);
 	}
 
 	/**
 	 * Restore to the docking window manager the layout and positioning information from XML.
-	 * @param windowData The XML element containing the above information.
+	 *
+	 * @param rootXMLElement JDOM element from which to extract the state information.
 	 */
-	public void restoreWindowDataFromXml(Element windowData) {
+	public void restoreWindowDataFromXml(Element rootXMLElement) {
+		Element windowData = rootXMLElement.getChild(RootNode.ROOT_NODE_ELEMENT_NAME);
+		if (windowData == null) {
+			return;
+		}
 		//
 		// Clear our focus history, as we are changing placeholders' providers, so the old focus
 		// is no longer relevant.
-		// 
+		//
 		clearFocusedComponent();
 		lastFocusedPlaceholders.clear();
 
-		// 
+		//
 		// Save off the active  providers.  They will be re-assigned to new placeholders.
 		//
 		Map<ComponentProvider, ComponentPlaceholder> activeProviders =
 			placeholderManager.getActiveProvidersToPlaceholders();
 
 		//
-		// Load the placeholders 
-		// 
+		// Load the placeholders
+		//
 		List<ComponentPlaceholder> restoredPlaceholders = root.restoreFromXML(windowData);
 		placeholderManager = new PlaceholderManager(this, restoredPlaceholders);
 
@@ -1003,9 +1059,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		restoreFocusOwner(focusOwner, focusName);
 	}
 
-	/** 
-	 * Sorts the active providers by window group.  This ensures that the dependent window groups
-	 * are loaded after their dependencies have been.   
+	/**
+	 * Sorts the active providers by window group. This ensures that the dependent window groups are
+	 * loaded after their dependencies have been.
 	 */
 	private List<Entry<ComponentProvider, ComponentPlaceholder>> sortActiveProviders(
 			Map<ComponentProvider, ComponentPlaceholder> activeProviders) {
@@ -1059,6 +1115,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	/**
 	 * Moves the component associated with the given source placeholder object from its current
 	 * docked location to its own window that will be anchored at the given point.
+	 *
 	 * @param source the component placeholder containing the component to be moved.
 	 * @param p the location at which to create a new window for the component.
 	 */
@@ -1070,9 +1127,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Moves the component associated with the given source placeholder object to a new docked 
+	 * Moves the component associated with the given source placeholder object to a new docked
 	 * location relative to the given destination placeholder object
-	 * 
+	 *
 	 * @param source the component placeholder for the component being moved
 	 * @param destination the component placeholder object used to base to move
 	 * @param windowPosition a code specifying the docking relationship between two placeholders
@@ -1100,8 +1157,8 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Notifies the docking windows listener that the close button has been pressed on
-	 * the main window frame.
+	 * Notifies the docking windows listener that the close button has been pressed on the main
+	 * window frame.
 	 */
 	void close() {
 		tool.close();
@@ -1189,8 +1246,8 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 			for (ComponentPlaceholder placeholder : placeholders) {
 				ComponentProvider provider = placeholder.getProvider();
 				boolean isTransient = provider.isTransient();
-				actionList.add(
-					new ShowComponentAction(this, placeholder, subMenuName, isTransient));
+				actionList
+					.add(new ShowComponentAction(this, placeholder, subMenuName, isTransient));
 			}
 
 			if (subMenuName != null) {
@@ -1324,14 +1381,13 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Display an text edit box on top of the specified component.
+	 *
 	 * @param defaultText initial text to be displayed in edit box
 	 * @param c component over which the edit box will be placed
-	 * @param r specifies the bounds of the edit box relative to the 
-	 * component.  The height is ignored.  The default text field height 
-	 * is used as the preferred height. 
-	 * @param listener when the edit is complete, this listener is notified 
-	 * with the new text.  The edit box is dismissed prior to notifying
-	 * the listener.
+	 * @param r specifies the bounds of the edit box relative to the component. The height is
+	 *            ignored. The default text field height is used as the preferred height.
+	 * @param listener when the edit is complete, this listener is notified with the new text. The
+	 *            edit box is dismissed prior to notifying the listener.
 	 */
 	public void showEditWindow(String defaultText, Component c, Rectangle r,
 			EditListener listener) {
@@ -1379,6 +1435,10 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 			focusedPlaceholder.setSelected(false);
 		}
 
+		// Activating placeholders is done to help users find widgets hiding in plain sight.
+		// Assume that the user is no longer seeking a provider if they are clicking around.
+		activatedInfo.clear();
+
 		focusedPlaceholder = placeholder;
 
 		// put the last focused placeholder at the front of the list for restoring focus work later
@@ -1424,8 +1484,8 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Invoked by associated docking windows when they become active or inactive
-	 * 
-	 * @param window the active window 
+	 *
+	 * @param window the active window
 	 * @param active true signals that this DockingWindowManager has become active
 	 */
 	void setActive(Window window, boolean active) {
@@ -1481,7 +1541,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 		if (!ensureDockableComponentContainsFocusOwner(newFocusComponent, dockableComponent)) {
 			// This implies we have made a call that will change the focus, which means
-			// will be back here again or we are in some special case and we do not want to 
+			// will be back here again or we are in some special case and we do not want to
 			// do any more focus work
 			return;
 		}
@@ -1495,8 +1555,8 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 		dockableComponent.setFocusedComponent(newFocusComponent); // for posterity 
 
-		// Note: do this later, since, during this callback, component providers can do 
-		//       things that break focus (e.g., launch a modal dialog).  By doing this later, 
+		// Note: do this later, since, during this callback, component providers can do
+		//       things that break focus (e.g., launch a modal dialog).  By doing this later,
 		//       it gives the java focus engine a chance to get in the correct state.
 		Swing.runLater(() -> setFocusedComponent(placeholder));
 	}
@@ -1577,7 +1637,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		return toolPreferencesElement;
 	}
 
-	private void restorePreferencesFromXML(Element rootElement) {
+	public void restorePreferencesFromXML(Element rootElement) {
 		Element toolPreferencesElement = rootElement.getChild(TOOL_PREFERENCES_XML_NAME);
 		if (toolPreferencesElement == null) {
 			return;
@@ -1593,10 +1653,11 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Adds a PreferenceState object to this window manager instance that is bound to the given
-	 * key.  When the state of the tool using this window manager is saved, then the mapped
-	 * preferences will also be saved.
-	 * @param key The key with which to store the preferences. 
+	 * Adds a PreferenceState object to this window manager instance that is bound to the given key.
+	 * When the state of the tool using this window manager is saved, then the mapped preferences
+	 * will also be saved.
+	 *
+	 * @param key The key with which to store the preferences.
 	 * @param state The state object to store.
 	 * @see #getPreferenceState(String)
 	 */
@@ -1609,8 +1670,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Gets a preferences state object stored with the given key.  The state objects are loaded
-	 * from persistent storage when the tool using this window manager has its state loaded.
+	 * Gets a preferences state object stored with the given key. The state objects are loaded from
+	 * persistent storage when the tool using this window manager has its state loaded.
+	 *
 	 * @param key The key with which to store the preferences.
 	 * @return the PrefrenceState object stored by the given key, or null if one does not exist
 	 * @see #putPreferenceState(String, PreferenceState)
@@ -1621,6 +1683,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Removes the Preferences state for the given key.
+	 *
 	 * @param key the key to the preference state to be removed
 	 */
 	public void removePreferenceState(String key) {
@@ -1651,67 +1714,69 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Shows the dialog using the tool's currently active window as a parent
-	 * 
-	 * @param dialogComponent the DialogComponentProvider object to be shown in a dialog
-	 */
-	public static void showDialogOnActiveWindow(DialogComponentProvider dialogComponent) {
-		showDialog(null, dialogComponent, (Component) null);
-	}
-
-	/**
-	 * Shows the dialog using the tool's currently active window as a parent
-	 * 
+	 *
 	 * @param dialogComponent the DialogComponentProvider object to be shown in a dialog
 	 */
 	public static void showDialog(DialogComponentProvider dialogComponent) {
-		showDialogOnActiveWindow(dialogComponent);
+		doShowDialog(dialogComponent, null);
 	}
 
 	/**
-	 * Shows the dialog using the given component's parent frame, centering the dialog 
-	 * on the given component
-	 * 
+	 * Shows the dialog using the window containing the given componentProvider as its parent window
+	 *
 	 * @param dialogComponent the DialogComponentProvider object to be shown in a dialog.
-	 * @param centeredOnComponent the component on which to center the dialog.
-	 */
-	public static void showDialog(DialogComponentProvider dialogComponent,
-			Component centeredOnComponent) {
-		Window parent = null;
-		Component c = centeredOnComponent;
-		while (c != null) {
-			if ((c instanceof Frame) || (c instanceof Dialog)) {
-				parent = (Window) c;
-				break;
-			}
-			c = c.getParent();
-		}
-
-		showDialog(parent, dialogComponent, centeredOnComponent);
-	}
-
-	/**
-	 * Shows the dialog using the window containing the given componentProvider as its 
-	 * parent window
-	 * 
-	 * @param dialogComponent the DialogComponentProvider object to be shown in a dialog.
-	 * @param centeredOnProvider the component provider that is used to find a parent 
-	 *        window for this dialog.   The dialog is centered on this component 
-	 *        provider's component.
+	 * @param centeredOnProvider the component provider that is used to find a parent window for
+	 *            this dialog. The dialog is centered on this component provider's component.
 	 */
 	public void showDialog(DialogComponentProvider dialogComponent,
 			ComponentProvider centeredOnProvider) {
 		ComponentPlaceholder placeholder = getActivePlaceholder(centeredOnProvider);
 		Component c = null;
-		Window parent = null;
-		if (placeholder != null) {
-			parent = root.getWindow(placeholder);
-			c = placeholder.getComponent();
+		if (placeholder == null && centeredOnProvider != null) {
+			c = centeredOnProvider.getComponent();
 		}
-		showDialog(parent, dialogComponent, c);
-
+		doShowDialog(dialogComponent, c);
 	}
 
-	private static void doShowDialog(DialogComponentProvider provider, Component parent,
+	/**
+	 * Shows the dialog using the given parent component to find a parent window and to position the
+	 * dialog. If a Window can be found containing the given component, it will be used as the
+	 * parent window for the dialog. If the component is null or not contained in a window, the
+	 * current active window manager will be used to parent the dialog. If there are no active
+	 * tools, then a frame will be created to parent the dialog.
+	 *
+	 * @param parent the component whose window over which the given dialog will be shown; null
+	 *            signals to use the active window
+	 * @param dialogComponent the DialogComponentProvider object to be shown in a dialog.
+	 * @see #getParentWindow(Component) for parenting notes
+	 */
+	public static void showDialog(Component parent, DialogComponentProvider dialogComponent) {
+		doShowDialog(dialogComponent, parent);
+	}
+
+	/**
+	 * Shows the dialog using the given parent window using the optional component for positioning.
+	 *
+	 * <p>
+	 * Warning: this method allows user to explicitly pass a parent window and component over which
+	 * to be centered. There is no reason to use this method in the standard workflow. This method
+	 * exists strictly to handle future unforeseen use cases. Use at your own risk of incorrectly
+	 * parenting dialogs.
+	 *
+	 * @param parent the component whose window over which the given dialog will be shown; cannot be
+	 *            null
+	 * @param dialogComponent the DialogComponentProvider object to be shown in a dialog
+	 * @param centeredOnComponent the component over which the dialog will be centered; cannot be
+	 *            null
+	 */
+	public static void showDialog(Window parent, DialogComponentProvider dialogComponent,
+			Component centeredOnComponent) {
+		Objects.requireNonNull(parent);
+		Objects.requireNonNull(centeredOnComponent);
+		doShowDialog(dialogComponent, parent, centeredOnComponent);
+	}
+
+	private static void doShowDialog(DialogComponentProvider provider,
 			Component centeredOnComponent) {
 
 		Runnable r = () -> {
@@ -1720,10 +1785,19 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 				return;
 			}
 
-			Window updatedParent = getParentWindow(parent);
-			Component updatedCenter = getCenterOnComponent(centeredOnComponent);
-			DockingDialog dialog =
-				DockingDialog.createDialog(updatedParent, provider, updatedCenter);
+			Component bestCenter = getJavaActiveWindow();
+			Window bestParent = getBestParent(provider, bestCenter);
+
+			//
+			// Note: prefer the active window; allow user's choice of center component when it is
+			//       in the active window
+			//
+			if (centeredOnComponent != null &&
+				SwingUtilities.isDescendingFrom(centeredOnComponent, bestParent)) {
+				bestCenter = centeredOnComponent;
+			}
+
+			DockingDialog dialog = DockingDialog.createDialog(bestParent, provider, bestCenter);
 			dialog.setVisible(true);
 		};
 
@@ -1735,74 +1809,128 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		}
 	}
 
-	private static Component getCenterOnComponent(Component centeredOnComponent) {
-
-		if (centeredOnComponent != null) {
-			return centeredOnComponent;
+	private static Window getBestParent(DialogComponentProvider provider, Component component) {
+		Window bestParent = getParentWindow(component);
+		if (!provider.isModal()) {
+			bestParent = getBestNonModalParent(provider, bestParent);
 		}
 
-		// by default, prefer to center over the active window
-		Window activeWindow = getActiveNonTransientWindow();
-		return activeWindow;
+		if (bestParent == null) {
+			// Special case: allow transient password dialogs to parent to the active window.  This
+			// allows the password dialog to stay open over the application splash screen.  (This
+			// is described in getParentWindow(), which is called above.)
+			if (provider instanceof PasswordDialog) {
+				bestParent = getJavaActiveWindow();
+			}
+		}
+
+		if (bestParent != null && !bestParent.isShowing()) {
+			bestParent = null; // don't let non-showing windows be parents
+		}
+
+		return bestParent;
 	}
 
-	/**
-	 * Shows the dialog using the given parent component to find a parent window and to 
-	 * position the dialog. If a Window can be found containing the given component, it 
-	 * will be used as the parent window for the dialog.  If the component is null or not 
-	 * contained in a window, the current active window manager will be used to parent 
-	 * the dialog.  If there are no active tools, then a frame will be created to parent
-	 * the dialog.
-	 * 
-	 * @param parent the component whose window over which the given dialog will be shown; null
-	 *        signals to use the active window
-	 * @param dialogComponent the DialogComponentProvider object to be shown in a dialog.
-	 * @see #getParentWindow(Component) for parenting notes
-	 */
-	public static void showDialog(Component parent, DialogComponentProvider dialogComponent) {
-		doShowDialog(dialogComponent, parent, null);
+	private static Window getBestNonModalParent(DialogComponentProvider providerToShow,
+			Window bestParent) {
+
+		Window activeWindow = getJavaActiveWindow();
+		if (!(activeWindow instanceof DockingDialog)) {
+			return bestParent;
+		}
+
+		DockingDialog dialog = (DockingDialog) activeWindow;
+		if (!dialog.isModal()) {
+
+			// Note: See issue 'E' described in getParentWindow()
+			// If we parent to a non-modal progress dialog (which is odd), when it goes away, so
+			// to do we.   Assume that non-modal dialogs in general are long lived.   We shall only
+			// enforce parenting to modal dialogs as defined below in order to prevent blocking of
+			// the non-modal dialog.
+
+			return bestParent; // not modal; assume no issues
+		}
+
+		DialogComponentProvider activeProvider = dialog.getComponent();
+		if (activeProvider == null) {
+			return bestParent;
+		}
+
+		int activeId = activeProvider.getId();
+		int providerId = providerToShow.getId();
+		if (providerId < activeId) {
+			// The provider being shown is older than the active window--do not parent the provider
+			// to that window.  The older age suggests that the new provider was shown on a delay
+			// and should really be considered to live behind the active modal dialog.
+			return bestParent;
+		}
+
+		if (activeProvider.isTransient()) {
+			// This prevents transient modal dialogs from being parents to non-modal dialogs.  This
+			// can cause the non-modal dialog to be closed when the transient modal dialog goes
+			// away.  There is the possibility of the non-modal dialog being blocked if not parented
+			// the this modal dialog.   If we find a use case that exposes this pattern, then we
+			// will have to revisit how this method chooses to parent.
+			return bestParent;
+		}
+
+		//
+		// The active window is modal.  We must make it the non-modal dialog's parent to
+		// prevent blocking the non-modal.
+		//
+		return dialog;
 	}
 
-	/**
-	 * Shows the dialog using the given parent window using the optional component for 
-	 * positioning
-	 * 
-	 * @param parent the component whose window over which the given dialog will be shown
-	 * @param dialogComponent the DialogComponentProvider object to be shown in a dialog
-	 * @param centeredOnComponent the component over which the dialog will be centered if not null
-	 */
-	public static void showDialog(Window parent, DialogComponentProvider dialogComponent,
+	private static void doShowDialog(DialogComponentProvider provider, Window parent,
 			Component centeredOnComponent) {
 
-		doShowDialog(dialogComponent, parent, centeredOnComponent);
+		Runnable r = () -> {
+			if (provider.isVisible()) {
+				provider.toFront();
+				return;
+			}
+
+			DockingDialog dialog =
+				DockingDialog.createDialog(parent, provider, centeredOnComponent);
+			dialog.setVisible(true);
+		};
+
+		if (provider.isModal()) {
+			Swing.runNow(r);
+		}
+		else {
+			Swing.runIfSwingOrRunLater(r);
+		}
 	}
 
 	private static Window getParentWindow(Component parent) {
 
 		/*
 		 	Note: Which window should be the parent of the dialog when the user does not specify?
-		 	
+		
 		 	Some use cases; a dialog is shown from:
 		 		1) A toolbar action
 		 		2) A component provider's code
 		 		3) A dialog provider's code
 		 		4) A background thread
 		 		5) The help window
-		 		
-		 	It seems like the parent should be the active window for 1-2.  
+		 		6) A modal password dialog appears over the splash screen
+		
+		 	It seems like the parent should be the active window for 1-2.
 		 	Case 3 should probably use the window of the dialog provider.
-		 	Case 4 should probably use the main tool frame, since the user may be 
-		 	moving between windows while the thread is working.  So, rather than using the 
+		 	Case 4 should probably use the main tool frame, since the user may be
+		 	moving between windows while the thread is working.  So, rather than using the
 		 	active window, we can default to the tool's frame.
 		 	Case 5 should use the help window.
-		 	
-		 	We have not yet solidified how we should parent.  This documentation is meant to 
-		 	move us towards clarity as we find Use Cases that don't make sense.  (Once we 
-		 	finalize our understanding, we should update the javadoc to list exactly where 
+		 	Case 6 should use the splash screen as the parent.
+		
+		 	We have not yet solidified how we should parent.  This documentation is meant to
+		 	move us towards clarity as we find Use Cases that don't make sense.  (Once we
+		 	finalize our understanding, we should update the javadoc to list exactly where
 		 	the given Dialog Component will be shown.)
-		 	
+		
 		 	Use Case
-		 		A -The user presses an action on a toolbar from a window on screen 1, while the 
+		 		A -The user presses an action on a toolbar from a window on screen 1, while the
 		 		   main tool frame is on screen 2.  We want the popup window to appear on screen
 		 		   1, not 2.
 		 		B -The user presses an action on the toolbar of a Dialog Component.  The popup
@@ -1812,24 +1940,23 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		 		 	-modal - Java handles this correctly, allowing the new dialog to be used
 		 		 	-non-modal - Java prevents the non-modal from being editing if not parented
 		 		 	             correctly
-		 		 
-		 		  
-		 	For now, the easiest mental model to use is to always prefer the active window so 
-		 	that a dialog will appear in the user's view.  If we find a case where this is 
+		 		D -The user runs a script that shows an input dialog before the non-modal script
+		 		   dialog is shown.  If the non-modal dialog is parented to the modal input dialog,
+		 		   then the script progress dialog appears on top (which we do not want) and the
+		 		   progress dialog goes away when the input dialog is closed.
+		 		E -A long-running API shows a non-modal progress dialog.  This API then shows a
+		 		   results dialog which is also non-modal.  We do not want to parent the new dialog
+		 		   to the original dialog, since it is a progress dialog that will go away.
+		
+		
+		 	For now, the easiest mental model to use is to always prefer the active non-transient
+		 	window so that a dialog will appear in the user's view.  If we find a case where this is
 		 	not desired, then document it here.
+		
 		 */
-
-		//
-		// Due to Use Case 'C' above, prefer dialogs as parents, so that child non-modal dialogs
-		// do not get blocked by modal dialogs.
-		//
-		if (isNonTransientWindow(parent)) {
-			return (Window) parent;
-		}
 
 		DockingWindowManager dwm = getActiveInstance();
 		Window defaultWindow = dwm != null ? dwm.getRootFrame() : null;
-
 		if (parent == null) {
 			Window w = getActiveNonTransientWindow();
 			return w == null ? defaultWindow : w;
@@ -1837,11 +1964,11 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 		Component c = parent;
 		while (c != null) {
-			// Note: using a Frame here means that we will not find and use a dialog that is a			
-			//       parent of 'c' if it itself is parented to a Frame.   The issue is that 			
-			//       Use Case 'C' above may not work correctly.  If we find that to be the case, 
+			// Note: using a Frame here means that we will not find and use a dialog that is a
+			//       parent of 'c' if it itself is parented to a Frame.   The issue is that
+			//       Use Case 'C' above may not work correctly.  If we find that to be the case,
 			//       then we can try changing 'Frame' to 'Window' here.
-			if (c instanceof Frame) {
+			if (c instanceof Window && isNonTransientWindow(c)) {
 				return (Window) c;
 			}
 			c = c.getParent();
@@ -1850,6 +1977,22 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	private static boolean isNonTransientWindow(Component c) {
+
+		if (c == null || !c.isShowing()) {
+			return false;
+		}
+
+		if (c instanceof DockingFrame) {
+
+			DockingFrame frame = (DockingFrame) c;
+			if (frame.isTransient()) {
+				return false;
+			}
+
+			// consider any window transient if all of its contained providers cannot be parents
+			return hasAnyParentableProvider(frame);
+		}
+
 		if (c instanceof DockingDialog) {
 			DockingDialog d = (DockingDialog) c;
 			DialogComponentProvider provider = d.getComponent();
@@ -1857,34 +2000,64 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 				return false; // we have seen this in testing
 			}
 
-			if (provider.isTransient()) {
-				return false;
-			}
+			return !provider.isModal() && !provider.isTransient();
+		}
+
+		if (c instanceof Dialog) {
+			return !((Dialog) c).isModal();
 		}
 
 		return (c instanceof Window);
 	}
 
-	private static Window getActiveNonTransientWindow() {
+	private static boolean hasAnyParentableProvider(Window window) {
+		boolean hasAnyParentableProvider = false;
+		DockingWindowManager dwm = getInstanceForWindow(window);
+		if (dwm == null) {
+			return true; // the window is not affiliated with a window manager
+		}
+		WindowNode node = dwm.root.getNodeForWindow(window);
+		List<ComponentPlaceholder> placeholders = node.getActiveComponents();
+		for (ComponentPlaceholder placeholder : placeholders) {
+			DockableComponent dc = placeholder.getComponent();
+			ComponentProvider provider = dc.getComponentProvider();
+			hasAnyParentableProvider |= provider.canBeParent();
 
+		}
+
+		return hasAnyParentableProvider;
+	}
+
+	private static Window getJavaActiveWindow() {
 		KeyboardFocusManager kfm = KeyboardFocusManager.getCurrentKeyboardFocusManager();
 		Window activeWindow = kfm.getActiveWindow();
-		if (!(activeWindow instanceof DockingDialog)) {
-			return activeWindow;
+		if (activeWindow == null) {
+			return null;
+		}
+		if (!activeWindow.isShowing()) {
+			return null; // don't let non-showing windows be considered active
+		}
+		return activeWindow;
+	}
+
+	private static Window getActiveNonTransientWindow() {
+
+		Window bestWindow = getJavaActiveWindow();
+		if (bestWindow instanceof DockingDialog) {
+			// We do not want Task Dialogs becoming parents, as they will get closed when the
+			// task is finished, closing any other child dialogs, which means that dialogs such
+			// as message dialogs will too be closed
+			DockingDialog d = (DockingDialog) bestWindow;
+			if (isNonTransientWindow(d)) {
+				return d;
+			}
+
+			// The active window is not a suitable parent; try its parent
+			bestWindow = SwingUtilities.getWindowAncestor(d);
 		}
 
-		// We do not want Task Dialogs becoming parents, as they will get closed when the 
-		// task is finished, closing any other child dialogs, which means that dialogs such
-		// as message dialogs will too be closed
-		DockingDialog d = (DockingDialog) activeWindow;
-		Window ancestor = SwingUtilities.getWindowAncestor(d);
-		if (d.isShowing() && isNonTransientWindow(d)) {
-			return d;
-		}
-
-		// The active window is not a suitable parent; try its parent
-		if (ancestor.isShowing() && isNonTransientWindow(ancestor)) {
-			return ancestor;
+		if (isNonTransientWindow(bestWindow)) {
+			return bestWindow;
 		}
 
 		return null;
@@ -1898,10 +2071,10 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Sets the icon for this window's 'home button'. This button, when pressed,
-	 * will show the tool's main application window.
-	 * 
-	 * @param icon the button's icon 
+	 * Sets the icon for this window's 'home button'. This button, when pressed, will show the
+	 * tool's main application window.
+	 *
+	 * @param icon the button's icon
 	 * @param callback the callback to execute when the button is pressed by the user
 	 */
 	public void setHomeButton(Icon icon, Runnable callback) {
@@ -1910,6 +2083,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns true if a status bar is present.
+	 *
 	 * @return true if a status bar is present.
 	 */
 	public boolean hasStatusBar() {
@@ -1917,14 +2091,13 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Add a new status item component to the status area.  The preferred height and border
-	 * for the component will be altered.  The components preferred width will be 
-	 * preserved.
+	 * Add a new status item component to the status area. The preferred height and border for the
+	 * component will be altered. The components preferred width will be preserved.
+	 *
 	 * @param c the status item component to add
 	 * @param addBorder True signals to add a border to the status area
-	 * @param rightSide component will be added to the right-side of the status
-	 * area if true, else it will be added immediately after the status text area
-	 * if false.
+	 * @param rightSide component will be added to the right-side of the status area if true, else
+	 *            it will be added immediately after the status text area if false.
 	 */
 	public void addStatusItem(JComponent c, boolean addBorder, boolean rightSide) {
 		root.addStatusItem(c, addBorder, rightSide);
@@ -1932,6 +2105,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Remove the specified status item.
+	 *
 	 * @param c status component previously added.
 	 */
 	public void removeStatusItem(JComponent c) {
@@ -1940,6 +2114,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Set the status text in the active component window
+	 *
 	 * @param text status text
 	 */
 	public void setStatusText(String text) {
@@ -1949,11 +2124,11 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	  * Set the status text in the active component window
-	  * 
-	  * @param text string to be displayed in the Status display area
-	  * @param beep whether to beep or not
-	  */
+	 * Set the status text in the active component window
+	 *
+	 * @param text string to be displayed in the Status display area
+	 * @param beep whether to beep or not
+	 */
 	public void setStatusText(String text, boolean beep) {
 		if (root == null) {
 			return;
@@ -1966,6 +2141,15 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
+	 * Get the status text in the active component window
+	 *
+	 * @return string currently displayed in the Status display area
+	 */
+	public String getStatusText() {
+		return root.getStatusText();
+	}
+
+	/**
 	 * A convenience method to make an attention-grabbing noise to the user
 	 */
 	public static void beep() {
@@ -1973,7 +2157,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/*
-	 * A version of setMenuGroup() that does *not* trigger an update.   When clients call the 
+	 * A version of setMenuGroup() that does *not* trigger an update.   When clients call the
 	 * public API, an update is needed.  This method is used during the rebuilding process
 	 * when we know that an update is not need, as we are in the middle of an update.
 	 */
@@ -1982,16 +2166,17 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Set the menu group associated with a cascaded submenu.  This allows
-	 * a cascading menu item to be grouped with a specific set of actions.
+	 * Set the menu group associated with a cascaded submenu. This allows a cascading menu item to
+	 * be grouped with a specific set of actions.
 	 * <p>
 	 * The default group for a cascaded submenu is the name of the submenu.
 	 * <p>
-	 * 
-	 * @param menuPath menu name path where the last element corresponds to the specified group name.
+	 *
+	 * @param menuPath menu name path where the last element corresponds to the specified group
+	 *            name.
 	 * @param group group name
-	 * @param menuSubGroup the name used to sort the cascaded menu within other menu items at 
-	 *                     its level 
+	 * @param menuSubGroup the name used to sort the cascaded menu within other menu items at its
+	 *            level
 	 */
 	public void setMenuGroup(String[] menuPath, String group, String menuSubGroup) {
 		actionToGuiMapper.setMenuGroup(menuPath, group, menuSubGroup);
@@ -1999,8 +2184,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Tests if the given component is one of a known list of component classes that we
-	 * don't ever want to get keyboard focus.  Currently excluded is JScrollPane
+	 * Tests if the given component is one of a known list of component classes that we don't ever
+	 * want to get keyboard focus. Currently excluded is JScrollPane
+	 *
 	 * @param c the component to test for exclusion
 	 * @return true if the component should not be allowed to have keyboard focus.
 	 */
@@ -2011,6 +2197,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Sets the mode such that all satellite docking windows always appear on top of the root window
+	 *
 	 * @param windowsOnTop true to set mode to on top, false to disable on top mode.
 	 */
 	public void setWindowsOnTop(boolean windowsOnTop) {
@@ -2020,6 +2207,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns true if the window mode is "satellite windows always on top of root window".
+	 *
 	 * @return true if the window mode is "satellite windows always on top of root window".
 	 */
 	public boolean isWindowsOnTop() {
@@ -2028,6 +2216,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns a list with all the windows in the windowStack. Used for testing.
+	 *
 	 * @param includeMain if true, include the main root window.
 	 * @return a list with all the windows in the windowStack. Used for testing.
 	 */
@@ -2071,6 +2260,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Returns the root window.
+	 *
 	 * @return the root window.
 	 */
 	public Window getMainWindow() {
@@ -2098,25 +2288,51 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		objectUnderMouse = null;
 	}
 
+	/**
+	 * Shows a popup menu over the given component. If this given component is not part of the
+	 * docking windows hierarchy, then no action is taken.
+	 *
+	 * @param component the component
+	 */
+	public static void showContextMenu(Component component) {
+
+		DockingWindowManager dwm = getInstance(component);
+		if (dwm == null) {
+			return;
+		}
+
+		DockableComponent dockableComponent = dwm.getDockableComponent(component);
+		if (dockableComponent == null) {
+			return;
+		}
+
+		Rectangle bounds = dockableComponent.getBounds();
+
+		bounds.x = 0;
+		bounds.y = 0;
+		int x = (int) bounds.getCenterX();
+		int y = (int) bounds.getCenterY();
+		PopupMenuContext popupContext = new PopupMenuContext(dockableComponent, new Point(x, y));
+		dockableComponent.showContextMenu(popupContext);
+	}
+
 	public void contextChanged(ComponentProvider provider) {
-
-		if (provider == null) {
-			actionToGuiMapper.contextChangedAll(); // this updates the actions for all windows
-			return;
+		// if provider is specified, update its local menu and tool bar actions
+		if (provider != null) {
+			ComponentPlaceholder placeholder = getActivePlaceholder(provider);
+			if (placeholder != null) {
+				placeholder.contextChanged();
+			}
 		}
 
-		ComponentPlaceholder placeholder = getActivePlaceholder(provider);
-		if (placeholder == null) {
-			return;
-		}
-
-		placeholder.contextChanged();
-		actionToGuiMapper.contextChanged(placeholder);
+		// always update the global tool menu and tool bar actions
+		actionToGuiMapper.contextChanged();
 	}
 
 	/**
-	 * Adds the given popup action provider to this tool.   This provider will be called each
-	 * time the popup menu is about to be shown.
+	 * Adds the given popup action provider to this tool. This provider will be called each time the
+	 * popup menu is about to be shown.
+	 *
 	 * @param provider the provider
 	 */
 	public void addPopupActionProvider(PopupActionProvider provider) {
@@ -2125,6 +2341,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 	/**
 	 * Removes the given popup action provider
+	 *
 	 * @param provider the provider
 	 */
 	public void removePopupActionProvider(PopupActionProvider provider) {
@@ -2132,10 +2349,10 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Returns a list of temporary popup actions to be returned.  Only those actions which have 
-	 * a suitable popup menu path will be considered.  This mechanism allows clients to 
-	 * add transient actions to be added to the tool without the accompanying management overhead.
-	 * 
+	 * Returns a list of temporary popup actions to be returned. Only those actions which have a
+	 * suitable popup menu path will be considered. This mechanism allows clients to add transient
+	 * actions to be added to the tool without the accompanying management overhead.
+	 *
 	 * @param context the ActionContext
 	 * @return list of temporary actions
 	 * @see #addPopupActionProvider(PopupActionProvider)
@@ -2161,58 +2378,87 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Returns the default action context for the tool
-	 * @return the default action context for the tool
+	 * Returns the default {@link ActionContext} for the given context type
+	 * @param contextType the class of the ActionContext to get a default value for
+	 * @return the default {@link ActionContext} for the given context type
 	 */
-	public ActionContext getDefaultToolContext() {
-		return defaultProvider == null ? new ActionContext()
-				: defaultProvider.getActionContext(null);
+	public ActionContext getDefaultActionContext(Class<? extends ActionContext> contextType) {
+		ActionContextProvider actionContextProvider = defaultContextProviderMap.get(contextType);
+		if (actionContextProvider != null) {
+			return actionContextProvider.getActionContext(null);
+		}
+		return null;
 	}
 
 	/**
-	 * Gets the {@link ActionContext} appropriate for the given action.  This will normally
-	 * be the context from the currently focused {@link ComponentProvider}.  If that
-	 * context is not valid for the given action and the action supports using the default
-	 * tool context, then the default tool context will be returned.  Otherwise, returns null.
-	 * 
+	 * Returns a map containing a default {@link ActionContext} for each registered type.
+	 * @return a map containing a default {@link ActionContext} for each registered type
+	 */
+	public Map<Class<? extends ActionContext>, ActionContext> getDefaultActionContextMap() {
+		Map<Class<? extends ActionContext>, ActionContext> contextMap = new HashMap<>();
+		Set<Entry<Class<? extends ActionContext>, ActionContextProvider>> entrySet =
+			defaultContextProviderMap.entrySet();
+
+		for (Entry<Class<? extends ActionContext>, ActionContextProvider> entry : entrySet) {
+			contextMap.put(entry.getKey(), entry.getValue().getActionContext(null));
+		}
+		return contextMap;
+	}
+
+	/**
+	 * Creates the {@link ActionContext} appropriate for the given action. This will normally be the
+	 * context from the currently focused {@link ComponentProvider}. If that context is not valid
+	 * for the given action and the action supports using the default tool context, then the default
+	 * tool context will be returned. Otherwise, returns a generic ActionContext.
+	 *
 	 * @param action the action for which to get an {@link ActionContext}
 	 * @return the {@link ActionContext} appropriate for the given action or null
 	 */
-	public ActionContext getActionContext(DockingActionIf action) {
+	public ActionContext createActionContext(DockingActionIf action) {
 		ComponentProvider provider = getActiveComponentProvider();
 		ActionContext context = provider == null ? null : provider.getActionContext(null);
-
-		if (context == null) {
-			context = new ActionContext(provider, null);
-		}
-
-		if (action.isValidContext(context)) {
+		if (context != null && action.isValidContext(context)) {
 			return context;
 		}
 
-		if (action.supportsDefaultToolContext()) {
-			ActionContext toolContext = getDefaultToolContext();
-			if (action.isValidContext(toolContext)) {
-				return toolContext;
+		// Some actions work on a non-active, default component provider. See if this action 
+		// supports that.
+		if (action.supportsDefaultContext()) {
+			context = getDefaultContext(action.getContextClass());
+			if (context != null) {
+				return context;
 			}
 		}
-		return context;
-
+		return new DefaultActionContext(provider, null);
 	}
 
-	void notifyContextListeners(ComponentPlaceholder placeHolder, ActionContext actionContext) {
+	private ActionContext getDefaultContext(Class<? extends ActionContext> contextType) {
+		ActionContextProvider contextProvider = defaultContextProviderMap.get(contextType);
+		if (contextProvider != null) {
+			return contextProvider.getActionContext(null);
+		}
+		return null;
+	}
 
-		if (placeHolder == focusedPlaceholder) {
-			for (DockingContextListener listener : contextListeners) {
-				listener.contextChanged(actionContext);
-			}
+	/**
+	 * This call will notify any context listeners that the context has changed.
+	 *
+	 * <p>
+	 * Our {@link #contextChanged(ComponentProvider)} method will eventually call back into this
+	 * method after any buffering has taken place.
+	 *
+	 * @param context the context
+	 */
+	void doContextChanged(ActionContext context) {
+		for (DockingContextListener listener : contextListeners) {
+			listener.contextChanged(context);
 		}
 	}
 
 	/**
-	 * Registers a callback to be notified when the given component has been parented to
-	 * a docking window manager
-	 * 
+	 * Registers a callback to be notified when the given component has been parented to a docking
+	 * window manager
+	 *
 	 * @param component the component that will be parented in a docking window system
 	 * @param listener the listener to be notified the component was parented
 	 */
@@ -2237,20 +2483,12 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 				component.removeHierarchyListener(this);
 				DockingWindowManager dwm = getInstance(component);
+				ComponentProvider provider = null;
 				if (dwm != null) {
-					ComponentProvider provider = dwm.getComponentProvider(component);
-					listener.componentLoaded(dwm, provider);
-					return;
+					provider = dwm.getComponentProvider(component);
 				}
 
-				// Unable to find the manager.  This can happen during testing; only report if 
-				// it is unexpected
-				if (!instances.isEmpty()) {
-					Msg.debug(DockingWindowManager.class,
-						"Unable to find Docking Window Manager for " +
-							component.getClass().getSimpleName(),
-						ReflectionUtilities.createJavaFilteredThrowable());
-				}
+				listener.componentLoaded(dwm, provider);
 			}
 		});
 
@@ -2258,12 +2496,12 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 //==================================================================================================
 // Inner Classes
-//==================================================================================================	
+//==================================================================================================
 
 	/**
-	 * A class that tracks placeholders that are activated (brought to the front).  If a 
-	 * placeholder is activated too frequently, this class will emphasize that window, under the
-	 * assumption that the user doesn't see the window.
+	 * A class that tracks placeholders that are activated (brought to the front). If a placeholder
+	 * is activated too frequently, this class will emphasize that window, under the assumption that
+	 * the user doesn't see the window.
 	 */
 	private class ActivatedInfo {
 
@@ -2283,5 +2521,11 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 			}
 			lastCalledTimestamp = System.currentTimeMillis();
 		}
+
+		void clear() {
+			lastActivatedPlaceholder = null;
+			lastCalledTimestamp = 0;
+		}
 	}
+
 }

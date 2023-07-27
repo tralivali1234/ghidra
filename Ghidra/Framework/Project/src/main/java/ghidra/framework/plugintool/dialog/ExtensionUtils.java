@@ -27,6 +27,7 @@ import org.apache.commons.compress.utils.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import docking.DockingWindowManager;
+import docking.widgets.OptionDialog;
 import generic.jar.ResourceFile;
 import ghidra.framework.Application;
 import ghidra.framework.options.PreferenceState;
@@ -43,7 +44,7 @@ import utility.application.ApplicationLayout;
 import utility.module.ModuleUtilities;
 
 /**
- * Utility class for managing Ghidra Extensions. 
+ * Utility class for managing Ghidra Extensions.
  * <p>
  * Extensions are defined as any archive or folder that contains an <code>extension.properties</code>
  * file. This properties file can contain the following attributes:
@@ -54,20 +55,19 @@ import utility.module.ModuleUtilities;
  * <li>createdOn (format: mm/dd/yyyy)</li>
  * </ul>
  * 
- *  Extensions may be installed/uninstalled by users at runtime, using the {@link ExtensionTableProvider}. 
- *  Installation consists of unzipping the extension archive to an installation folder, currently 
+ *  Extensions may be installed/uninstalled by users at runtime, using the {@link ExtensionTableProvider}.
+ *  Installation consists of unzipping the extension archive to an installation folder, currently
  *  <code>Ghidra/Extensions</code>. To uninstall, the unpacked folder is simply removed.
  */
 public class ExtensionUtils {
 
-	/** Magic number that identifies the first bytes of a ZIP archive. This is used to verify 
+	/** Magic number that identifies the first bytes of a ZIP archive. This is used to verify
 	 	that a file is a zip rather than just checking the extension. */
 	private static final int ZIPFILE = 0x504b0304;
 
 	public static String PROPERTIES_FILE_NAME = "extension.properties";
 	public static String PROPERTIES_FILE_NAME_UNINSTALLED = "extension.properties.uninstalled";
 
-	
 	/**
 	 * Returns a set of all extensions known to Ghidra, represented by
 	 * {@link ExtensionDetails} objects. This will include all installed
@@ -76,9 +76,9 @@ public class ExtensionUtils {
 	 * Note that this method will only look in the known extension folder locations:
 	 * <ul>
 	 * <li>{@link ApplicationLayout#getExtensionArchiveDir}</li>
-	 * <li>{@link ApplicationLayout#getExtensionInstallationDir}</li>
+	 * <li>{@link ApplicationLayout#getExtensionInstallationDirs}</li>
 	 * </ul>
-	 * If users install extensions from other locations, the installed version of 
+	 * If users install extensions from other locations, the installed version of
 	 * the extension will be known, but the source archive location will not be retained.
 	 * 
 	 * @return list of unique extensions
@@ -88,13 +88,13 @@ public class ExtensionUtils {
 
 		Set<ExtensionDetails> allExtensions = new HashSet<>();
 
-		// First grab anything in the archive and install directories. 
+		// First grab anything in the archive and install directories.
 		Set<ExtensionDetails> archived = getArchivedExtensions();
 		Set<ExtensionDetails> installed = getInstalledExtensions(false);
 
 		// Now we need to combine the two lists. For items that are in both lists, we have to ensure
 		// that the one we return in the final list has all attributes from both
-		// versions. 
+		// versions.
 		//
 		// Note that we prefer attributes in the installed version over the archived version; this is
 		// because users may manually update the .properties file at runtime, but only for the installed
@@ -114,7 +114,7 @@ public class ExtensionUtils {
 
 		allExtensions.addAll(archived);
 
-		// Finally add all the installed extensions that aren't in the archive set we 
+		// Finally add all the installed extensions that aren't in the archive set we
 		// just added. Because these are sets, we're ensuring there aren't any dupes.
 		allExtensions.addAll(installed);
 
@@ -123,13 +123,14 @@ public class ExtensionUtils {
 
 	/**
 	 * Returns all installed extensions. These are all the extensions found in
-	 * {@link ApplicationLayout#getExtensionInstallationDir}.
+	 * {@link ApplicationLayout#getExtensionInstallationDirs}.
 	 * 
 	 * @param includeUninstalled if true, include extensions that have been marked for removal
 	 * @return set of installed extensions
 	 * @throws ExtensionException if the extension details cannot be retrieved
 	 */
-	public static Set<ExtensionDetails> getInstalledExtensions(boolean includeUninstalled) throws ExtensionException {
+	public static Set<ExtensionDetails> getInstalledExtensions(boolean includeUninstalled)
+			throws ExtensionException {
 
 		ApplicationLayout layout = Application.getApplicationLayout();
 
@@ -165,7 +166,7 @@ public class ExtensionUtils {
 
 		return extensions;
 	}
-	
+
 	/**
 	 * Returns all archived extensions. These are all the extensions found in
 	 * {@link ApplicationLayout#getExtensionArchiveDir}.
@@ -215,7 +216,6 @@ public class ExtensionUtils {
 				}
 			}
 		}
-		
 
 		return extensions;
 	}
@@ -237,7 +237,7 @@ public class ExtensionUtils {
 	}
 
 	/**
-	 * Installs the given extension file. This can be either an archive (zip) or a 
+	 * Installs the given extension file. This can be either an archive (zip) or a
 	 * directory that contains an extension.properties file.
 	 * 
 	 * @param rFile the extension to install
@@ -262,7 +262,7 @@ public class ExtensionUtils {
 				e);
 			return false;
 		}
-						
+
 		return runInstallTask(rFile.getFile(false));
 	}
 
@@ -285,7 +285,7 @@ public class ExtensionUtils {
 			extension.getName()).getFile(false);
 
 		if (extension.getArchivePath() == null) {
-			// Special Case: If the archive path is null then this must be an extension that 
+			// Special Case: If the archive path is null then this must be an extension that
 			// was installed from an external location, then uninstalled. In this case, there
 			// should be a Module.manifest.uninstalled and extension.properties.uninstalled
 			// present. If so, just restore them. If not, there's a problem.
@@ -298,24 +298,23 @@ public class ExtensionUtils {
 
 		// Verify that the version of the extension is valid for this version of Ghidra. If not,
 		// just exit without installing.
-		String ghidraVersion = Application.getApplicationVersion();
-		if (!extension.getVersion().equals(ghidraVersion)) {
-			Msg.warn(null, "Extension version for [" + extension.getName() +
-				"] does not match Ghidra version; cannot install.");
+		if (!validateExtensionVersion(extension.getVersion())) {
+			Msg.warn(ExtensionUtils.class, "Extension version for [" + extension.getName() +
+				"] does not match Ghidra version; did not install.");
 			return false;
 		}
 
 		ResourceFile file = new ResourceFile(extension.getArchivePath());
-		
-		// We need to handle a special case: If the user selects an extension to uninstall using 
+
+		// We need to handle a special case: If the user selects an extension to uninstall using
 		// the GUI then tries to reinstall it without restarting Ghidra, the extension hasn't actually
-		// been removed yet; just the manifest file has been renamed. In this case we don't need to go through 
+		// been removed yet; just the manifest file has been renamed. In this case we don't need to go through
 		// the full install process of unzipping or copying files to the install location. All we need
-		// to do is rename the manifest file from Module.manifest.uninstall back to Module.manifest.	
+		// to do is rename the manifest file from Module.manifest.uninstall back to Module.manifest.
 		if (installDir.exists()) {
 			return restoreStateFiles(installDir);
 		}
-		
+
 		if (install(file)) {
 			extension.setInstallPath(installDir + File.separator + extension.getName());
 			return true;
@@ -352,6 +351,31 @@ public class ExtensionUtils {
 	}
 
 	/**
+	 * Compares the given extension version to the current Ghidra version.  If they are different,
+	 * then the user will be prompted to confirm the installation.   This method will return true
+	 * if the versions match or the user has chosen to install anyway.
+	 * 
+	 * @param extensionVersion the extension version
+	 * @return true if the versions match or the user has chosen to install anyway
+	 */
+	public static boolean validateExtensionVersion(String extensionVersion) {
+		if (extensionVersion == null) {
+			return false;
+		}
+		String ghidraVersion = Application.getApplicationVersion();
+		if (extensionVersion.equals(ghidraVersion)) {
+			return true;
+		}
+
+		int choice = OptionDialog.showOptionDialogWithCancelAsDefaultButton(null,
+			"Extension Version Mismatch",
+			"Extension version mismatch.\nExtension version: " + extensionVersion + "\n" +
+				"Ghidra version: " + ghidraVersion,
+			"Install Anyway");
+		return choice == OptionDialog.OPTION_ONE;
+	}
+
+	/**
 	 * Returns true if the given file or directory is a valid ghidra extension.
 	 * <p>
 	 * Note: This means that the zip or directory contains an extension.properties file.
@@ -375,7 +399,7 @@ public class ExtensionUtils {
 		}
 
 		// If the given file is a zip, it's an extension if there's an extension.properties
-		// file at the TOP LEVEL ONLY; we don't want to search for nested property files (this 
+		// file at the TOP LEVEL ONLY; we don't want to search for nested property files (this
 		// would cause us to match things like the main ghidra distribution zip file.
 		// eg: DatabaseTools/extension.properties is valid
 		//     DatabaseTools/foo/extension.properties is no.
@@ -386,10 +410,10 @@ public class ExtensionUtils {
 					ZipArchiveEntry entry = zipEntries.nextElement();
 
 					// This is a bit ugly, but to ensure we only search for the property file at the
-					// top level, only inspect file names that contain a single path separator. 
+					// top level, only inspect file names that contain a single path separator.
 					// Also normalize the file path so separators (slashes) are checked correctly
 					// on any platform.
-					// 
+					//
 					// Note: We have a PathUtilties method for this, but this package cannot access it and
 					// i don't want to add a dependency just for this case.
 					String path = entry.getName();
@@ -421,7 +445,7 @@ public class ExtensionUtils {
 
 		return false;
 	}
-	
+
 	/**
 	 * Returns true if the given file is a valid .zip archive.
 	 * 
@@ -453,17 +477,17 @@ public class ExtensionUtils {
 			throw new ExtensionException(e.getMessage(), ExtensionExceptionType.ZIP_ERROR);
 		}
 	}
-	
+
 	/**
 	 * Returns a list of files representing all the <code>extension.properties</code> files found
-	 * under a given directory. This will ONLY search the given directory and its immediate children. 
+	 * under a given directory. This will ONLY search the given directory and its immediate children.
 	 * The conops are as follows:
 	 * <ul>
 	 * <li>If sourceFile is a directory and it contains an extension.properties file, then that file is returned</li>
 	 * <li>If sourceFile does not contain an extension.properties file, then any immediate directories are searched (ignoring Skeleton directory)</li>
 	 * </ul>
 	 * <p>
-	 * Note: This will NOT search zip files. If you have a zip, call {@link #getPropertiesFromArchive(File)} 
+	 * Note: This will NOT search zip files. If you have a zip, call {@link #getPropertiesFromArchive(File)}
 	 * instead.
 	 * 
 	 * @param sourceFile the directory to inspect
@@ -517,8 +541,10 @@ public class ExtensionUtils {
 		List<ResourceFile> tempFiles = Arrays.asList(rfiles);
 
 		Optional<ResourceFile> file =
-			tempFiles.stream().filter(f -> f.getName().equals(PROPERTIES_FILE_NAME) ||
-				f.getName().equals(PROPERTIES_FILE_NAME_UNINSTALLED)).findFirst();
+			tempFiles.stream()
+					.filter(f -> f.getName().equals(PROPERTIES_FILE_NAME) ||
+						f.getName().equals(PROPERTIES_FILE_NAME_UNINSTALLED))
+					.findFirst();
 		if (file.isPresent()) {
 			return file.get();
 		}
@@ -536,7 +562,7 @@ public class ExtensionUtils {
 	 */
 	private static boolean runInstallTask(File file) {
 
-		// Keeps track of whether the install operation succeeds or fails. Must use AtomicBoolean 
+		// Keeps track of whether the install operation succeeds or fails. Must use AtomicBoolean
 		// so we can safely update the value in the task thread.
 		AtomicBoolean installed = new AtomicBoolean(false);
 
@@ -547,14 +573,14 @@ public class ExtensionUtils {
 				}
 				else {
 					copyToInstallationFolder(file, monitor);
-				}	
+				}
 				installed.set(true);
 			}
 			catch (ExtensionException e) {
-				// If there's a problem copying files, check to see if there's already an extension 
-				// with this name in the install location that was slated for removal. If so, just 
-				// restore the extension properties and manifest files. 
-				if (e.getExceptionType() == ExtensionExceptionType.COPY_ERROR || 
+				// If there's a problem copying files, check to see if there's already an extension
+				// with this name in the install location that was slated for removal. If so, just
+				// restore the extension properties and manifest files.
+				if (e.getExceptionType() == ExtensionExceptionType.COPY_ERROR ||
 					e.getExceptionType() == ExtensionExceptionType.DUPLICATE_FILE_ERROR) {
 
 					File errorFile = e.getErrorFile();
@@ -563,14 +589,15 @@ public class ExtensionUtils {
 						ResourceFile installDir = Application.getApplicationLayout()
 								.getExtensionInstallationDirs()
 								.get(0);
-						
+
 						// Get the root directory of the extension (strip off the install folder location and
 						// grab the first part of the remaining path).
 						//
 						// eg: If errorFile is "/Users/johnG/Ghidra/Extensions/MyExtensionName/subdir1/problemFile"
 						//     And installDir is "/Users/johnG/Ghidra/Extensions"
 						//     We need to get "MyExtensionName"
-						String extPath = errorFile.getAbsolutePath().substring(installDir.getAbsolutePath().length()+1);
+						String extPath = errorFile.getAbsolutePath()
+								.substring(installDir.getAbsolutePath().length() + 1);
 						int slashIndex = extPath.indexOf(File.separator);
 						String extName;
 						if (slashIndex == -1) {
@@ -580,12 +607,13 @@ public class ExtensionUtils {
 							extName = extPath.substring(0, extPath.indexOf(File.separator));
 						}
 
-						boolean success = restoreStateFiles(new File(installDir.getAbsolutePath() + File.separator + extName));
-												
+						boolean success = restoreStateFiles(
+							new File(installDir.getAbsolutePath() + File.separator + extName));
+
 						installed.set(success);
 					}
 				}
-				
+
 				if (installed.get() == false) {
 					Msg.showError(null, null, "Installation Error", "Error installing extension [" +
 						file.getName() + "]." + " " + e.getExceptionType());
@@ -601,9 +629,9 @@ public class ExtensionUtils {
 
 		return installed.get();
 	}
-	
+
 	/**
-	 * Recursively searches a given directory for any module manifest and extension 
+	 * Recursively searches a given directory for any module manifest and extension
 	 * properties files that are in an installed state and converts them to an uninstalled
 	 * state.
 	 * 
@@ -617,7 +645,7 @@ public class ExtensionUtils {
 	 * @return false if any renames fail
 	 */
 	public static boolean removeStateFiles(ExtensionDetails extension) {
-		
+
 		// Sanity check
 		if (extension == null || extension.getInstallPath() == null ||
 			extension.getInstallPath().isEmpty()) {
@@ -625,23 +653,29 @@ public class ExtensionUtils {
 		}
 
 		boolean success = true;
-		
+
 		List<File> manifestFiles = new ArrayList<>();
-		ExtensionUtils.findFilesWithName(new File(extension.getInstallPath()), ModuleUtilities.MANIFEST_FILE_NAME, manifestFiles);
+		ExtensionUtils.findFilesWithName(new File(extension.getInstallPath()),
+			ModuleUtilities.MANIFEST_FILE_NAME, manifestFiles);
 		for (File f : manifestFiles) {
 			if (f.exists()) {
-				File newFile = new File(f.getAbsolutePath().replace(ModuleUtilities.MANIFEST_FILE_NAME, ModuleUtilities.MANIFEST_FILE_NAME_UNINSTALLED) );
+				File newFile = new File(f.getAbsolutePath()
+						.replace(ModuleUtilities.MANIFEST_FILE_NAME,
+							ModuleUtilities.MANIFEST_FILE_NAME_UNINSTALLED));
 				if (!f.renameTo(newFile)) {
 					success = false;
 				}
 			}
 		}
-		
+
 		List<File> propFiles = new ArrayList<>();
-		ExtensionUtils.findFilesWithName(new File(extension.getInstallPath()), ExtensionUtils.PROPERTIES_FILE_NAME, propFiles);
+		ExtensionUtils.findFilesWithName(new File(extension.getInstallPath()),
+			ExtensionUtils.PROPERTIES_FILE_NAME, propFiles);
 		for (File f : propFiles) {
 			if (f.exists()) {
-				File newFile = new File(f.getAbsolutePath().replace(ExtensionUtils.PROPERTIES_FILE_NAME, ExtensionUtils.PROPERTIES_FILE_NAME_UNINSTALLED) );
+				File newFile = new File(f.getAbsolutePath()
+						.replace(ExtensionUtils.PROPERTIES_FILE_NAME,
+							ExtensionUtils.PROPERTIES_FILE_NAME_UNINSTALLED));
 				if (!f.renameTo(newFile)) {
 					success = false;
 				}
@@ -652,7 +686,7 @@ public class ExtensionUtils {
 	}
 
 	/**
-	 * Recursively searches a given directory for any module manifest and extension 
+	 * Recursively searches a given directory for any module manifest and extension
 	 * properties files that are in an uninstalled state and restores them.
 	 * 
 	 * Specifically, the following will be renamed:
@@ -665,34 +699,37 @@ public class ExtensionUtils {
 	 * @return false if any renames fail
 	 */
 	public static boolean restoreStateFiles(File rootDir) {
-		
+
 		boolean success = true;
-				
+
 		List<File> manifestFiles = new ArrayList<>();
 		findFilesWithName(rootDir, ModuleUtilities.MANIFEST_FILE_NAME_UNINSTALLED, manifestFiles);
 		for (File f : manifestFiles) {
 			if (f.exists()) {
-				File newFile = new File(f.getAbsolutePath().replace(ModuleUtilities.MANIFEST_FILE_NAME_UNINSTALLED, ModuleUtilities.MANIFEST_FILE_NAME) );
+				File newFile = new File(f.getAbsolutePath()
+						.replace(ModuleUtilities.MANIFEST_FILE_NAME_UNINSTALLED,
+							ModuleUtilities.MANIFEST_FILE_NAME));
 				if (!f.renameTo(newFile)) {
 					success = false;
 				}
 			}
 		}
-		
+
 		List<File> propFiles = new ArrayList<>();
 		findFilesWithName(rootDir, PROPERTIES_FILE_NAME_UNINSTALLED, propFiles);
 		for (File f : propFiles) {
 			if (f.exists()) {
-				File newFile = new File(f.getAbsolutePath().replace(PROPERTIES_FILE_NAME_UNINSTALLED, PROPERTIES_FILE_NAME) );
+				File newFile = new File(f.getAbsolutePath()
+						.replace(PROPERTIES_FILE_NAME_UNINSTALLED, PROPERTIES_FILE_NAME));
 				if (!f.renameTo(newFile)) {
 					success = false;
 				}
 			}
 		}
-		
+
 		return success;
 	}
-	
+
 	/**
 	 * 
 	 * @param root the starting directory to search recursively
@@ -700,26 +737,26 @@ public class ExtensionUtils {
 	 * @param foundFiles list of all matching files
 	 */
 	public static void findFilesWithName(File root, String fileName, List<File> foundFiles) {
-		
+
 		if (root == null || foundFiles == null) {
-			return; 
+			return;
 		}
-		
-	    if (root.isDirectory()) {
-	    		File[] files = root.listFiles();
-		   	if (files != null) {
-		        for (File file : files) {
-		        		findFilesWithName(file, fileName, foundFiles);
-		        }
-		    } 
-	    }
-	    else if (root.isFile() && root.getName().equals(fileName)) {
-	    		foundFiles.add(root);
-	    }
+
+		if (root.isDirectory()) {
+			File[] files = root.listFiles();
+			if (files != null) {
+				for (File file : files) {
+					findFilesWithName(file, fileName, foundFiles);
+				}
+			}
+		}
+		else if (root.isFile() && root.getName().equals(fileName)) {
+			foundFiles.add(root);
+		}
 	}
 
 	/**
-	 * Given a zip file, returns the {@link Properties} defined in the embedded extension.properties file. 
+	 * Given a zip file, returns the {@link Properties} defined in the embedded extension.properties file.
 	 * 
 	 * @param file the extension archive file
 	 * @return the properties file, or null if doesn't exist
@@ -761,7 +798,7 @@ public class ExtensionUtils {
 			throws ExtensionException, CancelledException {
 
 		File newDir = null;
-		try {			
+		try {
 			newDir =
 				new File(Application.getApplicationLayout().getExtensionInstallationDirs().get(0) +
 					File.separator + extension.getName());
@@ -774,11 +811,11 @@ public class ExtensionUtils {
 	}
 
 	/**
-	 * Unpacks a given zip file to {@link ApplicationLayout#getExtensionInstallationDir}. The 
+	 * Unpacks a given zip file to {@link ApplicationLayout#getExtensionInstallationDirs}. The
 	 * file permissions in the original zip will be retained.
 	 * <p>
-	 * Note: This method uses the Apache zip files since they keep track of permissions info; 
-	 * the built-in java objects (ZipEntry et al.) do not.
+	 * Note: This method uses the Apache zip files since they keep track of permissions info;
+	 * the built-in java objects (e.g., ZipEntry) do not.
 	 * 
 	 * @param zipFile the zip file to unpack
 	 * @param monitor the task monitor
@@ -826,7 +863,7 @@ public class ExtensionUtils {
 
 						// ...and update its permissions. But only continue if the zip
 						// was created on a unix platform. If not we cannot use the posix
-						// libraries to set permissions. 
+						// libraries to set permissions.
 						if (entry.getPlatform() == ZipArchiveEntry.PLATFORM_UNIX) {
 
 							int mode = entry.getUnixMode();
@@ -887,7 +924,7 @@ public class ExtensionUtils {
 				return Collections.emptySet();
 			}
 
-			// Get the set of extensions that the tool already knows about. This information is stored 
+			// Get the set of extensions that the tool already knows about. This information is stored
 			// in the tool preferences.
 			Set<ExtensionDetails> knownExtensionsSet = new HashSet<>();
 			DockingWindowManager dockingWindowManager =
@@ -948,7 +985,7 @@ public class ExtensionUtils {
 	}
 
 	/**
-	 * Attempts to delete any extension directories that do not contain a Module.manifest 
+	 * Attempts to delete any extension directories that do not contain a Module.manifest
 	 * file. This indicates that the extension was slated to be uninstalled by the user.
 	 * 
 	 * @see #uninstall
@@ -993,7 +1030,7 @@ public class ExtensionUtils {
 		String author = props.getProperty("author");
 		String date = props.getProperty("createdOn");
 		String version = props.getProperty("version");
-		
+
 		return new ExtensionDetails(name, desc, author, date, version);
 	}
 

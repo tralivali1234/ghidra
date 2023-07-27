@@ -80,6 +80,10 @@ public abstract class AbstractHoverProvider implements HoverProvider {
 		}
 	}
 
+	public boolean isForcePopups() {
+		return false; // the default implementation is to be disabled if tip windows are disabled
+	}
+
 	private boolean hasEnabledHoverServices() {
 		for (HoverService hoverService : hoverServices) {
 			if (hoverService.hoverModeSelected()) {
@@ -139,6 +143,13 @@ public abstract class AbstractHoverProvider implements HoverProvider {
 			return;
 		}
 
+		Component component = event.getComponent();
+		if (!component.isShowing()) {
+			// This can happen since we are using a timer.  When the timer fires, the source 
+			// component may have been hidden.
+			return;
+		}
+
 		ProgramLocation loc = getHoverLocation(fieldLocation, field, fieldBounds, event);
 		for (HoverService hoverService : hoverServices) {
 			JComponent comp = hoverService.getHoverComponent(program, loc, fieldLocation, field);
@@ -154,6 +165,10 @@ public abstract class AbstractHoverProvider implements HoverProvider {
 	protected void showPopup(JComponent comp, Field field, MouseEvent event,
 			Rectangle fieldBounds) {
 		lastField = field;
+
+		if (!enabled) {
+			return;
+		}
 
 		KeyboardFocusManager kfm = KeyboardFocusManager.getCurrentKeyboardFocusManager();
 		Window activeWindow = kfm.getActiveWindow();
@@ -180,15 +195,27 @@ public abstract class AbstractHoverProvider implements HoverProvider {
 			}
 		});
 
+		boolean force = isForcePopups();
 		boolean isToolTip = comp instanceof JToolTip;
 		if (isToolTip) {
-			popupWindow.showPopup(event);
+			popupWindow.showPopup(event, force);
 		}
 		else {
-			int xOffset = 50;// magic: trial and error
-			Dimension size = fieldBounds.getSize();
-			Dimension keepVisibleArea = new Dimension(xOffset, size.height);
-			popupWindow.showOffsetPopup(event, keepVisibleArea);
+
+			// 
+			// Make an area over which to show the popup.   The popup should not cover this area.
+			// The field that is hovered may be too big to be this area, as a big field may cause 
+			// the popup to be too far away from the cursor.
+			//
+			// Use the mouse point and then create an area (based on trial-and-error) that should
+			// not be occluded. 
+			// 
+			int horizontalPad = 100;
+			int verticalPad = 50;
+			Rectangle keepVisibleArea = new Rectangle(event.getPoint());
+			keepVisibleArea.grow(horizontalPad, verticalPad);
+
+			popupWindow.showOffsetPopup(event, keepVisibleArea, force);
 		}
 	}
 

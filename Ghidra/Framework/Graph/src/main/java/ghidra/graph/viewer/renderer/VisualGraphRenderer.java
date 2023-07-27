@@ -22,10 +22,11 @@ import java.util.*;
 import com.google.common.base.Function;
 
 import edu.uci.ics.jung.algorithms.layout.Layout;
-import edu.uci.ics.jung.graph.Graph;
 import edu.uci.ics.jung.visualization.*;
+import edu.uci.ics.jung.visualization.layout.ObservableCachingLayout;
 import edu.uci.ics.jung.visualization.renderers.Renderer;
 import edu.uci.ics.jung.visualization.transform.shape.GraphicsDecorator;
+import generic.theme.GThemeDefaults.Colors.Palette;
 import ghidra.graph.viewer.*;
 import ghidra.graph.viewer.edge.BasicEdgeLabelRenderer;
 import ghidra.graph.viewer.layout.*;
@@ -34,9 +35,9 @@ import ghidra.graph.viewer.layout.*;
  * This was created to add the ability to paint selected vertices above other vertices.  We need
  * this since the Jung Graph has no notion of Z-order and thus does not let us specify that any
  * particular vertex should be above another one.
- * 
+ *
  * @param <V> the vertex type
- * @param <E> the edge type 
+ * @param <E> the edge type
  */
 public class VisualGraphRenderer<V extends VisualVertex, E extends VisualEdge<V>>
 		extends edu.uci.ics.jung.visualization.renderers.BasicRenderer<V, E> {
@@ -44,7 +45,8 @@ public class VisualGraphRenderer<V extends VisualVertex, E extends VisualEdge<V>
 	/**
 	 * Used for displaying grid information for graph layouts
 	 */
-	public static Map<Graph<?, ?>, LayoutLocationMap<?, ?>> DEBUG_ROW_COL_MAP = new HashMap<>();
+	public static Map<VisualGraphLayout<?, ?>, LayoutLocationMap<?, ?>> DEBUG_ROW_COL_MAP =
+		new HashMap<>();
 
 	private Renderer.EdgeLabel<V, E> edgeLabelRenderer = new BasicEdgeLabelRenderer<>();
 
@@ -122,11 +124,15 @@ public class VisualGraphRenderer<V extends VisualVertex, E extends VisualEdge<V>
 		edgeLabelRenderer.labelEdge(rc, layout, e, xform.apply(e));
 	}
 
+	@SuppressWarnings({ "unchecked", "rawtypes" }) // the types in the cast matter not
 	private void paintLayoutGridCells(RenderContext<V, E> renderContext, Layout<V, E> layout) {
 
 		// to enable this debug, search java files for commented-out uses of 'DEBUG_ROW_COL_MAP'
-		Graph<V, E> graph = layout.getGraph();
-		LayoutLocationMap<?, ?> locationMap = DEBUG_ROW_COL_MAP.get(graph);
+		Layout<V, E> key = layout;
+		if (layout instanceof ObservableCachingLayout) {
+			key = ((ObservableCachingLayout) layout).getDelegate();
+		}
+		LayoutLocationMap<?, ?> locationMap = DEBUG_ROW_COL_MAP.get(key);
 		if (locationMap == null) {
 			return;
 		}
@@ -138,8 +144,8 @@ public class VisualGraphRenderer<V extends VisualVertex, E extends VisualEdge<V>
 
 		GraphicsDecorator g = renderContext.getGraphicsContext();
 		Color originalColor = g.getColor();
-		Color gridColor = Color.ORANGE;
-		Color textColor = Color.BLACK;
+		Color gridColor = Palette.ORANGE;
+		Color textColor = Palette.BLACK;
 
 		boolean isCondensed = locationMap.isCondensed();
 		Row<?> lastRow = locationMap.lastRow();

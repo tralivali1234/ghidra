@@ -15,9 +15,9 @@
  */
 package ghidra.app.util;
 
-import java.awt.BorderLayout;
-import java.awt.Component;
+import java.awt.*;
 import java.util.*;
+import java.util.List;
 
 import javax.swing.*;
 import javax.swing.border.*;
@@ -26,9 +26,11 @@ import org.apache.commons.lang3.StringUtils;
 
 import docking.ComponentProvider;
 import docking.DialogComponentProvider;
+import docking.widgets.OptionDialog;
 import docking.widgets.checkbox.GCheckBox;
 import docking.widgets.combobox.GhidraComboBox;
 import ghidra.app.cmd.label.*;
+import ghidra.framework.cmd.Command;
 import ghidra.framework.cmd.CompoundCmd;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.database.symbol.FunctionSymbol;
@@ -36,15 +38,18 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.symbol.*;
 import ghidra.util.HelpLocation;
-import ghidra.util.exception.AssertException;
+import ghidra.util.Swing;
 import ghidra.util.layout.VerticalLayout;
 
+/**
+ * Dialog used to a label or to edit an existing label.
+ */
 public class AddEditDialog extends DialogComponentProvider {
 	private static final int MAX_RETENTION = 10;
 	private PluginTool tool;
 	private TitledBorder nameBorder;
-	private JComboBox<String> labelNameChoices;
-	private JComboBox<NamespaceWrapper> namespaceChoices;
+	private GhidraComboBox<String> labelNameChoices;
+	private GhidraComboBox<NamespaceWrapper> namespaceChoices;
 	private JCheckBox entryPointCheckBox;
 	private JCheckBox primaryCheckBox;
 
@@ -69,6 +74,69 @@ public class AddEditDialog extends DialogComponentProvider {
 		setDefaultButton(okButton);
 	}
 
+	/**
+	 * Invokes the dialog to add a new label in the given program at the given address
+	 * @param address the address at which to add a new label
+	 * @param prog the program in which to add a new label
+	 */
+	public void addLabel(Address address, Program prog) {
+		addLabel(address, prog, tool.getActiveWindow());
+	}
+
+	/**
+	 * Invokes the dialog to add a new label in the given program at the given address
+	 * @param address the address at which to add a new label
+	 * @param targetProgram the program in which to add a new label
+	 * @param provider the ComponentProvider to parent and center the dialog over.
+	 */
+	public void addLabel(Address address, Program targetProgram, ComponentProvider provider) {
+		initDialogForAdd(targetProgram, address);
+		tool.showDialog(this, provider);
+	}
+
+	/**
+	 * Invokes the dialog to add a new label in the given program at the given address
+	 * @param address the address at which to add a new label
+	 * @param targetProgram the program in which to add a new label
+	 * @param centeredOverComponent the component over which to center the dialog
+	 */
+	public void addLabel(Address address, Program targetProgram, Component centeredOverComponent) {
+		initDialogForAdd(targetProgram, address);
+		tool.showDialog(this, centeredOverComponent);
+	}
+
+	/**
+	 * Invokes the dialog to edit an existing label in the given program
+	 * @param targetSymbol the symbol(label) to edit
+	 * @param targetProgram the program containing the symbol
+	 */
+	public void editLabel(Symbol targetSymbol, Program targetProgram) {
+		editLabel(targetSymbol, targetProgram, (Component) null);
+	}
+
+	/**
+	 * Invokes the dialog to edit an existing label in the given program
+	 * @param targetSymbol the symbol(label) to edit
+	 * @param targetProgram the program containing the symbol
+	 * @param centeredOverComponent the component over which to center the dialog
+	 */
+	public void editLabel(Symbol targetSymbol, Program targetProgram,
+			Component centeredOverComponent) {
+		initDialogForEdit(targetProgram, targetSymbol);
+		tool.showDialog(this, centeredOverComponent);
+	}
+
+	/**
+	 * Invokes the dialog to edit an existing label in the given program
+	 * @param targetSymbol the symbol(label) to edit
+	 * @param targetProgram the program containing the symbol
+	 * @param provider the ComponentProvider to parent and center the dialog over.
+	 */
+	public void editLabel(Symbol targetSymbol, Program targetProgram, ComponentProvider provider) {
+		initDialogForEdit(targetProgram, targetSymbol);
+		tool.showDialog(this, provider);
+	}
+
 	@Override
 	protected void okCallback() {
 
@@ -76,10 +144,16 @@ public class AddEditDialog extends DialogComponentProvider {
 		Namespace namespace = getSelectedNamespace();
 		SymbolPath symbolPath = getSymbolPath(labelText);
 		if (symbolPath == null) {
+			Swing.runLater(() -> checkForRemoveLabel());
 			return;
 		}
 
 		String symbolName = symbolPath.getName();
+		if (StringUtils.isBlank(symbolName)) {
+			// this is the case of having a namespace without a name, such as "Namespace::"
+			setStatusText("Name cannot be blank while changing namespace");
+			return;
+		}
 
 		// see if the user specified a namespace path and if so, then get the
 		// new namespace name from that path
@@ -95,12 +169,17 @@ public class AddEditDialog extends DialogComponentProvider {
 			cmd.add(new AddLabelCmd(addr, symbolName, parent, SourceType.USER_DEFINED));
 		}
 		else {
-			cmd.add(new RenameLabelCmd(addr, symbol.getName(), symbolName,
-				symbol.getParentNamespace(), parent, SourceType.USER_DEFINED));
+			cmd.add(new RenameLabelCmd(symbol, labelText, namespace, SourceType.USER_DEFINED));
 			isCurrentlyEntryPoint = symbol.isExternalEntryPoint();
 			isCurrentlyPinned = symbol.isPinned();
 		}
 
+		if (!tool.execute(cmd, program)) {
+			setStatusText(cmd.getStatusMsg());
+			return;
+		}
+
+		cmd = new CompoundCmd(symbol == null ? "Add Label" : "Edit Label");
 		if (primaryCheckBox.isEnabled() && primaryCheckBox.isSelected()) {
 			cmd.add(new SetLabelPrimaryCmd(addr, symbolName, parent));
 		}
@@ -112,16 +191,54 @@ public class AddEditDialog extends DialogComponentProvider {
 			cmd.add(new PinSymbolCmd(addr, symbolName, !isCurrentlyPinned));
 		}
 
-		if (cmd.size() > 0) {
-
-			if (!tool.execute(cmd, program)) {
-				setStatusText(cmd.getStatusMsg());
-				return;
-			}
-			updateRecentLabels(symbolName);
+		if (!tool.execute(cmd, program)) {
+			setStatusText(cmd.getStatusMsg());
+			return;
 		}
+		updateRecentLabels(symbolName);
+
 		program = null;
 		close();
+	}
+
+	private void checkForRemoveLabel() {
+
+		if (!isEditing()) {
+			return; // adding a label; cannot delete existing label
+		}
+
+		if (isDefaultLabel()) {
+			return; // label is already default; cannot be removed
+		}
+
+		if (isExternalLabel()) {
+			return; // cannot remove external labels
+		}
+
+		int choice = OptionDialog.showYesNoDialog(getParent(), "Remove Label?",
+			"You have removed the label text--would you like to remove the existing label?");
+		if (choice == OptionDialog.YES_OPTION) {
+
+			Command cmd = new DeleteLabelCmd(addr, symbol.getName(), symbol.getParentNamespace());
+			if (!tool.execute(cmd, program)) {
+				setStatusText(cmd.getStatusMsg());
+			}
+			else {
+				close();
+			}
+		}
+	}
+
+	private boolean isExternalLabel() {
+		return symbol != null && symbol.isExternal();
+	}
+
+	private boolean isDefaultLabel() {
+		return symbol != null && symbol.getSource() == SourceType.DEFAULT;
+	}
+
+	private boolean isEditing() {
+		return symbol != null; // always have a symbol when editing
 	}
 
 	private SymbolPath getSymbolPath(String symbolName) {
@@ -132,28 +249,6 @@ public class AddEditDialog extends DialogComponentProvider {
 		}
 
 		return new SymbolPath(symbolName);
-	}
-
-	private boolean isLocalNamespace(Namespace namespace, String symbolName) {
-		FunctionSymbol functionSymbol = getFunctionSymbol(addr);
-		if (functionSymbol == null) {
-			return false;
-		}
-
-		if (!isInFunctionNamespace(namespace)) {
-			return false;
-		}
-
-		return true;
-	}
-
-	private boolean isInFunctionNamespace(Namespace namespace) {
-		for (Namespace p = namespace; p != null; p = p.getParentNamespace()) {
-			if (p instanceof Function) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private Namespace getSelectedNamespace() {
@@ -182,7 +277,7 @@ public class AddEditDialog extends DialogComponentProvider {
 
 		//
 		// At this point we can either reuse an existing function namespace or we have to create
-		// a new non-function namespaces, depending upon the names being used.  Only use an 
+		// a new non-function namespaces, depending upon the names being used.  Only use an
 		// existing function as a namespace if none of namespace path entries match the function
 		// name.
 		//
@@ -288,12 +383,12 @@ public class AddEditDialog extends DialogComponentProvider {
 		// functions and labels in functions will use the local namespace
 		if (functionSymbol != null) {
 			if (symbol != null && symbol.equals(functionSymbol)) {
-				namespaceChoices.setSelectedItem(
-					new NamespaceWrapper(functionSymbol.getParentNamespace()));
+				namespaceChoices
+						.setSelectedItem(new NamespaceWrapper(functionSymbol.getParentNamespace()));
 			}
 			else if (functionSymbol.getSource() == SourceType.DEFAULT) {
-				namespaceChoices.setSelectedItem(
-					new NamespaceWrapper(functionSymbol.getParentNamespace()));
+				namespaceChoices
+						.setSelectedItem(new NamespaceWrapper(functionSymbol.getParentNamespace()));
 			}
 			else { // there is a function at the current address
 				namespaceChoices.setSelectedItem(new NamespaceWrapper(localNamespace));
@@ -308,8 +403,8 @@ public class AddEditDialog extends DialogComponentProvider {
 			}
 			else { // not in a function
 				if (symbol != null) { // editing a label
-					namespaceChoices.setSelectedItem(
-						new NamespaceWrapper(symbol.getParentNamespace()));
+					namespaceChoices
+							.setSelectedItem(new NamespaceWrapper(symbol.getParentNamespace()));
 				}
 				else {
 					// use the global namespace and *not* the lowest-level namespace
@@ -321,27 +416,22 @@ public class AddEditDialog extends DialogComponentProvider {
 
 	private FunctionSymbol getFunctionSymbol(Address address) {
 		SymbolTable symbolTable = program.getSymbolTable();
-		Symbol[] symbols = symbolTable.getSymbols(address);
-		for (Symbol localSymbol : symbols) {
-			if (localSymbol instanceof FunctionSymbol) {
-				return (FunctionSymbol) localSymbol;
-			}
+		Symbol primary = symbolTable.getPrimarySymbol(address);
+		if (primary instanceof FunctionSymbol) {
+			return (FunctionSymbol) primary;
 		}
 		return null;
 	}
 
-	public void addLabel(Address address, Program p) {
-		addLabel(address, p, tool.getActiveWindow());
-	}
-
-	public void addLabel(Address address, Program p, Component centeredOverComponent) {
+	private void initDialogForAdd(Program p, Address address) {
 		if (!address.isMemoryAddress()) {
 			throw new IllegalArgumentException(
 				"AddEditDialog.addLabel only valid for memory address");
 		}
+
 		this.addr = address;
 		this.program = p;
-		SymbolTable symbolTable = program.getSymbolTable();
+		SymbolTable symbolTable = p.getSymbolTable();
 		symbol = null;
 		setTitle("Add Label at " + address);
 		initRecentChoices();
@@ -350,10 +440,8 @@ public class AddEditDialog extends DialogComponentProvider {
 		pinnedCheckBox.setEnabled(true);
 		pinnedCheckBox.setSelected(false);
 
-		Symbol[] symbols = symbolTable.getSymbols(address);
-
-		FunctionSymbol functionSymbol = getFunctionSymbol(address);
-		if (functionSymbol == null && symbols.length == 0) {
+		Symbol primarySymbol = symbolTable.getPrimarySymbol(address);
+		if (primarySymbol == null) {
 			primaryCheckBox.setSelected(true);
 			primaryCheckBox.setEnabled(false);
 		}
@@ -365,17 +453,10 @@ public class AddEditDialog extends DialogComponentProvider {
 		namespaceChoices.setEnabled(true);
 		initNamespaces();
 		clearStatusText();
-		tool.showDialog(this, centeredOverComponent);
+
 	}
 
-	public void editLabel(Symbol s, Program p) {
-		ComponentProvider componentProvider =
-			tool.getComponentProvider(PluginConstants.CODE_BROWSER);
-		JComponent component = componentProvider.getComponent();
-		editLabel(s, p, component);
-	}
-
-	public void editLabel(Symbol s, Program p, Component centeredOverComponent) {
+	private void initDialogForEdit(Program p, Symbol s) {
 		this.symbol = s;
 		this.program = p;
 		this.addr = s.getAddress();
@@ -386,7 +467,7 @@ public class AddEditDialog extends DialogComponentProvider {
 		if (s.getSymbolType() == SymbolType.FUNCTION) {
 			String title;
 			if (s.isExternal()) {
-				ExternalLocation extLoc = p.getExternalManager().getExternalLocation(s);
+				ExternalLocation extLoc = program.getExternalManager().getExternalLocation(s);
 				Address fnAddr = extLoc.getAddress();
 				title = "Rename External Function";
 				if (fnAddr != null) {
@@ -424,23 +505,37 @@ public class AddEditDialog extends DialogComponentProvider {
 			nameBorder.setTitle("Enter Label:");
 			entryPointCheckBox.setEnabled(true);
 			entryPointCheckBox.setSelected(symbolTable.isExternalEntryPoint(addr));
-			Symbol[] symbols = symbolTable.getSymbols(addr);
 			primaryCheckBox.setSelected(s.isPrimary());
-			primaryCheckBox.setEnabled(!s.isPrimary() && symbols.length > 1);
+			primaryCheckBox.setEnabled(!s.isPrimary());
 			pinnedCheckBox.setEnabled(true);
 			pinnedCheckBox.setSelected(s.isPinned());
 			namespaceChoices.setEnabled(true);
 		}
 		initNamespaces();
 		clearStatusText();
-		tool.showDialog(this, centeredOverComponent);
+
 	}
 
 	/**
 	 * Define the Main panel for the dialog here.
 	 */
 	private JPanel create() {
-		labelNameChoices = new GhidraComboBox<>();
+		labelNameChoices = new GhidraComboBox<>() {
+			@Override
+			public Dimension getPreferredSize() {
+				Dimension size = super.getPreferredSize();
+				// change the preferred size to use the width determined by the # of columns in 
+				// combo box editor instead of the largest item in the combo box data model to 
+				// prevent the dialog from growing huge when a large label gets added to its recent
+				// items
+				Dimension editorSize = getEditor().getEditorComponent().getPreferredSize();
+				size.width = editorSize.width;
+				return size;
+			}
+		};
+		// the  number of columns determines the default width of the add/edit label dialog
+		labelNameChoices.setColumnCount(20);
+		labelNameChoices.setName("label.name.choices");
 		GhidraComboBox<NamespaceWrapper> comboBox = new GhidraComboBox<>();
 		comboBox.setEnterKeyForwarding(true);
 		namespaceChoices = comboBox;
@@ -509,12 +604,7 @@ public class AddEditDialog extends DialogComponentProvider {
 	}
 
 	private String getText() {
-		Component comp = labelNameChoices.getEditor().getEditorComponent();
-		if (comp instanceof JTextField) {
-			JTextField textField = (JTextField) comp;
-			return textField.getText().trim();
-		}
-		throw new AssertException("Using an uneditable JComboBox - this class must be updated.");
+		return labelNameChoices.getText();
 	}
 
 	public class NamespaceWrapper {

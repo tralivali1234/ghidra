@@ -277,7 +277,8 @@ public class ProjectInfoDialogTest extends AbstractGhidraHeadedIntegrationTest {
 		waitForTasks();
 
 		// check out file from shared project
-		rootFolder = getProject().getProjectData().getRootFolder();
+		Project oldProject = getProject();
+		rootFolder = oldProject.getProjectData().getRootFolder();
 		DomainFile df = rootFolder.getFile("testA");
 		df.addToVersionControl("test", true, TaskMonitor.DUMMY);
 		assertTrue(df.isCheckedOut());
@@ -298,12 +299,34 @@ public class ProjectInfoDialogTest extends AbstractGhidraHeadedIntegrationTest {
 		assertNotNull(opt);
 		assertEquals("Update Shared Project Info", opt.getTitle());
 		pressButtonByText(opt, "Update");
-		waitForTasks();
 
 		opt = waitForDialogComponent(OptionDialog.class);
 		assertNotNull(opt);
-		assertEquals("Failed to Update Shared Project Info", opt.getTitle());
-		opt.close();
+		assertEquals("Terminate Unrecognized Checkouts", opt.getTitle());
+		pressButtonByText(opt, "Terminate Checkouts and Continue");
+		waitForTasks();
+
+		dialog = waitForDialogComponent(ProjectInfoDialog.class);
+		assertNotNull(dialog);
+		pressButtonByText(dialog, "Dismiss");
+
+		Project updatedProject = getProject();
+		assertNotNull(updatedProject);
+		assertTrue(updatedProject != oldProject);
+
+		RepositoryAdapter rep = updatedProject.getRepository();
+		assertNotNull(rep);
+		assertEquals("AnotherRepository", rep.getName());
+
+		ProjectData updatedProjectData = updatedProject.getProjectData();
+
+		rootFolder = updatedProjectData.getRootFolder();
+		assertNull(rootFolder.getFile("testA"));
+		df = rootFolder.getFile("testA.keep");
+		assertNotNull(df);
+		assertFalse(df.isVersioned());
+		assertFalse(df.isCheckedOut());
+
 	}
 
 	private void checkProjectInfo(String expectedRepName) {

@@ -26,18 +26,23 @@ import javax.swing.ImageIcon;
 
 import docking.widgets.fieldpanel.support.FieldRange;
 import docking.widgets.fieldpanel.support.FieldSelection;
-import ghidra.app.services.MarkerListener;
+import generic.json.Json;
+import ghidra.app.services.MarkerDescriptor;
 import ghidra.app.services.MarkerSet;
 import ghidra.app.util.viewer.listingpanel.VerticalPixelAddressMap;
 import ghidra.app.util.viewer.util.AddressIndexMap;
 import ghidra.program.model.address.*;
+import ghidra.program.model.listing.Program;
 import ghidra.program.util.MarkerLocation;
 import ghidra.program.util.ProgramLocation;
-import ghidra.util.SystemUtilities;
+import ghidra.util.ColorUtils;
+import ghidra.util.Swing;
 import ghidra.util.datastruct.SortedRangeList;
 
 abstract class MarkerSetImpl implements MarkerSet {
+
 	protected MarkerManager mgr;
+	protected Program program;
 
 	private String name;
 	protected String description;
@@ -46,6 +51,8 @@ abstract class MarkerSetImpl implements MarkerSet {
 
 	protected AddressSetCollection markers;
 	protected SortedRangeList overview = null;
+
+	protected VerticalPixelAddressMap activePixmap = null;
 	protected List<Integer> activeLayouts = null;
 
 	protected Color markerColor;
@@ -53,7 +60,7 @@ abstract class MarkerSetImpl implements MarkerSet {
 	protected int lastHeight = 1;
 	protected int lastWidth = 16;
 
-	protected MarkerListener listener;
+	protected MarkerDescriptor markerDescriptor;
 
 	protected final static int MARKER_WIDTH_OFFSET = 7;
 	protected final static int MARKER_HEIGHT = 4;
@@ -65,11 +72,13 @@ abstract class MarkerSetImpl implements MarkerSet {
 	private boolean colorBackground;
 	private boolean isPreferred;
 
-	MarkerSetImpl(MarkerManager mgr, String name, String desc, int priority, boolean showMarkers,
+	MarkerSetImpl(MarkerManager mgr, Program program, String name, String desc, int priority,
+			boolean showMarkers,
 			boolean showNavigation, boolean colorBackground, Color markerColor,
 			boolean isPreferred) {
 
 		this.mgr = mgr;
+		this.program = program;
 		this.name = name;
 		this.description = desc;
 		this.priority = priority;
@@ -92,13 +101,14 @@ abstract class MarkerSetImpl implements MarkerSet {
 
 	/**
 	 * Returns the Navigator Icon for this marker set
+	 * 
 	 * @return the Navigator Icon for this marker set
 	 */
 	public abstract ImageIcon getNavIcon();
 
 	@Override
-	public void setNavigationListener(MarkerListener listener) {
-		this.listener = listener;
+	public void setMarkerDescriptor(MarkerDescriptor markerDescriptor) {
+		this.markerDescriptor = markerDescriptor;
 	}
 
 	@Override
@@ -109,7 +119,7 @@ abstract class MarkerSetImpl implements MarkerSet {
 	@Override
 	public void setMarkerColor(Color markerColor) {
 		this.markerColor = markerColor;
-		mgr.update();
+		mgr.markersChanged(program);
 	}
 
 	public String getDescription() {
@@ -222,7 +232,7 @@ abstract class MarkerSetImpl implements MarkerSet {
 		assertSwing();
 		overview = null;
 		activeLayouts = null;
-		mgr.update();
+		mgr.markersChanged(program);
 	}
 
 	void updateView(boolean updateMarkers, boolean updateNavigation) {
@@ -242,11 +252,10 @@ abstract class MarkerSetImpl implements MarkerSet {
 		}
 	}
 
-	public final void paintNavigation(Graphics g, int height, NavigationPanel panel,
-			AddressIndexMap map) {
+	public final void paintNavigation(Graphics g, int height, int width, AddressIndexMap map) {
 		if (showNavigation) {
-			SortedRangeList newOverview = computeNavigationIndexes(height, map);
-			doPaintNavigation(g, height, panel.getWidth(), newOverview);
+			SortedRangeList newOverview = computeNavigationIndices(height, map);
+			doPaintNavigation(g, height, width, newOverview);
 		}
 	}
 
@@ -254,7 +263,7 @@ abstract class MarkerSetImpl implements MarkerSet {
 		int red = (c.getRed() + 3 * COLOR_VALUE) / 4;
 		int green = (c.getGreen() + 3 * COLOR_VALUE) / 4;
 		int blue = (c.getBlue() + 3 * COLOR_VALUE) / 4;
-		return new Color(red, green, blue);
+		return ColorUtils.getColor(red, green, blue);
 	}
 
 	@Override
@@ -274,13 +283,6 @@ abstract class MarkerSetImpl implements MarkerSet {
 		return result;
 	}
 
-	/**
-	 * Check if this Manager contains the address.
-	 * 
-	 * @param addr address to check
-	 * 
-	 * @return true if this manager contains the address.
-	 */
 	@Override
 	public boolean contains(Address addr) {
 		assertSwing();
@@ -294,7 +296,7 @@ abstract class MarkerSetImpl implements MarkerSet {
 			return null;
 		}
 
-		if (activeLayouts != null) {
+		if (activeLayouts != null && activePixmap == pixmap) {
 			return activeLayouts; // use cache
 		}
 
@@ -308,23 +310,23 @@ abstract class MarkerSetImpl implements MarkerSet {
 
 			Address end = pixmap.getLayoutEndAddress(i);
 			if (markers.intersects(addr, end)) {
-				newLayouts.add(new Integer(i));
+				newLayouts.add(i);
 			}
 		}
 
+		activePixmap = pixmap;
 		activeLayouts = newLayouts;
 		return newLayouts;
 	}
 
-	private SortedRangeList computeNavigationIndexes(int height, AddressIndexMap map) {
+	private SortedRangeList computeNavigationIndices(int height, AddressIndexMap map) {
 
-		lastHeight = height;
 		double numIndexes = map.getIndexCount().doubleValue();
 		if (markers.isEmpty() || height == 0 || numIndexes == 0) {
 			return null;
 		}
 
-		if (overview != null) {
+		if (overview != null && lastHeight == height) {
 			return overview; // use cache
 		}
 
@@ -377,14 +379,14 @@ abstract class MarkerSetImpl implements MarkerSet {
 			}
 		}
 
+		lastHeight = height;
 		overview = newOverview;
 		return newOverview;
 	}
 
 	/**
-	 * Get the tooltip for the marker at the specified index and address.
+	 * Get the tooltip for the marker at the specified index and address
 	 * 
-	 * @param index index of item to navigate to
 	 * @param addr address of item to navigate to
 	 * @param x x location of cursor
 	 * @param y y location of cursor
@@ -392,8 +394,9 @@ abstract class MarkerSetImpl implements MarkerSet {
 	 * @return tool tip string, null if no tool tip
 	 */
 	public String getTooltip(Address addr, int x, int y) {
-		if (listener != null) {
-			return listener.getTooltip(new MarkerLocation(this, addr, x, y));
+		if (markerDescriptor != null) {
+			MarkerLocation loc = new MarkerLocation(this, program, addr, x, y);
+			return markerDescriptor.getTooltip(loc);
 		}
 		return null;
 	}
@@ -416,13 +419,16 @@ abstract class MarkerSetImpl implements MarkerSet {
 	@Override
 	public void setColoringBackground(boolean b) {
 		colorBackground = b;
-		mgr.update();
+		mgr.markersChanged(program);
 	}
 
 	public ProgramLocation getProgramLocation(int y, int height, AddressIndexMap map, int x) {
 
 		assertSwing();
-		if (overview == null) {
+		// Many overview panels can be rendering this marker set, each having its own height.
+		// If the height does not match that from the last-computed indices, we need to recompute.
+		computeNavigationIndices(height, map);
+		if (overview == null || lastHeight != height) {
 			return null;
 		}
 
@@ -438,7 +444,7 @@ abstract class MarkerSetImpl implements MarkerSet {
 			BigInteger bigEndy = BigInteger.valueOf(y + MARKER_HEIGHT);
 			BigInteger numIndexes = map.getIndexCount();
 			BigInteger numIndexesMinus1 = numIndexes.subtract(BigInteger.ONE);
-			numIndexesMinus1.max(BigInteger.ZERO);
+			numIndexesMinus1 = numIndexesMinus1.max(BigInteger.ZERO);
 
 			BigInteger start = getIndex(bigStarty, bigHeight, numIndexes, numIndexesMinus1);
 			BigInteger end = getIndex(bigEndy, bigHeight, numIndexes, numIndexesMinus1);
@@ -455,11 +461,13 @@ abstract class MarkerSetImpl implements MarkerSet {
 			if (addr == null) {
 				addr = set.getMinAddress();
 			}
-			if (listener != null) {
-				loc = listener.getProgramLocation(new MarkerLocation(this, addr, x, y));
+			if (markerDescriptor != null) {
+				MarkerLocation ml = new MarkerLocation(this, program, addr, x, y);
+				loc = markerDescriptor.getProgramLocation(ml);
 			}
+
 			if (loc == null) {
-				loc = new ProgramLocation(mgr.getProgram(), addr);
+				loc = new ProgramLocation(program, addr);
 			}
 		}
 		return loc;
@@ -493,7 +501,7 @@ abstract class MarkerSetImpl implements MarkerSet {
 	@Override
 	public void setActive(boolean state) {
 		active = state;
-		mgr.update();
+		mgr.markersChanged(program);
 	}
 
 	@Override
@@ -522,7 +530,12 @@ abstract class MarkerSetImpl implements MarkerSet {
 
 	// Note: reading and writing to 'markers' is synchronized via the Swing thread
 	private void assertSwing() {
-		SystemUtilities.assertThisIsTheSwingThread(
+		Swing.assertSwingThread(
 			"Calls to the MarkerSetImpl must be made on the Swing thread");
+	}
+
+	@Override
+	public String toString() {
+		return Json.toString(this, "active", "colorBackground", "markers");
 	}
 }

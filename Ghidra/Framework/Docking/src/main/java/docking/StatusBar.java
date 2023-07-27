@@ -24,11 +24,14 @@ import javax.swing.*;
 import javax.swing.Timer;
 import javax.swing.border.Border;
 
+import org.apache.commons.lang3.StringUtils;
 import org.jdesktop.animation.timing.Animator;
 
 import docking.util.AnimationUtils;
 import docking.widgets.EmptyBorderButton;
 import docking.widgets.label.GDLabel;
+import generic.theme.GThemeDefaults.Colors;
+import generic.theme.Gui;
 import generic.util.WindowUtilities;
 import ghidra.util.*;
 import ghidra.util.layout.HorizontalLayout;
@@ -153,14 +156,40 @@ public class StatusBar extends JPanel {
 		statusAreaPanel.remove(c.getParent());
 	}
 
-	public void setStatusText(String text, boolean isActiveWindow) {
-		SystemUtilities.runIfSwingOrPostSwingLater(() -> doSetStatusText(text, isActiveWindow));
+	/**
+	 * Returns the current text in this status bar
+	 * @return the text
+	 */
+	public String getStatusText() {
+		return statusLabel.getText();
 	}
 
-	private void doSetStatusText(String text, boolean isActiveWindow) {
+	/**
+	 * Deprecated.  Call {@link #setStatusText(String)} instead.
+	 * 
+	 * @param text the text
+	 * @param isActiveWindow this parameter is ignored
+	 * @deprecated Call {@link #setStatusText(String)} instead.  Remove after 9.3
+	 */
+	@Deprecated
+	public void setStatusText(String text, boolean isActiveWindow) {
+		setStatusText(text);
+	}
+
+	/**
+	 * Sets the status text
+	 * @param text the text
+	 */
+	public void setStatusText(String text) {
+		// Run this later in case we are in the midst of a Java focus transition, such as when a
+		// dialog is closing.  If we don't let the focus transition finish, then we will not 
+		// correctly locate the active window.
+		Swing.runLater(() -> doSetStatusText(text));
+	}
+
+	private void doSetStatusText(String text) {
 		if (text == null) {
-			// not sure what do do here, do nothing for now so that the previous message
-			// stays around
+			// do nothing for now so that the previous message stays around
 			return;
 		}
 
@@ -169,13 +198,14 @@ public class StatusBar extends JPanel {
 		String updatedText = fixupMultilineText(text);
 		statusLabel.setText(updatedText);
 		statusLabel.setToolTipText(getToolTipText());
-		statusLabel.setForeground(Color.BLACK);
+		statusLabel.setForeground(Colors.FOREGROUND);
 
-		if (!isActiveWindow) {
+		if (StringUtils.isBlank(updatedText)) {
 			return;
 		}
 
-		if (updatedText.trim().isEmpty()) {
+		Window window = WindowUtilities.windowForComponent(statusLabel);
+		if (!window.isActive()) {
 			return;
 		}
 
@@ -276,24 +306,40 @@ public class StatusBar extends JPanel {
 		private FadeTimer() {
 			super(5000, null);
 			addActionListener(this);
-			initFadeColors();
 		}
 
 		private void initFadeColors() {
-			fadeColorMap.put(Color.BLACK, new Color(16, 16, 16));
-			fadeColorMap.put(new Color(16, 16, 16), new Color(32, 32, 32));
-			fadeColorMap.put(new Color(32, 32, 32), new Color(64, 64, 64));
-			fadeColorMap.put(new Color(64, 64, 64), new Color(80, 80, 80));
-			fadeColorMap.put(new Color(80, 80, 80), new Color(96, 96, 96));
-			fadeColorMap.put(new Color(96, 96, 96), new Color(112, 112, 112));
-			fadeColorMap.put(new Color(112, 112, 112), new Color(128, 128, 128));
+
+			int value = 0;
+			int delta = 16;
+			if (Gui.isDarkTheme()) {
+				value = 128;
+				delta = -16;
+			}
+
+			Color start = ColorUtils.getColor(value, value, value);
+			fadeColorMap.put(statusLabel.getForeground(), start);
+
+			for (int i = 0; i < 8; i++) {
+
+				Color from = ColorUtils.getColor(value, value, value);
+				value += delta;
+				Color to = ColorUtils.getColor(value, value, value);
+				fadeColorMap.put(from, to);
+			}
+		}
+
+		@Override
+		public void restart() {
+			initFadeColors();
+			super.restart();
 		}
 
 		@Override
 		public void actionPerformed(ActionEvent event) {
 			Color nextFadeColor = fadeColorMap.get(statusLabel.getForeground());
-
 			if (nextFadeColor != null) {
+
 				statusLabel.setForeground(nextFadeColor);
 			}
 			else {
@@ -357,7 +403,7 @@ public class StatusBar extends JPanel {
 			int red = color.getRed();
 			int green = color.getGreen();
 			int blue = color.getBlue();
-			return new Color((255 - red), (255 - green), (255 - blue));
+			return ColorUtils.getColor((255 - red), (255 - green), (255 - blue));
 		}
 
 		private void contrastStatusLabelColors() {
@@ -369,7 +415,7 @@ public class StatusBar extends JPanel {
 		}
 	}
 
-	class StatusPanel extends JPanel {
+	static class StatusPanel extends JPanel {
 		Dimension prefSize;
 
 		StatusPanel(Component c, boolean addBorder) {

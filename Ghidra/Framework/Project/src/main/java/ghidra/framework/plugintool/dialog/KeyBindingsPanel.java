@@ -32,21 +32,23 @@ import docking.KeyEntryTextField;
 import docking.action.DockingActionIf;
 import docking.action.KeyBindingData;
 import docking.actions.KeyBindingUtils;
-import docking.help.Help;
-import docking.help.HelpService;
 import docking.tool.util.DockingToolConstants;
 import docking.widgets.*;
 import docking.widgets.label.GIconLabel;
 import docking.widgets.table.*;
+import generic.theme.Gui;
+import generic.util.action.ReservedKeyBindings;
 import ghidra.framework.options.Options;
 import ghidra.framework.options.ToolOptions;
 import ghidra.framework.plugintool.PluginTool;
-import ghidra.util.*;
+import ghidra.util.HTMLUtilities;
+import ghidra.util.Swing;
 import ghidra.util.exception.AssertException;
 import ghidra.util.layout.PairLayout;
 import ghidra.util.layout.VerticalLayout;
+import help.Help;
+import help.HelpService;
 import resources.Icons;
-import resources.ResourceManager;
 
 /**
  * Panel to show the key bindings for the plugin actions.
@@ -59,7 +61,7 @@ public class KeyBindingsPanel extends JPanel {
 	private final static int KEY_BINDING = 1;
 	private final static int PLUGIN_NAME = 2;
 
-	private static final int FONT_SIZE = 11;
+	private static final String FONT_ID = "font.keybindings.status";
 
 	private JTextPane statusLabel;
 	private GTable actionTable;
@@ -99,8 +101,6 @@ public class KeyBindingsPanel extends JPanel {
 
 	public void dispose() {
 		tableFilterPanel.dispose();
-		tableModel.dispose();
-		actionTable.dispose();
 		propertyChangeListener = null;
 	}
 
@@ -123,12 +123,7 @@ public class KeyBindingsPanel extends JPanel {
 			return;
 		}
 
-		if (newKeyStroke != null) {
-			options.setKeyStroke(fullActionName, newKeyStroke);
-		}
-		else {
-			options.removeOption(fullActionName);
-		}
+		options.setKeyStroke(fullActionName, newKeyStroke);
 		originalValues.put(fullActionName, newKeyStroke);
 		keyStrokesByFullName.put(fullActionName, newKeyStroke);
 
@@ -136,6 +131,7 @@ public class KeyBindingsPanel extends JPanel {
 		for (DockingActionIf action : actions) {
 			action.setUnvalidatedKeyBindingData(new KeyBindingData(newKeyStroke));
 		}
+
 	}
 
 	public void cancel() {
@@ -241,9 +237,7 @@ public class KeyBindingsPanel extends JPanel {
 
 		// make sure the label gets enough space
 		statusLabel.setPreferredSize(new Dimension(0, STATUS_LABEL_HEIGHT));
-
-		Font f = new Font("SansSerif", Font.PLAIN, FONT_SIZE);
-		statusLabel.setFont(f);
+		statusLabel.setFont(Gui.getFont(FONT_ID));
 
 		helpButton = new EmptyBorderButton(Icons.HELP_ICON);
 		helpButton.setEnabled(false);
@@ -291,7 +285,7 @@ public class KeyBindingsPanel extends JPanel {
 		BoxLayout bl = new BoxLayout(labelPanel, BoxLayout.X_AXIS);
 		labelPanel.setLayout(bl);
 		labelPanel.add(Box.createHorizontalStrut(5));
-		labelPanel.add(new GIconLabel(ResourceManager.loadImage("images/information.png")));
+		labelPanel.add(new GIconLabel(Icons.INFO_ICON));
 		labelPanel.add(Box.createHorizontalStrut(5));
 		labelPanel.add(mlabel);
 

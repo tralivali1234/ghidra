@@ -15,8 +15,7 @@
  */
 package ghidra.graph;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 
 import java.util.*;
 
@@ -24,6 +23,7 @@ import org.junit.Assert;
 import org.junit.Before;
 
 import generic.test.AbstractGenericTest;
+import generic.test.AbstractGuiTest;
 import ghidra.graph.algo.ChkDominanceAlgorithm;
 import ghidra.graph.algo.ChkPostDominanceAlgorithm;
 import ghidra.util.exception.CancelledException;
@@ -65,7 +65,7 @@ public abstract class AbstractGraphAlgorithmsTest extends AbstractGenericTest {
 			while (true) {
 
 				sleep(1000);
-				printMemory();
+				AbstractGuiTest.printMemory();
 			}
 
 		}, "Memory Monitor");
@@ -273,34 +273,32 @@ public abstract class AbstractGraphAlgorithmsTest extends AbstractGenericTest {
 			return id;
 		}
 
-// TODO put this in		
-//
-//		@Override
-//		public int hashCode() {
-//			final int prime = 31;
-//			int result = 1;
-//			result = prime * result + ((id == null) ? 0 : id.hashCode());
-//			return result;
-//		}
-//
-//		@Override
-//		public boolean equals(Object obj) {
-//			if (this == obj) {
-//				return true;
-//			}
-//			if (obj == null) {
-//				return false;
-//			}
-//			if (getClass() != obj.getClass()) {
-//				return false;
-//			}
-//
-//			TestV other = (TestV) obj;
-//			if (!Objects.equals(id, other.id)) {
-//				return false;
-//			}
-//			return true;
-//		}
+		@Override
+		public int hashCode() {
+			final int prime = 31;
+			int result = 1;
+			result = prime * result + ((id == null) ? 0 : id.hashCode());
+			return result;
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			if (obj == null) {
+				return false;
+			}
+			if (getClass() != obj.getClass()) {
+				return false;
+			}
+
+			TestV other = (TestV) obj;
+			if (!Objects.equals(id, other.id)) {
+				return false;
+			}
+			return true;
+		}
 	}
 
 	protected static class TestE extends DefaultGEdge<TestV> {

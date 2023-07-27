@@ -16,11 +16,11 @@
 package ghidra.app.util.bean;
 
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.event.*;
 import java.util.*;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.swing.*;
 import javax.swing.table.TableColumnModel;
@@ -28,12 +28,14 @@ import javax.swing.table.TableColumnModel;
 import org.apache.commons.lang3.StringUtils;
 
 import docking.DialogComponentProvider;
+import docking.actions.KeyBindingUtils;
 import docking.widgets.button.GRadioButton;
 import docking.widgets.checkbox.GCheckBox;
 import docking.widgets.filter.FilterListener;
 import docking.widgets.label.GDLabel;
 import docking.widgets.label.GLabel;
 import docking.widgets.table.GTableCellRenderingData;
+import generic.theme.GColor;
 import ghidra.app.context.ListingActionContext;
 /**
  * Dialog for Equate Plugin.
@@ -64,6 +66,13 @@ import ghidra.util.table.*;
 import utility.function.Callback;
 
 public class SetEquateDialog extends DialogComponentProvider {
+
+	private Color FG_EQUATE_SELECED_COLOR =
+		new GColor("color.fg.dialog.equates.equate.selected");
+	private Color FG_BAD_EQUATE_COLOR = new GColor("color.fg.dialog.equates.equate.bad");
+	private Color FG_EQUATE_COLOR = new GColor("color.fg.dialog.equates.equate");
+	private Color FG_SUGGESTION_COLOR = new GColor("color.fg.dialog.equates.suggestion");
+
 	public static final int CANCELED = 0;
 	public static final int OK = 1;
 
@@ -88,6 +97,10 @@ public class SetEquateDialog extends DialogComponentProvider {
 	private Scalar scalar;
 	private EquateFilterListener filterListener = new EquateFilterListener();
 	private EquateEnterListener enterListener = new EquateEnterListener();
+
+	// these will be set in the okCallback()
+	private String equateName;
+	private Enum enumDt;
 
 	/**
 	 * Constructor
@@ -147,17 +160,19 @@ public class SetEquateDialog extends DialogComponentProvider {
 				int refCount = eqRowObject.getRefCount();
 				if (refCount > 0) {
 					if (eqRowObject.getEntryName().contains(EquateManager.ERROR_TAG)) {
-						c.setForeground(isSelected ? Color.WHITE : Color.RED);
+						c.setForeground(
+							isSelected ? FG_EQUATE_SELECED_COLOR : FG_BAD_EQUATE_COLOR);
 					}
 					else {
 						Equate e = eqRowObject.getEquate();
 						if (e != null && !e.isEnumBased()) {
-							c.setForeground(isSelected ? Color.WHITE : Color.BLUE.brighter());
+							c.setForeground(
+								isSelected ? FG_EQUATE_SELECED_COLOR : FG_EQUATE_COLOR);
 						}
 					}
 				}
 				else {
-					c.setForeground(isSelected ? Color.WHITE : Color.GRAY.darker());
+					c.setForeground(isSelected ? FG_EQUATE_SELECED_COLOR : FG_SUGGESTION_COLOR);
 				}
 				return c;
 			}
@@ -210,17 +225,19 @@ public class SetEquateDialog extends DialogComponentProvider {
 			.stream()
 			.filter(dt -> dt instanceof Enum)
 			.map(Enum.class::cast)
-			.filter(enoom -> enoom.getName(scalar.getValue()) != null)
-			.forEach(enoom -> {
-				String name = enoom.getName(scalar.getValue());
-				entries.add(new EquateRowObject(name, enoom));
-			});
+			.flatMap(this::enumToRowObjects)
+			.forEach(entries::add);
 		//@formatter:on
 
 		return entries;
 	}
 
-	/**
+	private Stream<EquateRowObject> enumToRowObjects(Enum enoom) {
+		String[] names = enoom.getNames(scalar.getValue());
+		return Arrays.stream(names).map(name -> new EquateRowObject(name, enoom));
+	}
+
+	/*
 	 * Builds the main panel of the dialog and returns it.
 	 */
 	protected JPanel buildMainPanel() {
@@ -274,10 +291,18 @@ public class SetEquateDialog extends DialogComponentProvider {
 		suggestedEquatesTable = new GhidraTable(model);
 		suggestedEquatesTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
-		JPanel tablePanel = new JPanel(new BorderLayout());
-		JScrollPane scrollPane = new JScrollPane(suggestedEquatesTable);
-		tablePanel.add(scrollPane);
+		// allows users to press enter in the table to accept the current selection
+		KeyStroke enter = KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0);
+		AbstractAction action = new AbstractAction() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				okCallback();
+			}
+		};
+		KeyBindingUtils.registerAction(suggestedEquatesTable, enter, action,
+			JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
 
+		// allows users to double-click a row to accept the item
 		suggestedEquatesTable.addMouseListener(new MouseAdapter() {
 			@Override
 			public void mouseReleased(MouseEvent e) {
@@ -289,6 +314,10 @@ public class SetEquateDialog extends DialogComponentProvider {
 				}
 			}
 		});
+
+		JPanel tablePanel = new JPanel(new BorderLayout());
+		JScrollPane scrollPane = new JScrollPane(suggestedEquatesTable);
+		tablePanel.add(scrollPane);
 		tablePanel.setBorder(BorderFactory.createEmptyBorder(2, 5, 5, 5));
 
 		filterPanel =
@@ -358,7 +387,7 @@ public class SetEquateDialog extends DialogComponentProvider {
 		result = CANCELED;
 		overwriteExistingEquates.setVisible(true);
 		setTitle("Set Equate");
-		tool.showDialog(this, (Component) null);
+		tool.showDialog(this);
 		return result;
 	}
 
@@ -374,14 +403,18 @@ public class SetEquateDialog extends DialogComponentProvider {
 		overwriteExistingEquates.setVisible(false);
 		overwriteExistingEquates.setEnabled(false);
 		setTitle("Rename Equate");
-		tool.showDialog(this, (Component) null);
+		tool.showDialog(this);
 		return result;
 	}
 
-	/**
+	/*
 	 * Get the Equate Name entered or chosen by the user.
 	 */
 	public String getEquateName() {
+		return equateName;
+	}
+
+	private String doGetEquateName() {
 		EquateRowObject equateEntry = getRowObject();
 		if (equateEntry != null) {
 			return equateEntry.getEntryName();
@@ -398,6 +431,10 @@ public class SetEquateDialog extends DialogComponentProvider {
 	 * @return the enum data type for the selected entry, or null if there is no enum.
 	 */
 	public Enum getEnumDataType() {
+		return enumDt;
+	}
+
+	private Enum doGetEnumDataType() {
 		EquateRowObject equateEntry = getRowObject();
 		return (equateEntry != null) ? equateEntry.getEnumDataType() : null;
 	}
@@ -441,7 +478,7 @@ public class SetEquateDialog extends DialogComponentProvider {
 	/**
 	 * Returns the type of selection the user has chosen.
 	 *
-	 * @return
+	 * @return the selection type
 	 */
 	public SelectionType getSelectionType() {
 		if (applyToAll.isSelected()) {
@@ -458,7 +495,7 @@ public class SetEquateDialog extends DialogComponentProvider {
 	/**
 	 * Returns true if the user has chosen to overwrite any existing equate rules.
 	 *
-	 * @return
+	 * @return true if the user has chosen to overwrite any existing equate rules.
 	 */
 	public boolean getOverwriteExisting() {
 		return overwriteExistingEquates.isSelected();
@@ -480,19 +517,31 @@ public class SetEquateDialog extends DialogComponentProvider {
 	}
 
 	/**
+	 * For using the dialog outside of the EquatePlugin, the "Apply to Current" radio button
+	 * can be selected and the other buttons disabled.
+	 */
+	public void disableHasSelection() {
+		applyToAll.setEnabled(false);
+		applyToSelection.setEnabled(false);
+		applyToSelection.setSelected(false);
+		overwriteExistingEquates.setEnabled(false);
+	}
+
+	/**
 	 * Sets the dialogs status display to the given message.
+	 * @param text the text
 	 */
 	void setStatus(String text) {
 		this.setStatusText(text);
 	}
 
-	/**
-	 * Called when user selects OK button
-	 */
 	@Override
 	protected void okCallback() {
-		if (isValid(this.getEquateName(), scalar)) {
+		String name = doGetEquateName();
+		if (isValid(name, scalar)) {
 			result = OK;
+			equateName = name;
+			enumDt = doGetEnumDataType();
 			close();
 		}
 		else {
@@ -508,8 +557,7 @@ public class SetEquateDialog extends DialogComponentProvider {
 
 		// look up the new equate string
 		Equate newEquate = equateTable.getEquate(equateStr);
-
-		if (newEquate != null && getEnumDataType() == null) {
+		if (newEquate != null && doGetEnumDataType() == null) {
 			// make sure any existing equate with that name has the same value.
 			if (newEquate.getValue() != testScalar.getValue()) {
 				setStatus("Equate " + equateStr + " exists with value 0x" +
@@ -524,15 +572,14 @@ public class SetEquateDialog extends DialogComponentProvider {
 		return (Enum) dataTypeManager.findDataTypeForID(id);
 	}
 
-	/**
-	 * Called when user selects Cancel Button.
-	 */
 	@Override
 	protected void cancelCallback() {
 		close();
 	}
 
+	@Override
 	public void dispose() {
+		super.dispose();
 		suggestedEquatesTable.dispose();
 		filterPanel.dispose();
 	}
@@ -556,7 +603,7 @@ public class SetEquateDialog extends DialogComponentProvider {
 			}
 
 			this.enoom = enoom;
-			this.entryName = enoom.getName(value);
+			this.entryName = name;
 			this.dataTypeUUID = enoom.getUniversalID();
 			this.path = getFullPath(enoom);
 			String formattedEquateName = EquateManager.formatNameForEquate(dataTypeUUID, value);
@@ -650,6 +697,9 @@ public class SetEquateDialog extends DialogComponentProvider {
 				return false;
 			}
 			if (enoom == null || !enoom.isEquivalent(other.getEnumDataType())) {
+				return false;
+			}
+			if (!Objects.equals(entryName, other.entryName)) {
 				return false;
 			}
 			return true;

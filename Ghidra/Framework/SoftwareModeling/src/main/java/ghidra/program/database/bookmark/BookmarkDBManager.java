@@ -19,7 +19,7 @@ import java.awt.Color;
 import java.io.IOException;
 import java.util.*;
 
-import javax.swing.ImageIcon;
+import javax.swing.Icon;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -50,7 +50,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 
 	private boolean upgrade = false;
 
-	private Map<String, BookmarkType> typesByName = new TreeMap<String, BookmarkType>();
+	private Map<String, BookmarkType> typesByName = new TreeMap<>();
 	private ObjectArray typesArray = new ObjectArray();
 	private Lock lock;
 
@@ -73,7 +73,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 		bookmarkTypeAdapter = BookmarkTypeDBAdapter.getAdapter(handle, openMode);
 		int[] types = bookmarkTypeAdapter.getTypeIds();
 		bookmarkAdapter = BookmarkDBAdapter.getAdapter(handle, openMode, types, addrMap, monitor);
-		cache = new DBObjectCache<BookmarkDB>(100);
+		cache = new DBObjectCache<>(100);
 	}
 
 	@Override
@@ -96,8 +96,8 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 					TaskMonitor.DUMMY);
 			}
 
-			Record[] typeRecords = bookmarkTypeAdapter.getRecords();
-			for (Record rec : typeRecords) {
+			DBRecord[] typeRecords = bookmarkTypeAdapter.getRecords();
+			for (DBRecord rec : typeRecords) {
 				int typeId = (int) rec.getKey();
 				BookmarkTypeDB type =
 					new BookmarkTypeDB(typeId, rec.getString(BookmarkTypeDBAdapter.TYPE_NAME_COL));
@@ -157,7 +157,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 	void bookmarkChanged(BookmarkDB bm) {
 		lock.acquire();
 		try {
-			Record rec = bm.getRecord();
+			DBRecord rec = bm.getRecord();
 			if (rec != null) {
 				bookmarkAdapter.updateRecord(rec);
 				Address addr = bm.getAddress();
@@ -179,11 +179,11 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 	private void upgradeOldBookmarks(ProgramDB programDB) {
 
 		OldBookmarkManager oldMgr = new OldBookmarkManager(programDB);
-		Record[] oldTypes = oldMgr.getTypeRecords();
+		DBRecord[] oldTypes = oldMgr.getTypeRecords();
 		if (oldTypes.length == 0) {
 			return;
 		}
-		for (Record oldType : oldTypes) {
+		for (DBRecord oldType : oldTypes) {
 			String type = oldType.getString(BookmarkTypeDBAdapter.TYPE_NAME_COL);
 			AddressIterator iter = oldMgr.getBookmarkAddresses(type);
 			while (iter.hasNext()) {
@@ -235,7 +235,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 	}
 
 	@Override
-	public BookmarkType defineType(String type, ImageIcon icon, Color color, int priority) {
+	public BookmarkType defineType(String type, Icon icon, Color color, int priority) {
 		lock.acquire();
 		try {
 			String validatedType = StringUtils.trim(type);
@@ -296,9 +296,8 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 				bm.setComment(comment);
 			}
 			else {
-				Record rec =
-					bookmarkAdapter.createBookmark(typeId, category, addrMap.getKey(addr, true),
-						comment);
+				DBRecord rec = bookmarkAdapter.createBookmark(typeId, category,
+					addrMap.getKey(addr, true), comment);
 				bm = new BookmarkDB(this, cache, rec);
 
 				// fire event
@@ -316,7 +315,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 		return null;
 	}
 
-	private BookmarkDB getBookmark(Record bookmarkRecord) {
+	private BookmarkDB getBookmark(DBRecord bookmarkRecord) {
 		BookmarkDB bm = cache.get(bookmarkRecord);
 		if (bm == null) {
 			bm = new BookmarkDB(this, cache, bookmarkRecord);
@@ -334,7 +333,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 				RecordIterator iter =
 					bookmarkAdapter.getRecordsByTypeAtAddress(typeId, addrMap.getKey(addr, false));
 				while (iter.hasNext()) {
-					Record rec = iter.next();
+					DBRecord rec = iter.next();
 					String cat = rec.getString(BookmarkDBAdapter.CATEGORY_COL);
 					if (category.equals(cat)) {
 						return getBookmark(rec);
@@ -389,16 +388,6 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 		lock.acquire();
 		try {
 
-			boolean isSpecificType = type != null && type != BookmarkType.ALL_TYPES;
-			if (!isSpecificType) {
-				// no type specified; remove all
-				Iterator<String> iter = typesByName.keySet().iterator();
-				while (iter.hasNext()) {
-					removeBookmarks(iter.next());
-				}
-				return;
-			}
-
 			try {
 				BookmarkTypeDB bmt = (BookmarkTypeDB) typesByName.get(type);
 				if (bmt.hasBookmarks()) {
@@ -431,10 +420,10 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 			RecordIterator iter =
 				bookmarkAdapter.getRecordsByTypeAndCategory(bmt.getTypeId(), category);
 			while (iter.hasNext()) {
-				Record rec = iter.next();
+				DBRecord rec = iter.next();
 				BookmarkDB bm = getBookmark(rec);
 				removeBookmark(bm);
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 			}
 		}
 		catch (IOException e) {
@@ -459,8 +448,8 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 	 * @param id bookmark ID
 	 * @return bookmark record
 	 */
-	Record getRecord(long id) {
-		Record rec = null;
+	DBRecord getRecord(long id) {
+		DBRecord rec = null;
 		try {
 			rec = bookmarkAdapter.getRecord(id);
 		}
@@ -475,7 +464,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 		lock.acquire();
 		try {
 			int n = typesArray.getLastNonEmptyIndex();
-			List<Bookmark> list = new ArrayList<Bookmark>();
+			List<Bookmark> list = new ArrayList<>();
 			for (int i = 0; i <= n; i++) {
 				BookmarkTypeDB bmt = (BookmarkTypeDB) typesArray.get(i);
 				if (bmt != null && bmt.hasBookmarks()) {
@@ -499,7 +488,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 			RecordIterator iter =
 				bookmarkAdapter.getRecordsByTypeAtAddress(typeId, addrMap.getKey(addr, false));
 			while (iter.hasNext()) {
-				Record rec = iter.next();
+				DBRecord rec = iter.next();
 				list.add(getBookmark(rec));
 			}
 		}
@@ -513,7 +502,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 		lock.acquire();
 		try {
 			Bookmark[] bookmarks = null;
-			List<Bookmark> list = new ArrayList<Bookmark>();
+			List<Bookmark> list = new ArrayList<>();
 			BookmarkType bmt = getBookmarkType(type);
 			if (bmt != null && bmt.hasBookmarks()) {
 				getBookmarks(address, bmt.getTypeId(), list);
@@ -606,9 +595,8 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 		RecordIterator it;
 		try {
 			if (bmt != null && bmt.hasBookmarks()) {
-				it =
-					bookmarkAdapter.getRecordsByTypeStartingAtAddress(bmt.getTypeId(),
-						addrMap.getKey(startAddress, false), forward);
+				it = bookmarkAdapter.getRecordsByTypeStartingAtAddress(bmt.getTypeId(),
+					addrMap.getKey(startAddress, false), forward);
 			}
 			else {
 				it = new EmptyRecordIterator();
@@ -628,7 +616,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 		try {
 			BookmarkDB bm = cache.get(id);
 			if (bm == null) {
-				Record record = bookmarkAdapter.getRecord(id);
+				DBRecord record = bookmarkAdapter.getRecord(id);
 				if (record == null) {
 					return null;
 				}
@@ -683,18 +671,18 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 	@Override
 	public Iterator<Bookmark> getBookmarksIterator(Address startAddress, boolean forward) {
 
-		List<PeekableIterator<Bookmark>> list = new ArrayList<PeekableIterator<Bookmark>>();
+		List<PeekableIterator<Bookmark>> list = new ArrayList<>();
 		int n = typesArray.getLastNonEmptyIndex();
 		for (int i = 0; i <= n; i++) {
 			BookmarkTypeDB bmt = (BookmarkTypeDB) typesArray.get(i);
 			if (bmt != null && bmt.hasBookmarks()) {
 				Iterator<Bookmark> bookmarksIterator =
 					getBookmarksIterator(startAddress, bmt, forward);
-				list.add(new WrappingPeekableIterator<Bookmark>(bookmarksIterator));
+				list.add(new WrappingPeekableIterator<>(bookmarksIterator));
 			}
 		}
 
-		return new MultiIterator<Bookmark>(list, forward);
+		return new MultiIterator<>(list, forward);
 	}
 
 	@Override
@@ -761,15 +749,14 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 		try {
 			Table table = bookmarkAdapter.getTable(typeId);
 			if (table != null) {
-				DBLongIterator it =
-					new AddressIndexPrimaryKeyIterator(table, BookmarkDBAdapter.ADDRESS_COL,
-						addrMap, set, true);
+				DBFieldIterator it = new AddressIndexPrimaryKeyIterator(table,
+					BookmarkDBAdapter.ADDRESS_COL, addrMap, set, true);
 				while (it.hasNext()) {
-					BookmarkDB bm = (BookmarkDB) getBookmark(it.next());
+					BookmarkDB bm = (BookmarkDB) getBookmark(it.next().getLongValue());
 					if (category == null || category.equals(bm.getCategory())) {
 						doRemoveBookmark(bm);
 					}
-					monitor.checkCanceled();
+					monitor.checkCancelled();
 				}
 				if (bookmarkAdapter.getBookmarkCount(typeId) == 0) {
 					removeBookmarks(bmt.getTypeString());
@@ -850,7 +837,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 			lock.acquire();
 			try {
 				while (nextBookmark == null && (forward ? it.hasNext() : it.hasPrevious())) {
-					Record record = forward ? it.next() : it.previous();
+					DBRecord record = forward ? it.next() : it.previous();
 					nextBookmark = getBookmark(record);
 				}
 			}
@@ -883,7 +870,7 @@ public class BookmarkDBManager implements BookmarkManager, ErrorHandler, Manager
 		Iterator<Bookmark> bookmarkIt;
 
 		TotalIterator() {
-			List<BookmarkTypeDB> list = new ArrayList<BookmarkTypeDB>();
+			List<BookmarkTypeDB> list = new ArrayList<>();
 			int n = typesArray.getLastNonEmptyIndex();
 			for (int i = 0; i <= n; i++) {
 				BookmarkTypeDB bmt = (BookmarkTypeDB) typesArray.get(i);

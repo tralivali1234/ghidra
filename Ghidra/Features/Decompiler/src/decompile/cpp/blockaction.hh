@@ -13,13 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef __BLOCK_ACTION__
-#define __BLOCK_ACTION__
+#ifndef __BLOCKACTION_HH__
+#define __BLOCKACTION_HH__
 
 /// \file blockaction.hh
 /// \brief Actions and classes associated with transforming and structuring the control-flow graph
 
 #include "action.hh"
+
+namespace ghidra {
 
 /// \brief Class for holding an edge while the underlying graph is being manipulated
 ///
@@ -262,6 +264,19 @@ public:
   void clear(void);				///< Clear for a new test
 };
 
+/// \brief Give each control-flow structure an opportunity to make a final transform
+///
+/// This is currently used to set up \e for loops via BlockWhileDo
+class ActionStructureTransform : public Action {
+public:
+  ActionStructureTransform(const string &g) : Action(0,"structuretransform",g) {}	///< Constructor
+  virtual Action *clone(const ActionGroupList &grouplist) const {
+    if (!grouplist.contains(getGroup())) return (Action *)0;
+    return new ActionStructureTransform(getGroup());
+  }
+  virtual int4 apply(Funcdata &data);
+};
+
 /// \brief Flip conditional control-flow so that \e preferred comparison operators are used
 ///
 /// This is used as an alternative to the standard algorithm that structures control-flow, when
@@ -342,4 +357,5 @@ public:
   virtual int4 apply(Funcdata &data);
 };
 
+} // End namespace ghidra
 #endif

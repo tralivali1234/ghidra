@@ -15,12 +15,17 @@
  */
 package ghidra.graph.visualization;
 
+import static ghidra.service.graph.LayoutAlgorithmNames.*;
+
+import java.util.Comparator;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import org.jungrapht.visualization.layout.algorithms.*;
+import org.jungrapht.visualization.layout.algorithms.repulsion.BarnesHutFRRepulsion;
 import org.jungrapht.visualization.layout.algorithms.sugiyama.Layering;
 
-import org.jungrapht.visualization.layout.algorithms.repulsion.BarnesHutFRRepulsion;
+import com.google.common.base.Objects;
 
 import ghidra.service.graph.AttributedEdge;
 import ghidra.service.graph.AttributedVertex;
@@ -35,65 +40,96 @@ import ghidra.service.graph.AttributedVertex;
 class LayoutFunction
 		implements Function<String, LayoutAlgorithm.Builder<AttributedVertex, ?, ?>> {
 
-	static final String KAMADA_KAWAI = "Force Balanced";
-	static final String FRUCTERMAN_REINGOLD = "Force Directed";
-	static final String CIRCLE_MINCROSS = "Circle";
-	static final String TIDIER_TREE = "Compact Hierarchical";
-	static final String MIN_CROSS_TOP_DOWN = "Hierarchical MinCross Top Down";
-	static final String MIN_CROSS_LONGEST_PATH = "Hierarchical MinCross Longest Path";
-	static final String MIN_CROSS_NETWORK_SIMPLEX = "Hierarchical MinCross Network Simplex";
-	static final String MIN_CROSS_COFFMAN_GRAHAM = "Hierarchical MinCross Coffman Graham";
-	static final String MULTI_ROW_EDGE_AWARE_TREE = "Hierarchical MultiRow";
-	static final String EDGE_AWARE_TREE = "Hierarchical";
-	static final String EDGE_AWARE_RADIAL = "Radial";
+	Predicate<AttributedEdge> favoredEdgePredicate;
+	Comparator<AttributedEdge> edgeTypeComparator;
 
-	public String[] getNames() {
-		return new String[] { EDGE_AWARE_TREE, MULTI_ROW_EDGE_AWARE_TREE, TIDIER_TREE,
-				MIN_CROSS_TOP_DOWN, MIN_CROSS_LONGEST_PATH, MIN_CROSS_NETWORK_SIMPLEX,
-				MIN_CROSS_COFFMAN_GRAHAM, CIRCLE_MINCROSS, KAMADA_KAWAI, FRUCTERMAN_REINGOLD,
-				EDGE_AWARE_RADIAL };
+	LayoutFunction(GraphRenderer renderer) {
+		this.edgeTypeComparator = new EdgeComparator(renderer);
+		this.favoredEdgePredicate =
+			edge -> Objects.equal(edge.getEdgeType(), renderer.getFavoredEdgeType());
 	}
+
+
 
 	@Override
 	public LayoutAlgorithm.Builder<AttributedVertex, ?, ?> apply(String name) {
 		switch(name) {
-			case KAMADA_KAWAI:
-				return KKLayoutAlgorithm.<AttributedVertex> builder().preRelaxDuration(1000);
-			case FRUCTERMAN_REINGOLD:
+			case GEM:
+				return GEMLayoutAlgorithm.edgeAwareBuilder();
+			case FORCED_BALANCED:
+				return KKLayoutAlgorithm.<AttributedVertex> builder()
+						.preRelaxDuration(1000);
+			case FORCE_DIRECTED:
 				return FRLayoutAlgorithm.<AttributedVertex> builder()
-					.repulsionContractBuilder(BarnesHutFRRepulsion.barnesHutBuilder());
-			case CIRCLE_MINCROSS:
+					.repulsionContractBuilder(BarnesHutFRRepulsion.builder());
+			case CIRCLE:
 				return CircleLayoutAlgorithm.<AttributedVertex> builder()
-					.reduceEdgeCrossing(true);
-			case TIDIER_TREE:
-				return TidierTreeLayoutAlgorithm.<AttributedVertex, AttributedEdge> edgeAwareBuilder();
+					.reduceEdgeCrossing(false);
+			case COMPACT_RADIAL:
+				return TidierRadialTreeLayoutAlgorithm
+						.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+						.edgeComparator(edgeTypeComparator);
 			case MIN_CROSS_TOP_DOWN:
-				return HierarchicalMinCrossLayoutAlgorithm
-					.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+				return EiglspergerLayoutAlgorithm
+						.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+						.edgeComparator(edgeTypeComparator)
 						.layering(Layering.TOP_DOWN);
 			case MIN_CROSS_LONGEST_PATH:
 				return EiglspergerLayoutAlgorithm
 						.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+						.edgeComparator(edgeTypeComparator)
 						.layering(Layering.LONGEST_PATH);
 			case MIN_CROSS_NETWORK_SIMPLEX:
 				return EiglspergerLayoutAlgorithm
 						.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+						.edgeComparator(edgeTypeComparator)
 						.layering(Layering.NETWORK_SIMPLEX);
 			case MIN_CROSS_COFFMAN_GRAHAM:
 				return EiglspergerLayoutAlgorithm
 						.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+						.edgeComparator(edgeTypeComparator)
 						.layering(Layering.COFFMAN_GRAHAM);
-			case MULTI_ROW_EDGE_AWARE_TREE:
-				return MultiRowEdgeAwareTreeLayoutAlgorithm
-					.<AttributedVertex, AttributedEdge> edgeAwareBuilder();
-			case EDGE_AWARE_RADIAL:
-				return RadialEdgeAwareTreeLayoutAlgorithm
-					.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+			case VERT_MIN_CROSS_TOP_DOWN:
+				return EiglspergerLayoutAlgorithm
+						.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+						.edgeComparator(edgeTypeComparator)
+						.favoredEdgePredicate(favoredEdgePredicate)
+						.layering(Layering.TOP_DOWN);
+			case VERT_MIN_CROSS_LONGEST_PATH:
+				return EiglspergerLayoutAlgorithm
+						.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+						.edgeComparator(edgeTypeComparator)
+						.favoredEdgePredicate(favoredEdgePredicate)
+						.layering(Layering.LONGEST_PATH);
+			case VERT_MIN_CROSS_NETWORK_SIMPLEX:
+				return EiglspergerLayoutAlgorithm
+						.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+						.edgeComparator(edgeTypeComparator)
+						.favoredEdgePredicate(favoredEdgePredicate)
+						.layering(Layering.NETWORK_SIMPLEX);
+			case VERT_MIN_CROSS_COFFMAN_GRAHAM:
+				return EiglspergerLayoutAlgorithm
+						.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+						.edgeComparator(edgeTypeComparator)
+						.favoredEdgePredicate(favoredEdgePredicate)
+						.layering(Layering.COFFMAN_GRAHAM);
+			case RADIAL:
+				return RadialTreeLayoutAlgorithm
+						.<AttributedVertex> builder()
 					.verticalVertexSpacing(300);
-			case EDGE_AWARE_TREE:
-			default:
+			case BALLOON:
+				return BalloonLayoutAlgorithm
+						.<AttributedVertex> builder()
+						.verticalVertexSpacing(300);
+			case HIERACHICAL:
 				return EdgeAwareTreeLayoutAlgorithm
-						.<AttributedVertex, AttributedEdge> edgeAwareBuilder();
+						.<AttributedVertex, AttributedEdge>edgeAwareBuilder();
+			case COMPACT_HIERARCHICAL:
+			default:
+				return TidierTreeLayoutAlgorithm
+						.<AttributedVertex, AttributedEdge> edgeAwareBuilder()
+						.edgeComparator(edgeTypeComparator);
+
 		}
 	}
 }

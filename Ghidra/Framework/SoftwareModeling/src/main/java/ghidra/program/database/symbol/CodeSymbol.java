@@ -15,7 +15,7 @@
  */
 package ghidra.program.database.symbol;
 
-import db.Record;
+import db.DBRecord;
 import ghidra.program.database.DBObjectCache;
 import ghidra.program.database.external.ExternalManagerDB;
 import ghidra.program.model.address.Address;
@@ -30,10 +30,7 @@ import ghidra.program.util.ProgramLocation;
  *
  * Symbol data usage:
  *   EXTERNAL:
- *   	long data1 - external data type
- *   	String data3 - external memory address
- *   NON-EXTERNAL:
- *      int  data2 - primary flag
+ *   	String stringData - external memory address/label
  */
 
 public class CodeSymbol extends SymbolDB {
@@ -46,7 +43,7 @@ public class CodeSymbol extends SymbolDB {
 	 * @param record the record for this symbol
 	 */
 	public CodeSymbol(SymbolManager mgr, DBObjectCache<SymbolDB> cache, Address addr,
-			Record record) {
+			DBRecord record) {
 		super(mgr, cache, addr, record);
 	}
 
@@ -70,7 +67,7 @@ public class CodeSymbol extends SymbolDB {
 	}
 
 	@Override
-	protected boolean refresh(Record rec) {
+	protected boolean refresh(DBRecord rec) {
 		if (!isDynamic()) {
 			return super.refresh(rec);
 		}
@@ -88,18 +85,22 @@ public class CodeSymbol extends SymbolDB {
 
 	@Override
 	public boolean delete() {
-		if (isExternal()) {
-			return delete(false);
-		}
-		return super.delete();
+		boolean keepReferences = !isExternal();
+		return delete(keepReferences);
 	}
 
+	/**
+	 * Delete code/label symbol
+	 * @param keepReferences if false all references to this symbols address will be removed,
+	 * otherwise associated references will simply be disassociated following symbol removal
+	 * (see {@link SymbolManager#doRemoveSymbol(SymbolDB)}.
+	 * @return true if symbol successfully removed
+	 */
 	public boolean delete(boolean keepReferences) {
 		lock.acquire();
 		try {
 			if (!keepReferences) {
-				// remove external references
-				removeAllReferencesTo();
+				symbolMgr.getReferenceManager().removeAllReferencesTo(getAddress());
 			}
 			return super.delete();
 		}
@@ -162,7 +163,7 @@ public class CodeSymbol extends SymbolDB {
 		if (getSource() == SourceType.DEFAULT || isExternal()) {
 			return true;
 		}
-		return getSymbolData2() == 1;
+		return doCheckIsPrimary();
 	}
 
 	/**
@@ -201,7 +202,7 @@ public class CodeSymbol extends SymbolDB {
 	}
 
 	void setPrimary(boolean primary) {
-		setSymbolData2(primary ? 1 : 0);
+		doSetPrimary(primary);
 	}
 
 	/**
@@ -217,29 +218,8 @@ public class CodeSymbol extends SymbolDB {
 	 */
 	@Override
 	public boolean isValidParent(Namespace parent) {
-		return SymbolType.LABEL.isValidParent(symbolMgr.getProgram(), parent, address,
-			isExternal());
-
-//		if (isExternal() != parent.isExternal()) {
-//			return false;
-//		}
-//		Symbol newParentSym = parent.getSymbol();
-//		if (symbolMgr.getProgram() != newParentSym.getProgram()) {
-//			return false;
-//		}
-//		SymbolDB functionSymbol = symbolMgr.getFunctionSymbol(parent);
-//		if (functionSymbol != null) {
-//			if (isExternal()) {
-//				return false;
-//			}
-//			CodeUnit cu = (CodeUnit) getObject();
-//			if (cu != null) {
-//				Function function = (Function) functionSymbol.getObject();
-//				return function.getBody().contains(cu.getMinAddress());
-//			}
-//			return false;
-//		}
-//		return true;
+		return super.isValidParent(parent) &&
+			SymbolType.LABEL.isValidParent(symbolMgr.getProgram(), parent, address, isExternal());
 	}
 
 	@Override

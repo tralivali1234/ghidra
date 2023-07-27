@@ -25,13 +25,13 @@
 
 import java.util.*;
 
+import docking.options.OptionsService;
 import generic.jar.ResourceFile;
 import ghidra.app.decompiler.*;
 import ghidra.app.decompiler.component.DecompilerUtils;
 import ghidra.app.script.*;
 import ghidra.app.tablechooser.*;
 import ghidra.framework.options.ToolOptions;
-import ghidra.framework.plugintool.util.OptionsService;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.Register;
@@ -40,8 +40,7 @@ import ghidra.program.model.pcode.*;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceIterator;
 import ghidra.program.util.*;
-import ghidra.util.SystemUtilities;
-import ghidra.util.UndefinedFunction;
+import ghidra.util.*;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.InvalidInputException;
 
@@ -157,10 +156,9 @@ public class ShowConstantUse extends GhidraScript {
 	}
 
 	/**
-	 * Builds the configurable columns for the TableDialog. More columns could
-	 * be added.
+	 * Builds the configurable columns for the TableDialog. More columns could be added.
 	 * 
-	 * @param tableChooserDialog
+	 * @param tableChooserDialog the dialog 
 	 */
 	private void configureTableColumns(TableChooserDialog tableChooserDialog) {
 		// First column added is the Constant value that is found.
@@ -254,8 +252,10 @@ public class ShowConstantUse extends GhidraScript {
 			@Override
 			public String getColumnValue(AddressableRowObject rowObject) {
 				ConstUseLocation entry = (ConstUseLocation) rowObject;
-				Function func = entry.getProgram().getFunctionManager().getFunctionContaining(
-					entry.getAddress());
+				Function func = entry.getProgram()
+						.getFunctionManager()
+						.getFunctionContaining(
+							entry.getAddress());
 				if (func == null) {
 					return "";
 				}
@@ -299,7 +299,7 @@ public class ShowConstantUse extends GhidraScript {
 	 * script by creating an artificial ScriptState. This is a useful technique
 	 * for other scripts as well.
 	 * 
-	 * @return
+	 * @return the executor
 	 */
 	@SuppressWarnings("unused")
 	private TableChooserExecutor createTableExecutor() {
@@ -314,23 +314,14 @@ public class ShowConstantUse extends GhidraScript {
 			@Override
 			public boolean execute(AddressableRowObject rowObject) {
 				ConstUseLocation constLoc = (ConstUseLocation) rowObject;
-				System.out.println("Follow Structure : " + rowObject.getAddress());
+				println("Follow Structure : " + rowObject.getAddress());
 
 				Program cp = constLoc.getProgram();
 				Address entry = constLoc.getAddress();
 
-				// If we will change something in program, have to open a
-				// transaction
-				int trans = cp.startTransaction("Run Script" + entry);
-				try {
-					System.out.println("Create Structure at " + entry);
+				println("Create Structure at " + entry);
 
-					runScript("CreateStructure.java", cp, entry);
-				}
-				finally {
-					cp.endTransaction(trans, true);
-				}
-
+				runScript("CreateStructure.java", cp, entry);
 				return false; // don't remove row from display table
 			}
 
@@ -347,7 +338,7 @@ public class ShowConstantUse extends GhidraScript {
 					}
 				}
 				catch (Exception exc) {
-					exc.printStackTrace();
+					Msg.error(this, "Exception running script", exc);
 				}
 				throw new IllegalArgumentException("Script does not exist: " + name);
 			}
@@ -393,7 +384,7 @@ public class ShowConstantUse extends GhidraScript {
 	 * decompiler. In the decompiler this could be a local/parameter at any
 	 * point in the decompiler. In the listing, it must be a parameter variable.
 	 * 
-	 * @return
+	 * @return the varnode
 	 */
 	private Varnode getVarnodeLocation() {
 		Varnode var = null;
@@ -559,7 +550,7 @@ public class ShowConstantUse extends GhidraScript {
 	 *            - accumulate entries. Don't like passing it, but this way the
 	 *            user gets immediate feedback as locations are found
 	 * @return a map of Addresses->constants (constants could be NULL)
-	 * @throws CancelledException 
+	 * @throws CancelledException if cancelled
 	 */
 	private HashMap<Address, Long> backtrackToConstant(Varnode var,
 			TableChooserDialog tableChooserDialog) throws CancelledException {
@@ -587,15 +578,12 @@ public class ShowConstantUse extends GhidraScript {
 	 * Backtrack to a constant given a start position of a parameter of a given
 	 * function Useful if you want to start from a function paramter.
 	 * 
-	 * @param f
-	 *            - function to start in
-	 * @param paramIndex
-	 *            - parameter index to backtrack from
-	 * @param tableChooserDialog
-	 *            - accumulate entries. Don't like passing it, but this way the
-	 *            user gets immediate feedback as locations are found
-	 * @return a map of Addresses->constants (constants could be NULL)
-	 * @throws CancelledException 
+	 * @param f function to start in
+	 * @param paramIndex parameter index to backtrack from
+	 * @param tableChooserDialog accumulate entries. Don't like passing it, but this way the
+	 *         user gets immediate feedback as locations are found
+	 * @return a map of Addresses to constants (constants could be NULL)
+	 * @throws CancelledException if cancelled
 	 */
 	private HashMap<Address, Long> backtrackParamToConstant(Function f, int paramIndex,
 			TableChooserDialog tableChooserDialog) throws CancelledException {
@@ -651,7 +639,7 @@ public class ShowConstantUse extends GhidraScript {
 			ReferenceIterator referencesTo =
 				currentProgram.getReferenceManager().getReferencesTo(addr);
 			for (Reference reference : referencesTo) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 
 				// get function containing.
 				Address refAddr = reference.getFromAddress();
@@ -677,8 +665,7 @@ public class ShowConstantUse extends GhidraScript {
 					// decompile function
 					// look for call to this function
 					// display call
-					@SuppressWarnings("unchecked")
-					ArrayList<PcodeOp> localDefUseList = (ArrayList<PcodeOp>) defUseList.clone();
+					ArrayList<PcodeOp> localDefUseList = new ArrayList<PcodeOp>(defUseList);
 
 					this.monitor.setMessage("Analyzing : " + refFunc.getName() + " for refs to " +
 						addr + ":" + paramIndex);
@@ -699,14 +686,7 @@ public class ShowConstantUse extends GhidraScript {
 		this.addConstantProblem(tableDialog, address, problem);
 	}
 
-	/**
-	 * Analyze a functions references
-	 * 
-	 * @param constUse
-	 * @param funcVarUse
-	 * @param funcList
-	 */
-	public void analyzeFunction(HashMap<Address, Long> constUse, DecompInterface decompInterface,
+	private void analyzeFunction(HashMap<Address, Long> constUse, DecompInterface decompInterface,
 			Program prog, Function f, Address refAddr, FunctionParamUse funcVarUse, int paramIndex,
 			ArrayList<PcodeOp> defUseList, ArrayList<FunctionParamUse> funcList) {
 		if (f == null) {
@@ -722,12 +702,9 @@ public class ShowConstantUse extends GhidraScript {
 		Iterator<PcodeOpAST> ops = hfunction.getPcodeOps(refAddr.getPhysicalAddress());
 		while (ops.hasNext() && !monitor.isCancelled()) {
 			PcodeOpAST pcodeOpAST = ops.next();
-			// System.out.println(pcodeOpAST);
 			if (pcodeOpAST.getOpcode() == PcodeOp.CALL) {
 				// get the second parameter
-				Varnode parm = pcodeOpAST.getInput(paramIndex + 1); // 1st param
-																	// is the
-																	// call dest
+				Varnode parm = pcodeOpAST.getInput(paramIndex + 1); // 1st param is the call dest
 				if (parm == null) {
 					constUse.put(instr.getAddress(), null);
 					String problem = "  *** Warning, it appears that function '" +
@@ -889,12 +866,11 @@ public class ShowConstantUse extends GhidraScript {
 					doneSet);
 				return;
 			case PcodeOp.MULTIEQUAL:
-				followToParam(constUse, defUseList, highFunction, def.getInput(0), funcList,
-					doneSet);
-				@SuppressWarnings("unchecked")
-				ArrayList<PcodeOp> splitUseList = (ArrayList<PcodeOp>) defUseList.clone();
-				followToParam(constUse, splitUseList, highFunction, def.getInput(1), funcList,
-					doneSet);
+				for (int i = 0; i < def.getNumInputs(); i++) {
+					ArrayList<PcodeOp> splitUseList = new ArrayList<>(defUseList);
+					followToParam(constUse, splitUseList, highFunction, def.getInput(i), funcList,
+						doneSet);
+				}
 				return;
 			case PcodeOp.CAST:
 				followToParam(constUse, defUseList, highFunction, def.getInput(0), funcList,

@@ -19,18 +19,18 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.util.List;
 
-import javax.swing.ImageIcon;
+import javax.swing.Icon;
 import javax.swing.JPanel;
 
 import docking.*;
 import docking.action.DockingAction;
 import docking.action.MenuData;
 import docking.widgets.table.threaded.GThreadedTablePanel;
+import generic.theme.GIcon;
 import ghidra.bitpatterns.info.ContextRegisterFilter;
 import ghidra.bitpatterns.info.PatternType;
 import ghidra.util.HelpLocation;
 import ghidra.util.bytesearch.DittedBitSequence;
-import resources.ResourceManager;
 
 /**
  * This provider is used to display tables containing patterns found by
@@ -41,8 +41,9 @@ public class ClosedPatternTableDialog extends DialogComponentProvider {
 	private DockingAction sendToClipboardAction;
 	private static final String TITLE = "Closed Patterns";
 	private ClosedPatternTableModel closedPatternTableModel;
-	private FunctionBitPatternsExplorerPlugin plugin;
+	private GThreadedTablePanel<ClosedPatternRowObject> tablePanel;
 	private JPanel mainPanel;
+	private FunctionBitPatternsExplorerPlugin plugin;
 	private PatternType type;
 	private ContextRegisterFilter cRegFilter;
 
@@ -77,9 +78,8 @@ public class ClosedPatternTableDialog extends DialogComponentProvider {
 
 	private JPanel createMainPanel() {
 		JPanel panel = new JPanel(new BorderLayout());
-		GThreadedTablePanel<ClosedPatternRowObject> table =
-			new GThreadedTablePanel<>(closedPatternTableModel);
-		panel.add(table, BorderLayout.CENTER);
+		tablePanel = new GThreadedTablePanel<>(closedPatternTableModel);
+		panel.add(tablePanel, BorderLayout.CENTER);
 		return panel;
 	}
 
@@ -114,7 +114,7 @@ public class ClosedPatternTableDialog extends DialogComponentProvider {
 			}
 
 		};
-		ImageIcon icon = ResourceManager.loadImage("images/2rightarrow.png");
+		Icon icon = new GIcon("icon.bytepatterns.send.to.clipboard");
 		sendToClipboardAction.setPopupMenuData(
 			new MenuData(new String[] { "Send Selected Sequences to Clipboard" }, icon));
 		sendToClipboardAction.setDescription(
@@ -122,4 +122,9 @@ public class ClosedPatternTableDialog extends DialogComponentProvider {
 		this.addAction(sendToClipboardAction);
 	}
 
+	@Override
+	public void close() {
+		super.close();
+		tablePanel.dispose();
+	}
 }

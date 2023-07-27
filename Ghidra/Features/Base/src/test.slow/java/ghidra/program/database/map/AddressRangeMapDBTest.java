@@ -33,9 +33,10 @@ import ghidra.test.AbstractGhidraHeadedIntegrationTest;
 import ghidra.test.TestEnv;
 import ghidra.util.Lock;
 import ghidra.util.exception.CancelledException;
-import ghidra.util.task.TaskMonitorAdapter;
+import ghidra.util.task.TaskMonitor;
 
-public class AddressRangeMapDBTest extends AbstractGhidraHeadedIntegrationTest implements ErrorHandler {
+public class AddressRangeMapDBTest extends AbstractGhidraHeadedIntegrationTest
+		implements ErrorHandler {
 
 	private TestEnv env; // needed to discover languages
 	private ProgramDB program;
@@ -83,7 +84,7 @@ public class AddressRangeMapDBTest extends AbstractGhidraHeadedIntegrationTest i
 	public void testTransaction() {
 
 		AddressRangeMapDB map = new AddressRangeMapDB(program.getDBHandle(), addrMap,
-			new Lock("Test"), "TEST", this, LongField.class, true);
+			new Lock("Test"), "TEST", this, LongField.INSTANCE, true);
 
 		try {
 			map.paintRange(addr(0), addr(0x1000), ONE);
@@ -114,7 +115,7 @@ public class AddressRangeMapDBTest extends AbstractGhidraHeadedIntegrationTest i
 	public void testPaint() {
 
 		AddressRangeMapDB map = new AddressRangeMapDB(program.getDBHandle(), addrMap,
-			new Lock("Test"), "TEST", this, LongField.class, true);
+			new Lock("Test"), "TEST", this, LongField.INSTANCE, true);
 
 		int id = program.startTransaction("TEST");
 		try {
@@ -152,7 +153,7 @@ public class AddressRangeMapDBTest extends AbstractGhidraHeadedIntegrationTest i
 	public void testClear() {
 
 		AddressRangeMapDB map = new AddressRangeMapDB(program.getDBHandle(), addrMap,
-			new Lock("Test"), "TEST", this, LongField.class, true);
+			new Lock("Test"), "TEST", this, LongField.INSTANCE, true);
 
 		int id = program.startTransaction("TEST");
 		try {
@@ -186,7 +187,7 @@ public class AddressRangeMapDBTest extends AbstractGhidraHeadedIntegrationTest i
 	public void testAddressRangeIterator() {
 
 		AddressRangeMapDB map = new AddressRangeMapDB(program.getDBHandle(), addrMap,
-			new Lock("Test"), "TEST", this, LongField.class, true);
+			new Lock("Test"), "TEST", this, LongField.INSTANCE, true);
 
 		int id = program.startTransaction("TEST");
 		try {
@@ -248,7 +249,7 @@ public class AddressRangeMapDBTest extends AbstractGhidraHeadedIntegrationTest i
 	public void testMove() {
 
 		AddressRangeMapDB map = new AddressRangeMapDB(program.getDBHandle(), addrMap,
-			new Lock("Test"), "TEST", this, LongField.class, true);
+			new Lock("Test"), "TEST", this, LongField.INSTANCE, true);
 
 		int id = program.startTransaction("TEST");
 		try {
@@ -279,7 +280,7 @@ public class AddressRangeMapDBTest extends AbstractGhidraHeadedIntegrationTest i
 
 			try {
 				map.moveAddressRange(addr(0x0100000000L), addr(0x0100001000L), 0x1000,
-					TaskMonitorAdapter.DUMMY_MONITOR);
+					TaskMonitor.DUMMY);
 			}
 			catch (CancelledException e) {
 				Assert.fail();

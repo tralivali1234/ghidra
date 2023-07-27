@@ -17,10 +17,9 @@ package ghidra.test;
 
 import java.awt.Window;
 import java.beans.PropertyChangeListener;
-import java.util.Collections;
-import java.util.Set;
+import java.util.*;
 
-import javax.swing.ImageIcon;
+import javax.swing.*;
 import javax.swing.event.ChangeListener;
 
 import org.jdom.Element;
@@ -34,8 +33,7 @@ import ghidra.framework.model.*;
 import ghidra.framework.options.ToolOptions;
 import ghidra.framework.plugintool.PluginEvent;
 import ghidra.framework.plugintool.PluginTool;
-import ghidra.framework.plugintool.util.PluginClassManager;
-import ghidra.framework.plugintool.util.ServiceListener;
+import ghidra.framework.plugintool.util.*;
 import ghidra.program.model.listing.Program;
 
 public class DummyTool extends PluginTool {
@@ -67,16 +65,10 @@ public class DummyTool extends PluginTool {
 	}
 
 	@Override
-	public void exit() {
-		//do nothing
-	}
-
-	@Override
 	public void close() {
 		if (project != null) {
 			project.getToolServices().closeTool(this);
 		}
-
 	}
 
 	@Override
@@ -253,7 +245,7 @@ public class DummyTool extends PluginTool {
 	}
 
 	@Override
-	public void restoreWindowingDataFromXml(Element windowData) {
+	public void restoreWindowingDataFromXml(Element element) {
 		//do nothing
 	}
 
@@ -268,7 +260,7 @@ public class DummyTool extends PluginTool {
 	}
 
 	@Override
-	public boolean canClose(boolean isExiting) {
+	public boolean canClose() {
 		return true;
 	}
 
@@ -409,7 +401,7 @@ public class DummyTool extends PluginTool {
 
 	@Override
 	public void removeContextListener(DockingContextListener listener) {
-		//do nothing		
+		//do nothing
 	}
 
 	@Override
@@ -424,16 +416,36 @@ public class DummyTool extends PluginTool {
 
 	@Override
 	public void addServiceListener(ServiceListener listener) {
-		//do nothing		
+		//do nothing
 	}
 
 	@Override
 	public void removeServiceListener(ServiceListener listener) {
-		//do nothing		
+		//do nothing
 	}
 
 	@Override
-	public PluginClassManager getPluginClassManager() {
+	protected PluginsConfiguration createPluginsConfigurations() {
 		return null;
+	}
+
+	@Override
+	public void addStatusComponent(JComponent c, boolean addBorder, boolean rightSide) {
+		//do nothing
+	}
+
+	@Override
+	public void removeStatusComponent(JComponent c) {
+		//do nothing
+	}
+
+	@Override
+	public JFrame getToolFrame() {
+		return null;
+	}
+
+	@Override
+	public UndoRedoToolState getUndoRedoToolState(DomainObject domainObject) {
+		return new UndoRedoToolState(new ArrayList<>(), domainObject);
 	}
 }

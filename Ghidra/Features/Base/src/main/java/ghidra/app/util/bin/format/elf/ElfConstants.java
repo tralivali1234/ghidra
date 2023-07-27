@@ -20,6 +20,8 @@ package ghidra.app.util.bin.format.elf;
  */
 public interface ElfConstants {
 
+	public static final String GOT_SYMBOL_NAME = "_GLOBAL_OFFSET_TABLE_";
+
 	// ELF Identification Area Indexes
 
 	/**Length of the File ID*/
@@ -157,7 +159,7 @@ public interface ElfConstants {
 
 	/**No machine*/
 	public static final short EM_NONE = 0;
-	/** AT&T WE 32100 */
+	/** AT&amp;T WE 32100 */
 	public static final short EM_M32 = 1;
 	/**SUN SPARC */
 	public static final short EM_SPARC = 2;
@@ -512,18 +514,15 @@ public interface ElfConstants {
 	/** used by NetBSD/avr32 - AVR 32-bit */
 	public static final short EM_AVR32_unofficial = 0x18ad;
 
-	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	/** 
+	 * PN_XNUM: Used by e_phnum field to signal alternate storage of program header count
+	 * within section[0] sh_info field.
+	 */
+	public static final short PN_XNUM = (short) 0xffff;
 
 	/**
-	 * The size in bytes of the entry in the program
-	 * location table (PLT).
+	 * 32bit "-1", used in 32bit files to signal an invalid offset
 	 */
-	public static final int PLT_ENTRY_SIZE = 0x10;
-
-	/**
-	 * The size in bytes of the entry in the program
-	 * location table (PLT) in ARM files.
-	 */
-	//public static final int PLT_ENTRY_SIZE_ARM = 0x12;
+	public static final long ELF32_INVALID_OFFSET = 0xFFFFFFFFL;
 
 }

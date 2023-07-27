@@ -15,13 +15,13 @@
  */
 package ghidra.test;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.model.address.*;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
-
-import java.util.ArrayList;
-import java.util.List;
 
 public class ToyProgramBuilder extends ProgramBuilder {
 
@@ -106,7 +106,7 @@ public class ToyProgramBuilder extends ProgramBuilder {
 	/**
 	 * Get address in default ram space
 	 * @param offset address offset
-	 * @return address
+	 * @return the address
 	 */
 	public Address getAddress(long offset) {
 		return defaultSpace.getAddress(offset);
@@ -492,6 +492,27 @@ public class ToyProgramBuilder extends ProgramBuilder {
 		Address dest = addr(destAddr);
 		short relDest = getByteRelativeOffset(address, dest);
 		addInstructionWords(address, (short) (0xe000 | (relDest << 4))); // breq rel
+	}
+
+	/**
+	 * Add conditional skip (consumes 2-bytes)
+	 * @param offset instruction address offset
+	 * @throws MemoryAccessException
+	 */
+	public void addBytesSkipConditional(long offset)
+			throws MemoryAccessException {
+		addBytesSkipConditional(toHex(offset));
+	}
+
+	/**
+	 * Add conditional skip (consumes 2-bytes)
+	 * @param addr instruction address
+	 * @throws MemoryAccessException
+	 */
+	public void addBytesSkipConditional(String addr)
+			throws MemoryAccessException {
+		Address address = addr(addr);
+		addInstructionWords(address, (short) (0x8000)); // skeq
 	}
 
 	/**

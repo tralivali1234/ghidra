@@ -16,10 +16,12 @@
 /// \file float.hh
 /// \brief Support for decoding different floating-point formats
 
-#ifndef __CPUI_FLOATFORMAT__
-#define __CPUI_FLOATFORMAT__
+#ifndef __FLOAT_HH__
+#define __FLOAT_HH__
 
 #include "xml.hh"
+
+namespace ghidra {
 
 /// \brief Encoding information for a single floating-point format
 ///
@@ -50,6 +52,7 @@ private:
   bool jbitimplied;		///< Set to \b true if integer bit of 1 is assumed
   static double createFloat(bool sign,uintb signif,int4 exp);	 ///< Create a double given sign, fractional, and exponent
   static floatclass extractExpSig(double x,bool *sgn,uintb *signif,int4 *exp);
+  static bool roundToNearestEven(uintb &signif, int4 lowbitpos);
   uintb setFractionalCode(uintb x,uintb code) const;		///< Set the fractional part of an encoded value
   uintb setSign(uintb x,bool sign) const;			///< Set the sign bit of an encoded value
   uintb setExponentCode(uintb x,uintb code) const;		///< Set the exponent of an encoded value
@@ -95,4 +98,5 @@ public:
   void restoreXml(const Element *el);			///< Restore the format from XML
 };
 
+} // End namespace ghidra
 #endif

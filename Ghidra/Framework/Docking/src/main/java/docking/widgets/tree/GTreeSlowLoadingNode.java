@@ -15,6 +15,7 @@
  */
 package docking.widgets.tree;
 
+import java.util.Collections;
 import java.util.List;
 
 import docking.widgets.tree.internal.InProgressGTreeNode;
@@ -24,15 +25,17 @@ import ghidra.util.task.TaskMonitor;
 import util.CollectionUtils;
 
 /**
- * Base class for nodes that generate their children on demand, but because generating their children
- * is slow, that operation is moved to a background thread.  While the children are being generated,
- * an {@link InProgressGTreeNode} will appear in the tree until the {@link LoadChildrenTask} has completed.
+ * Base class for nodes that generate their children on demand, but because generating their
+ * children is slow, that operation is moved to a background thread. While the children are being
+ * generated, an {@link InProgressGTreeNode} will appear in the tree until the
+ * {@link LoadChildrenTask} has completed.
  */
 public abstract class GTreeSlowLoadingNode extends GTreeLazyNode {
 
 	/**
 	 * Subclass must implement this method to generate their children. This operation will always be
 	 * performed in a background thread (i.e. Not the swing thread)
+	 * 
 	 * @param monitor a TaskMonitor for reporting progress and cancel notification.
 	 * @return the list of children for this node.
 	 * @throws CancelledException if the monitor is cancelled
@@ -42,7 +45,12 @@ public abstract class GTreeSlowLoadingNode extends GTreeLazyNode {
 	@Override
 	protected final List<GTreeNode> generateChildren() {
 		final GTree tree = getTree();
-		if (Swing.isSwingThread() && tree != null) {
+		if (Swing.isSwingThread()) {
+			// This method is only supported on the swing thread for nodes that are currently
+			// in a tree. The LoadChildrenTask only works if there is a tree
+			if (tree == null) {
+				return Collections.emptyList();
+			}
 			LoadChildrenTask loadTask = new LoadChildrenTask(tree);
 			tree.runTask(loadTask);
 			return CollectionUtils.asList(new InProgressGTreeNode());
@@ -85,6 +93,11 @@ public abstract class GTreeSlowLoadingNode extends GTreeLazyNode {
 		@Override
 		public void run(TaskMonitor monitor) {
 			if (isLoaded()) {
+				// this means that another background thread loaded the children before we
+				// had a chance to run.  Since we last left the JTree thinking there is an 
+				// "in progress" node in place, we need to notify the JTree that this is no longer
+				// the case.
+				fireNodeStructureChanged();
 				return;
 			}
 
@@ -110,6 +123,5 @@ public abstract class GTreeSlowLoadingNode extends GTreeLazyNode {
 				monitor.setProgress(progressValue);
 			}
 		}
-
 	}
 }

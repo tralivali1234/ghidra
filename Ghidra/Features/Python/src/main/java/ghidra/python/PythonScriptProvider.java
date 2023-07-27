@@ -1,6 +1,5 @@
 /* ###
  * IP: GHIDRA
- * REVIEWED: YES
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +15,15 @@
  */
 package ghidra.python;
 
-import generic.jar.ResourceFile;
-import ghidra.app.script.GhidraScript;
-import ghidra.app.script.GhidraScriptProvider;
-
 import java.io.*;
+import java.util.regex.Pattern;
+
+import generic.jar.ResourceFile;
+import ghidra.app.script.*;
 
 public class PythonScriptProvider extends GhidraScriptProvider {
+
+	private static final Pattern BLOCK_COMMENT = Pattern.compile("'''");
 
 	@Override
 	public void createNewScript(ResourceFile newScript, String category) throws IOException {
@@ -34,9 +35,50 @@ public class PythonScriptProvider extends GhidraScriptProvider {
 		writer.close();
 	}
 
+	/**
+	 * {@inheritDoc}
+	 * 
+	 * <p>
+	 * In Python this is a triple single quote sequence, "'''".
+	 * 
+	 * @return the Pattern for Python block comment openings
+	 */
+	@Override
+	public Pattern getBlockCommentStart() {
+		return BLOCK_COMMENT;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * 
+	 * <p>
+	 * In Python this is a triple single quote sequence, "'''".
+	 * 
+	 * @return the Pattern for Python block comment openings
+	 */
+	@Override
+	public Pattern getBlockCommentEnd() {
+		return BLOCK_COMMENT;
+	}
+
 	@Override
 	public String getCommentCharacter() {
 		return "#";
+	}
+
+	@Override
+	protected String getCertifyHeaderStart() {
+		return "## ###";
+	}
+
+	@Override
+	protected String getCertificationBodyPrefix() {
+		return "#";
+	}
+
+	@Override
+	protected String getCertifyHeaderEnd() {
+		return "##";
 	}
 
 	@Override
@@ -51,11 +93,16 @@ public class PythonScriptProvider extends GhidraScriptProvider {
 
 	@Override
 	public GhidraScript getScriptInstance(ResourceFile sourceFile, PrintWriter writer)
-			throws ClassNotFoundException, InstantiationException, IllegalAccessException {
+			throws GhidraScriptLoadException {
 
-		Class<?> clazz = Class.forName(PythonScript.class.getName());
-		GhidraScript script = (GhidraScript) clazz.newInstance();
-		script.setSourceFile(sourceFile);
-		return script;
+		try {
+			Class<?> clazz = Class.forName(PythonScript.class.getName());
+			GhidraScript script = (GhidraScript) clazz.getConstructor().newInstance();
+			script.setSourceFile(sourceFile);
+			return script;
+		}
+		catch (Exception e) {
+			throw new GhidraScriptLoadException(e);
+		}
 	}
 }

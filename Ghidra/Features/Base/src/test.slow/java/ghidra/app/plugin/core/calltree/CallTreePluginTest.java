@@ -1,6 +1,5 @@
 /* ###
  * IP: GHIDRA
- * EXCLUDE: YES
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,9 +26,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.JTree;
 import javax.swing.tree.TreePath;
 
+import org.apache.commons.collections4.map.LazyMap;
 import org.junit.*;
 
 import docking.ActionContext;
+import docking.DefaultActionContext;
 import docking.action.*;
 import docking.widgets.tree.*;
 import generic.test.AbstractGenericTest;
@@ -42,6 +43,7 @@ import ghidra.app.plugin.core.codebrowser.CodeBrowserPlugin;
 import ghidra.app.plugin.core.gotoquery.GoToServicePlugin;
 import ghidra.app.services.GoToService;
 import ghidra.app.services.ProgramManager;
+import ghidra.app.util.NamespaceUtils;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
@@ -140,7 +142,10 @@ public class CallTreePluginTest extends AbstractGhidraHeadedIntegrationTest {
 		function(0x4000, 0x5000);
 		function(0x5000, 0x6000);
 		function(0x5000, 0x6100);
-		duplicateReference(0x5000, 0x6000);
+
+		// second reference inside of function 0x5000 to 0x6000
+		createReference(0x5020, 0x6000);
+
 		function(0x6000, 0x7000);
 		function(0x6100, 0x7100);
 		function(0x7000, 0x8000);
@@ -150,12 +155,8 @@ public class CallTreePluginTest extends AbstractGhidraHeadedIntegrationTest {
 		return builder.getProgram();
 	}
 
-	private void duplicateReference(int from, int to) {
-		// a bit of space so the function call is not at the entry point
-		int offset = from + 10;
-		while (!createReference(offset, to)) {
-			offset++;
-		}
+	private Function function(int addr) throws Exception {
+		return ensureFunction(addr);
 	}
 
 	private void function(int from, int to) throws Exception {
@@ -168,16 +169,39 @@ public class CallTreePluginTest extends AbstractGhidraHeadedIntegrationTest {
 		}
 	}
 
-	private void ensureFunction(long from) throws Exception {
+	private Function function(String namespace, String name, int addr) throws Exception {
+		Function f = ensureFunction(addr);
+		tx(program, () -> {
+
+			f.setName(name, SourceType.ANALYSIS);
+			Namespace ns = NamespaceUtils.createNamespaceHierarchy(namespace, null, program,
+				SourceType.ANALYSIS);
+			f.setParentNamespace(ns);
+		});
+
+		return f;
+	}
+
+	private void function(Function from, Function to) {
+
+		// a bit of space so the function call is not at the entry point
+		int offset = (int) from.getEntryPoint().getOffset() + 5;
+		int toOffset = (int) to.getEntryPoint().getOffset();
+		while (!createReference(offset, toOffset)) {
+			offset++;
+		}
+	}
+
+	private Function ensureFunction(long from) throws Exception {
 		ProgramDB p = builder.getProgram();
 		FunctionManager fm = p.getFunctionManager();
 		Function f = fm.getFunctionAt(addr(from));
 		if (f != null) {
-			return;
+			return f;
 		}
 
 		String a = Long.toHexString(from);
-		builder.createEmptyFunction("Function_" + a, "0x" + a, 50, DataType.DEFAULT);
+		return builder.createEmptyFunction("Function_" + a, "0x" + a, 50, DataType.DEFAULT);
 	}
 
 	private boolean createReference(long from, long to) {
@@ -474,7 +498,7 @@ public class CallTreePluginTest extends AbstractGhidraHeadedIntegrationTest {
 		outgoingTree.setSelectedNode(child1);
 		waitForTree(outgoingTree);
 
-		ActionContext actionContext = new ActionContext(provider, outgoingTree);
+		ActionContext actionContext = new DefaultActionContext(provider, outgoingTree);
 		DockingActionIf goToAction = getAction("Go To Destination");
 		performAction(goToAction, actionContext, true);
 
@@ -494,7 +518,7 @@ public class CallTreePluginTest extends AbstractGhidraHeadedIntegrationTest {
 		setProviderFunction("0x5000");
 
 		DockingActionIf selectSourceAction = getAction("Select Call Source");
-		ActionContext context = new ActionContext(provider, outgoingTree);
+		ActionContext context = new DefaultActionContext(provider, outgoingTree);
 
 		assertTrue("The selection action was enabled when no node was selected",
 			!selectSourceAction.isEnabledForContext(context));
@@ -571,7 +595,7 @@ public class CallTreePluginTest extends AbstractGhidraHeadedIntegrationTest {
 	}
 
 	@Test
-	public void testFilterOutgoingDuplicates() {
+	public void testFilterOutgoingDuplicates_DifferentSource_SameDestination() {
 		//
 		// Test that the filter action will remove duplicate entries from the child nodes of 
 		// the outgoing tree
@@ -580,25 +604,14 @@ public class CallTreePluginTest extends AbstractGhidraHeadedIntegrationTest {
 
 		setProviderFunction("0x5000");
 
-		final ToggleDockingAction filterDuplicatesAction =
+		ToggleDockingAction filterDuplicatesAction =
 			(ToggleDockingAction) getAction("Filter Duplicates");
-
-		if (!filterDuplicatesAction.isSelected()) {
-			performAction(filterDuplicatesAction, true);
-		}
-
+		setToggleActionSelected(filterDuplicatesAction, new DefaultActionContext(), true);
 		waitForTree(outgoingTree);
-		GTreeNode rootNode = getRootNode(outgoingTree);
-		List<GTreeNode> children = rootNode.getChildren();
-		assertTrue(
-			"Outgoing tree does not have callers as expected for function: " + getListingFunction(),
-			children.size() > 0);
 
-		// copy the names of the children into a map so that we can verify that there are 
-		// no duplicates
+		GTreeNode rootNode = getRootNode(outgoingTree);
 		boolean shouldHaveDuplicates = false;
-		Map<String, Integer> nameCountMap = createNameCountMap(rootNode);
-		System.out.println("nameCountMap: before: = " + nameCountMap);
+		Map<String, List<GTreeNode>> nameCountMap = createNameCountMap(rootNode);
 		assertDuplicateChildStatus(nameCountMap, shouldHaveDuplicates);
 
 		performAction(filterDuplicatesAction, true);// deselect
@@ -608,7 +621,107 @@ public class CallTreePluginTest extends AbstractGhidraHeadedIntegrationTest {
 		rootNode = getRootNode(outgoingTree);
 		nameCountMap = createNameCountMap(rootNode);
 		shouldHaveDuplicates = true;
-		System.out.println("nameCountMap: after: = " + nameCountMap);
+		assertDuplicateChildStatus(nameCountMap, shouldHaveDuplicates);
+	}
+
+	@Test
+	public void testFilterOutgoingDuplicates_SameSource_SameDestination() {
+		//
+		// Test that 2 references from the same source address to the same function will not get
+		// added to the tree, regardless of the duplicate filter state
+		// 
+
+		// add a second reference (this is already defined in setup)
+		builder.createMemoryCallReference("0x5020", "0x6000");
+
+		setProviderFunction("0x5000");
+
+		ToggleDockingAction filterDuplicatesAction =
+			(ToggleDockingAction) getAction("Filter Duplicates");
+
+		setToggleActionSelected(filterDuplicatesAction, new DefaultActionContext(), true);
+
+		waitForTree(outgoingTree);
+		GTreeNode rootNode = getRootNode(outgoingTree);
+		Map<String, List<GTreeNode>> nameCountMap = createNameCountMap(rootNode);
+
+		// 1, not 2 entries (the exact duplicate and the duplicate destination are ignored)		
+		assertEquals(1, nameCountMap.get("Function_6000").size());
+
+		performAction(filterDuplicatesAction, true);// deselect
+		waitForTree(outgoingTree);
+
+		rootNode = getRootNode(outgoingTree);
+		nameCountMap = createNameCountMap(rootNode);
+
+		// 2, not 3 entries (the exact duplicate is ignored)
+		assertEquals(2, nameCountMap.get("Function_6000").size());
+	}
+
+	@Test
+	public void testFilterOutgoingDuplicates_SameSource_DifferentDestination() {
+		//
+		// Test that 2 references from the same source address to the same function will not get
+		// added to the tree, regardless of the duplicate filter state
+		// 
+
+		// add a second reference from 0x5020 to a function already called (see setup)
+		builder.createMemoryCallReference("0x5020", "0x6000");
+
+		setProviderFunction("0x5000");
+
+		ToggleDockingAction filterDuplicatesAction =
+			(ToggleDockingAction) getAction("Filter Duplicates");
+		setToggleActionSelected(filterDuplicatesAction, new DefaultActionContext(), true);
+		waitForTree(outgoingTree);
+
+		GTreeNode rootNode = getRootNode(outgoingTree);
+		boolean shouldHaveDuplicates = false;
+		Map<String, List<GTreeNode>> nameCountMap = createNameCountMap(rootNode);
+		assertDuplicateChildStatus(nameCountMap, shouldHaveDuplicates);
+
+		performAction(filterDuplicatesAction, true);// deselect
+
+		waitForTree(outgoingTree);
+
+		rootNode = getRootNode(outgoingTree);
+		nameCountMap = createNameCountMap(rootNode);
+		shouldHaveDuplicates = true;
+		assertDuplicateChildStatus(nameCountMap, shouldHaveDuplicates);
+	}
+
+	@Test
+	public void testFilterIncomingDuplicates_SameFunctionNameInDifferentNamespaces()
+			throws Exception {
+
+		/*
+		Create a function call tree that looks like:
+		
+		
+			NS1::Foo
+					root
+			NS2::Foo
+					root
+					
+				 */
+
+		Function f1 = function("NS1", "Foo", 0x11000);
+		Function f2 = function("NS2", "Foo", 0x12000);
+		Function root = function(0x0000);
+		function(f1, root);
+		function(f2, root);
+
+		setProviderFunction("0x0000");
+
+		ToggleDockingAction filterDuplicatesAction =
+			(ToggleDockingAction) getAction("Filter Duplicates");
+		setToggleActionSelected(filterDuplicatesAction, new DefaultActionContext(), true);
+		waitForTree(incomingTree);
+
+		// copy the names of the children into a map so that we can verify no duplicates
+		GTreeNode rootNode = getRootNode(incomingTree);
+		boolean shouldHaveDuplicates = true;
+		Map<String, List<GTreeNode>> nameCountMap = createNameCountMap(rootNode);
 		assertDuplicateChildStatus(nameCountMap, shouldHaveDuplicates);
 	}
 
@@ -959,13 +1072,13 @@ public class CallTreePluginTest extends AbstractGhidraHeadedIntegrationTest {
 
 	private void fullyExpandIncomingNode(GTreeNode node) {
 		DockingActionIf expandAction = getLocalAction(provider, "Fully Expand Selected Nodes");
-		performAction(expandAction, new ActionContext(provider, incomingTree), false);
+		performAction(expandAction, new DefaultActionContext(provider, incomingTree), false);
 		waitForTree(node.getTree());
 	}
 
 	private void fullyExpandOutgoingNode(GTreeNode node) {
 		DockingActionIf expandAction = getLocalAction(provider, "Fully Expand Selected Nodes");
-		performAction(expandAction, new ActionContext(provider, outgoingTree), false);
+		performAction(expandAction, new DefaultActionContext(provider, outgoingTree), false);
 		waitForTree(node.getTree());
 	}
 
@@ -1071,35 +1184,32 @@ public class CallTreePluginTest extends AbstractGhidraHeadedIntegrationTest {
 		return codeBrowserPlugin.getCurrentAddress();
 	}
 
-	private Map<String, Integer> createNameCountMap(GTreeNode node) {
-		Map<String, Integer> map = new HashMap<>();
+	private Map<String, List<GTreeNode>> createNameCountMap(GTreeNode node) {
+		Map<String, List<GTreeNode>> map = LazyMap.lazyMap(new HashMap<>(), k -> new ArrayList<>());
 		List<GTreeNode> children = node.getChildren();
 		for (GTreeNode child : children) {
-			String name = child.getName();
-			Integer integer = map.get(name);
-			if (integer == null) {
-				integer = 0;
-			}
-			int asInt = integer;
-			asInt++;
-			map.put(name, asInt);
+			map.get(child.getName()).add(child);
 		}
 		return map;
 	}
 
-	private void assertDuplicateChildStatus(Map<String, Integer> childCountMap,
+	private void assertDuplicateChildStatus(Map<String, List<GTreeNode>> childCountMap,
 			boolean shouldHaveDuplicates) {
 		boolean foundDuplicates = false;
-		Set<Entry<String, Integer>> entrySet = childCountMap.entrySet();
-		for (Entry<String, Integer> entry : entrySet) {
-			int value = entry.getValue();
-			if (value != 1) {
+		Set<Entry<String, List<GTreeNode>>> entrySet = childCountMap.entrySet();
+		String duplicateName = null;
+		for (Entry<String, List<GTreeNode>> entry : entrySet) {
+			List<GTreeNode> list = entry.getValue();
+			if (list.size() != 1) {
+				duplicateName = entry.getKey();
 				foundDuplicates = true;
+				break;
 			}
 		}
 
 		String errorMessage =
-			(shouldHaveDuplicates ? "Did not find " : "Found") + " duplicate child entries";
+			(shouldHaveDuplicates ? "Did not find " : "Found") + " duplicate child entries for '" +
+				duplicateName + "'";
 		assertEquals(errorMessage, shouldHaveDuplicates, foundDuplicates);
 	}
 

@@ -16,6 +16,10 @@
 #include "transform.hh"
 #include "funcdata.hh"
 
+namespace ghidra {
+
+AttributeId ATTRIB_VECTOR_LANE_SIZES = AttributeId("vector_lane_sizes",130);
+
 /// \param op2 is the lane description to copy from
 LaneDescription::LaneDescription(const LaneDescription &op2)
 
@@ -277,24 +281,31 @@ void LanedRegister::LanedIterator::normalize(void)
   size = -1;		// Indicate ending iterator
 }
 
-/// Read XML of the form \<register name=".." vector_lane_sizes=".."/>
-/// \param el is the particular \e register tag
-/// \param manage is used to map register names to storage info
+/// Parse any vector lane sizes.
+/// \param decoder is the stream decoder
 /// \return \b true if the XML description provides lane sizes
-bool LanedRegister::restoreXml(const Element *el,const AddrSpaceManager *manage)
+bool LanedRegister::decode(Decoder &decoder)
 
 {
+  uint4 elemId = decoder.openElement(ELEM_REGISTER);
   string laneSizes;
-  for(int4 i=0;i<el->getNumAttributes();++i) {
-    if (el->getAttributeName(i) == "vector_lane_sizes") {
-      laneSizes = el->getAttributeValue(i);
+  for(;;) {
+    uint4 attribId = decoder.getNextAttributeId();
+    if (attribId == 0) break;
+    if (attribId == ATTRIB_VECTOR_LANE_SIZES) {
+      laneSizes = decoder.readString();
       break;
     }
   }
-  if (laneSizes.empty()) return false;
+  if (laneSizes.empty()) {
+    decoder.closeElement(elemId);
+    return false;
+  }
+  decoder.rewindAttributes();
   VarnodeData storage;
   storage.space = (AddrSpace *)0;
-  storage.restoreXml(el, manage);
+  storage.decodeFromAttributes(decoder);
+  decoder.closeElement(elemId);
   wholeSize = storage.size;
   sizeBitMask = 0;
   string::size_type pos = 0;
@@ -380,7 +391,7 @@ TransformVar *TransformManager::newPreexistingVarnode(Varnode *vn)
 TransformVar *TransformManager::newUnique(int4 size)
 
 {
-  newVarnodes.push_back(TransformVar());
+  newVarnodes.emplace_back();
   TransformVar *res = &newVarnodes.back();
   res->initialize(TransformVar::normal_temp,(Varnode *)0,size*8,size,0);
   return res;
@@ -395,7 +406,7 @@ TransformVar *TransformManager::newUnique(int4 size)
 TransformVar *TransformManager::newConstant(int4 size,int4 lsbOffset,uintb val)
 
 {
-  newVarnodes.push_back(TransformVar());
+  newVarnodes.emplace_back();
   TransformVar *res = &newVarnodes.back();
   res->initialize(TransformVar::constant,(Varnode *)0,size*8,size,(val >> lsbOffset) & calc_mask(size));
   return res;
@@ -407,7 +418,7 @@ TransformVar *TransformManager::newConstant(int4 size,int4 lsbOffset,uintb val)
 TransformVar *TransformManager::newIop(Varnode *vn)
 
 {
-  newVarnodes.push_back(TransformVar());
+  newVarnodes.emplace_back();
   TransformVar *res = &newVarnodes.back();
   res->initialize(TransformVar::constant_iop,(Varnode *)0,vn->getSize()*8,vn->getSize(),vn->getOffset());
   return res;
@@ -499,7 +510,7 @@ TransformVar *TransformManager::newSplit(Varnode *vn,const LaneDescription &desc
 TransformOp *TransformManager::newOpReplace(int4 numParams,OpCode opc,PcodeOp *replace)
 
 {
-  newOps.push_back(TransformOp());
+  newOps.emplace_back();
   TransformOp &rop(newOps.back());
   rop.op = replace;
   rop.replacement = (PcodeOp *)0;
@@ -522,7 +533,7 @@ TransformOp *TransformManager::newOpReplace(int4 numParams,OpCode opc,PcodeOp *r
 TransformOp *TransformManager::newOp(int4 numParams,OpCode opc,TransformOp *follow)
 
 {
-  newOps.push_back(TransformOp());
+  newOps.emplace_back();
   TransformOp &rop(newOps.back());
   rop.op = follow->op;
   rop.replacement = (PcodeOp *)0;
@@ -546,7 +557,7 @@ TransformOp *TransformManager::newOp(int4 numParams,OpCode opc,TransformOp *foll
 TransformOp *TransformManager::newPreexistingOp(int4 numParams,OpCode opc,PcodeOp *originalOp)
 
 {
-  newOps.push_back(TransformOp());
+  newOps.emplace_back();
   TransformOp &rop(newOps.back());
   rop.op = originalOp;
   rop.replacement = (PcodeOp *)0;
@@ -747,3 +758,5 @@ void TransformManager::apply(void)
   transformInputVarnodes(inputList);
   placeInputs();
 }
+
+} // End namespace ghidra

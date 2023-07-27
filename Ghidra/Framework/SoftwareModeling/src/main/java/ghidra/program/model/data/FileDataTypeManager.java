@@ -22,10 +22,14 @@ import db.DBConstants;
 import generic.jar.ResourceFile;
 import ghidra.framework.store.db.PackedDBHandle;
 import ghidra.framework.store.db.PackedDatabase;
+import ghidra.program.model.lang.*;
+import ghidra.program.util.DefaultLanguageService;
 import ghidra.util.InvalidNameException;
 import ghidra.util.UniversalID;
 import ghidra.util.exception.*;
-import ghidra.util.task.TaskMonitorAdapter;
+import ghidra.util.filechooser.ExtensionFileFilter;
+import ghidra.util.filechooser.GhidraFileFilter;
+import ghidra.util.task.TaskMonitor;
 
 /**
  * DataTypeManager for a file. Can import categories from a file, or export
@@ -35,6 +39,9 @@ public class FileDataTypeManager extends StandAloneDataTypeManager
 		implements FileArchiveBasedDataTypeManager {
 
 	public final static String EXTENSION = "gdt"; // Ghidra Data Types
+	public static final GhidraFileFilter GDT_FILEFILTER =
+		ExtensionFileFilter.forExtensions("Ghidra Data Type Files", EXTENSION);
+
 	/**
 	 * Suffix for an archive file.
 	 */
@@ -47,16 +54,25 @@ public class FileDataTypeManager extends StandAloneDataTypeManager
 	private PackedDatabase packedDB;
 
 	/**
-	 * Construct a new DataTypeFileManager
+	 * Construct a new DataTypeFileManager using the default data organization.
+	 * <p>
+	 * <B>NOTE:</B> it may be appropriate to {@link #getWarning() check for warnings} after
+	 * opening an existing archive file prior to use.  While an archive will remain useable 
+	 * with a warning condition, architecture-specific data may not be available or up-to-date.
+	 * 
 	 * @param packedDbfile file to load or create based upon openMode
-	 * @param openMode one of the DBConstants: CREATE, UPDATE, READ_ONLY, UPGRADE 
-	 * @throws IOException
+	 * @param openMode one of the DBConstants: CREATE, READ_ONLY or UPDATE
+	 * @param monitor the progress monitor
+	 * @throws IOException if an IO error occurs
+	 * @throws CancelledException if task cancelled
 	 */
-	private FileDataTypeManager(ResourceFile packedDbfile, int openMode) throws IOException {
-		super(validateFilename(packedDbfile), openMode);
+	private FileDataTypeManager(ResourceFile packedDbfile, int openMode, TaskMonitor monitor)
+			throws IOException, CancelledException {
+		super(validateFilename(packedDbfile), openMode, monitor);
 		file = packedDbfile;
 		name = getRootName(file.getName());
 		packedDB = ((PackedDBHandle) dbHandle).getPackedDatabase();
+		logWarning();
 	}
 
 	private static ResourceFile validateFilename(ResourceFile packedDbfile) {
@@ -67,21 +83,84 @@ public class FileDataTypeManager extends StandAloneDataTypeManager
 	}
 
 	/**
-	 * Create a new data-type file archive
+	 * Create a new data-type file archive using the default data organization
 	 * @param packedDbfile archive file (filename must end with DataTypeFileManager.SUFFIX)
 	 * @return data-type manager backed by specified packedDbFile
-	 * @throws IOException
+	 * @throws IOException if an IO error occurs
 	 */
 	public static FileDataTypeManager createFileArchive(File packedDbfile) throws IOException {
-		return new FileDataTypeManager(new ResourceFile(packedDbfile), DBConstants.CREATE);
+		try {
+			return new FileDataTypeManager(new ResourceFile(packedDbfile), DBConstants.CREATE,
+				TaskMonitor.DUMMY);
+		}
+		catch (CancelledException e) {
+			throw new AssertException(e); // unexpected without task monitor use
+		}
 	}
 
 	/**
-	 * Open an existing data-type file archive
+	 * Create a new data-type file archive using the default data organization
+	 * @param packedDbfile archive file (filename must end with DataTypeFileManager.SUFFIX)
+	 * @return data-type manager backed by specified packedDbFile
+	 * @throws IOException if an IO error occurs
+	 */
+	public static FileDataTypeManager createFileArchive(File packedDbfile, LanguageID languageId,
+			CompilerSpecID compilerSpecId)
+			throws LanguageNotFoundException, CompilerSpecNotFoundException, IOException {
+		try {
+			FileDataTypeManager dtm =
+				new FileDataTypeManager(new ResourceFile(packedDbfile), DBConstants.CREATE,
+					TaskMonitor.DUMMY);
+
+			LanguageService languageService = DefaultLanguageService.getLanguageService();
+			Language language = languageService.getLanguage(languageId);
+			CompilerSpec compilerSpec = language.getCompilerSpecByID(compilerSpecId);
+
+			//dtm.setProgramArchitecture()
+			return dtm;
+		}
+		catch (CancelledException e) {
+			throw new AssertException(e); // unexpected without task monitor use
+		}
+	}
+
+	/**
+	 * Create a new data-type file archive using the default data organization
+	 * @param packedDbfile archive file (filename must end with DataTypeFileManager.SUFFIX)
+	 * @return data-type manager backed by specified packedDbFile
+	 * @throws IOException if an IO error occurs
+	 */
+	public static FileDataTypeManager createFileArchive(File packedDbfile, String languageId,
+			String compilerSpecId) throws IOException {
+		try {
+			FileDataTypeManager dtm =
+				new FileDataTypeManager(new ResourceFile(packedDbfile), DBConstants.CREATE,
+					TaskMonitor.DUMMY);
+
+			//dtm.setProgramArchitecture()
+
+			return dtm;
+		}
+		catch (CancelledException e) {
+			throw new AssertException(e); // unexpected without task monitor use
+		}
+	}
+
+	/**
+	 * Open an existing data-type file archive using the default data organization.
+	 * <p>
+	 * <B>NOTE:</B> If archive has an assigned architecture, issues may arise due to a revised or
+	 * missing {@link Language}/{@link CompilerSpec} which will result in a warning but not
+	 * prevent the archive from being opened.  Such a warning condition will ne logged and may 
+	 * result in missing or stale information for existing datatypes which have architecture related
+	 * data.  In some case it may be appropriate to 
+	 * {@link FileDataTypeManager#getWarning() check for warnings} on the returned archive
+	 * object prior to its use.
+	 * 
 	 * @param packedDbfile archive file (filename must end with DataTypeFileManager.SUFFIX)
 	 * @param openForUpdate if true archive will be open for update
 	 * @return data-type manager backed by specified packedDbFile
-	 * @throws IOException
+	 * @throws IOException if an IO error occurs
 	 */
 	public static FileDataTypeManager openFileArchive(File packedDbfile, boolean openForUpdate)
 			throws IOException {
@@ -89,16 +168,30 @@ public class FileDataTypeManager extends StandAloneDataTypeManager
 	}
 
 	/**
-	 * Open an existing data-type file archive
+	 * Open an existing data-type file archive using the default data organization.
+	 * <p>
+	 * <B>NOTE:</B> If archive has an assigned architecture, issues may arise due to a revised or
+	 * missing {@link Language}/{@link CompilerSpec} which will result in a warning but not
+	 * prevent the archive from being opened.  Such a warning condition will ne logged and may 
+	 * result in missing or stale information for existing datatypes which have architecture related
+	 * data.  In some case it may be appropriate to 
+	 * {@link FileDataTypeManager#getWarning() check for warnings} on the returned archive
+	 * object prior to its use.
+	 * 
 	 * @param packedDbfile archive file (filename must end with DataTypeFileManager.SUFFIX)
 	 * @param openForUpdate if true archive will be open for update
 	 * @return data-type manager backed by specified packedDbFile
-	 * @throws IOException
+	 * @throws IOException if an IO error occurs
 	 */
 	public static FileDataTypeManager openFileArchive(ResourceFile packedDbfile,
 			boolean openForUpdate) throws IOException {
 		int mode = openForUpdate ? DBConstants.UPDATE : DBConstants.READ_ONLY;
-		return new FileDataTypeManager(packedDbfile, mode);
+		try {
+			return new FileDataTypeManager(packedDbfile, mode, TaskMonitor.DUMMY);
+		}
+		catch (CancelledException e) {
+			throw new AssertException(e); // unexpected without task monitor use
+		}
 	}
 
 	/**
@@ -107,6 +200,8 @@ public class FileDataTypeManager extends StandAloneDataTypeManager
 	 * match another existing archive database.
 	 * @param saveFile the file to save
 	 * @param newUniversalId the new id to use
+	 * @throws DuplicateFileException 
+	 * @throws IOException 
 	 */
 	public void saveAs(File saveFile, UniversalID newUniversalId)
 			throws DuplicateFileException, IOException {
@@ -116,7 +211,7 @@ public class FileDataTypeManager extends StandAloneDataTypeManager
 		try {
 			universalID = newUniversalId;
 			packedDB = ((PackedDBHandle) dbHandle).saveAs("DTArchive", saveFile.getParentFile(),
-				saveFile.getName(), newUniversalId.getValue(), TaskMonitorAdapter.DUMMY_MONITOR);
+				saveFile.getName(), newUniversalId.getValue(), TaskMonitor.DUMMY);
 			file = resourceSaveFile;
 			updateRootCategoryName(resourceSaveFile, getRootCategory());
 		}
@@ -134,7 +229,7 @@ public class FileDataTypeManager extends StandAloneDataTypeManager
 		validateFilename(resourceSaveFile);
 		try {
 			packedDB = ((PackedDBHandle) dbHandle).saveAs("DTArchive", saveFile.getParentFile(),
-				saveFile.getName(), TaskMonitorAdapter.DUMMY_MONITOR);
+				saveFile.getName(), TaskMonitor.DUMMY);
 			file = resourceSaveFile;
 			updateRootCategoryName(resourceSaveFile, getRootCategory());
 		}
@@ -153,7 +248,7 @@ public class FileDataTypeManager extends StandAloneDataTypeManager
 		}
 
 		try {
-			((PackedDBHandle) dbHandle).save(TaskMonitorAdapter.DUMMY_MONITOR);
+			((PackedDBHandle) dbHandle).save(TaskMonitor.DUMMY);
 		}
 		catch (CancelledException e) {
 			// Cancel can't happen because we are using a dummy monitor
@@ -227,11 +322,11 @@ public class FileDataTypeManager extends StandAloneDataTypeManager
 
 	@Override
 	public void close() {
-		super.close();
 		if (packedDB != null) {
 			packedDB.dispose();
 			packedDB = null;
 		}
+		super.close();
 	}
 
 	public boolean isClosed() {

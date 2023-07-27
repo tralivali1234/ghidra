@@ -18,22 +18,23 @@ package ghidra.app.plugin.core.decompile.actions;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 
-import javax.swing.ImageIcon;
+import javax.swing.Icon;
 
 import docking.action.KeyBindingData;
 import docking.action.ToolBarData;
+import generic.theme.GIcon;
 import ghidra.app.plugin.core.decompile.DecompilerActionContext;
+import ghidra.app.util.HelpTopics;
 import ghidra.util.HelpLocation;
-import resources.ResourceManager;
 
 public class CloneDecompilerAction extends AbstractDecompilerAction {
 
 	public CloneDecompilerAction() {
 		super("Decompile Clone");
-		ImageIcon image = ResourceManager.loadImage("images/camera-photo.png");
+		Icon image = new GIcon("icon.decompiler.action.provider.clone");
 		setToolBarData(new ToolBarData(image, "ZZZ"));
 		setDescription("Create a snapshot (disconnected) copy of this Decompiler window ");
-		setHelpLocation(new HelpLocation("Snapshots", "Snapshots_Start"));
+		setHelpLocation(new HelpLocation(HelpTopics.DECOMPILER, "ToolBarSnapshot"));
 		setKeyBindingData(new KeyBindingData(KeyEvent.VK_T,
 			InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
 	}

@@ -21,7 +21,6 @@ import java.awt.*;
 import java.awt.event.FocusListener;
 import java.awt.event.KeyEvent;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.*;
 import javax.swing.table.*;
@@ -30,7 +29,7 @@ import javax.swing.tree.TreePath;
 
 import org.junit.*;
 
-import docking.ActionContext;
+import docking.DefaultActionContext;
 import docking.DockingDialog;
 import docking.action.DockingActionIf;
 import docking.widgets.dialogs.NumberInputDialog;
@@ -38,17 +37,16 @@ import docking.widgets.fieldpanel.support.FieldRange;
 import docking.widgets.fieldpanel.support.FieldSelection;
 import ghidra.app.plugin.core.datamgr.DataTypeManagerPlugin;
 import ghidra.app.plugin.core.datamgr.util.DataTypeChooserDialog;
-import ghidra.app.plugin.core.stackeditor.StackFrameDataType;
+import ghidra.app.plugin.core.stackeditor.StackEditorModel;
 import ghidra.app.services.DataTypeManagerService;
 import ghidra.app.util.datatype.DataTypeSelectionEditor;
 import ghidra.framework.model.*;
+import ghidra.framework.options.Options;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.framework.plugintool.util.PluginException;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.model.data.*;
 import ghidra.program.model.data.Composite;
-import ghidra.program.model.data.Composite.AlignmentType;
-import ghidra.program.model.data.Enum;
 import ghidra.program.model.listing.Program;
 import ghidra.test.AbstractGhidraHeadedIntegrationTest;
 import ghidra.test.TestEnv;
@@ -155,9 +153,6 @@ public abstract class AbstractEditorTest extends AbstractGhidraHeadedIntegration
 
 		closeAllWindows();
 
-		// this is an attempt to prevent stack traces when take down the environment out from
-		// under Swing
-
 		if (model != null) {
 			model = null;
 		}
@@ -193,28 +188,8 @@ public abstract class AbstractEditorTest extends AbstractGhidraHeadedIntegration
 		return compositeDataType.getDisplayName() + " (" + dtmName + ")";
 	}
 
-	@SuppressWarnings("unused")
-	private String getName(Composite composite) {
-		if (composite instanceof Structure) {
-			return "Structure Editor";
-		}
-		else if (composite instanceof Union) {
-			return "Union Editor";
-		}
-		else if (composite instanceof Enum) {
-			return "Enum Editor";
-		}
-		else if (composite instanceof StackFrameDataType) {
-			return "Stack Editor";
-		}
-		else {
-			return "Composite Data Type Editor";
-		}
-	}
-
 	protected CycleGroupAction getCycleGroup(DataType dt) {
-		for (int cycleIndex = 0; cycleIndex < cycles.size(); cycleIndex++) {
-			CycleGroupAction action = cycles.get(cycleIndex);
+		for (CycleGroupAction action : cycles) {
 			CycleGroup group = action.getCycleGroup();
 			DataType[] types = group.getDataTypes();
 			for (DataType type : types) {
@@ -227,8 +202,7 @@ public abstract class AbstractEditorTest extends AbstractGhidraHeadedIntegration
 	}
 
 	protected FavoritesAction getFavorite(String name) {
-		for (int favIndex = 0; favIndex < favorites.size(); favIndex++) {
-			FavoritesAction action = favorites.get(favIndex);
+		for (FavoritesAction action : favorites) {
 			if (action.getDataType().getDisplayName().equals(name)) {
 				return action;
 			}
@@ -273,8 +247,12 @@ public abstract class AbstractEditorTest extends AbstractGhidraHeadedIntegration
 		});
 	}
 
+	protected int[] getSelection() {
+		return runSwing(() -> getTable().getSelectedRows());
+	}
+
 	private String arrayToString(int[] values) {
-		StringBuffer buf = new StringBuffer();
+		StringBuilder buf = new StringBuilder();
 		for (int value : values) {
 			buf.append(Integer.toString(value) + ", ");
 		}
@@ -303,7 +281,7 @@ public abstract class AbstractEditorTest extends AbstractGhidraHeadedIntegration
 			if (componentProvider instanceof DataTypeChooserDialog) {
 				// we must make a selection
 				Object treePanel = getInstanceField("treePanel", componentProvider);
-				final JTree tree = (JTree) getInstanceField("tree", treePanel);
+				JTree tree = (JTree) getInstanceField("tree", treePanel);
 				DefaultMutableTreeNode root = (DefaultMutableTreeNode) tree.getModel().getRoot();
 				DefaultMutableTreeNode matchingNode = findFirstLeafNode(root);
 				TreePath treePath = (TreePath) invokeInstanceMethod("getTreePath", matchingNode);
@@ -332,13 +310,17 @@ public abstract class AbstractEditorTest extends AbstractGhidraHeadedIntegration
 	}
 
 	protected void invoke(final DockingActionIf action) {
+		invoke(action, true);
+	}
+
+	protected void invoke(final DockingActionIf action, boolean wait) {
 		assertNotNull(action);
 		boolean isEnabled = runSwing(() -> action.isEnabled());
 		if (!isEnabled) {
 			Msg.debug(this, "Calling actionPerformed() on a disabled action: " + action.getName(),
 				ReflectionUtilities.createJavaFilteredThrowable());
 		}
-		runSwing(() -> action.actionPerformed(new ActionContext()), false);
+		runSwing(() -> action.actionPerformed(new DefaultActionContext()), wait);
 		waitForSwing();
 	}
 
@@ -443,9 +425,17 @@ public abstract class AbstractEditorTest extends AbstractGhidraHeadedIntegration
 		waitForSwing();
 	}
 
+	protected DataType getDataTypeAtRow(int row) {
+		return runSwing(() -> {
+			DataTypeInstance instance =
+				(DataTypeInstance) model.getValueAt(row, StackEditorModel.DATATYPE);
+			return instance.getDataType();
+		});
+	}
+
 	/**
 	 * Types the indicated string
-	 * 
+	 *
 	 * <br>Note: Handles upper and lowercase alphabetic characters,
 	 * numeric characters, and other standard keyboard characters that are
 	 * printable characters. It also handles '\n', '\t', and '\b'.
@@ -486,25 +476,11 @@ public abstract class AbstractEditorTest extends AbstractGhidraHeadedIntegration
 	}
 
 	protected void startTransaction(final String txDescription) {
-		runSwing(() -> {
-			try {
-				txId = program.startTransaction(txDescription);
-			}
-			catch (Exception e) {
-				Assert.fail(e.getMessage());
-			}
-		});
+		txId = program.startTransaction(txDescription);
 	}
 
 	protected void endTransaction(final boolean saveChanges) {
-		runSwing(() -> {
-			try {
-				program.endTransaction(txId, saveChanges);
-			}
-			catch (Exception e) {
-				Assert.fail(e.getMessage());
-			}
-		});
+		program.endTransaction(txId, saveChanges);
 	}
 
 	protected class RestoreListener implements DomainObjectListener {
@@ -583,7 +559,7 @@ public abstract class AbstractEditorTest extends AbstractGhidraHeadedIntegration
 	@SuppressWarnings("unchecked")
 	private void removeTableCellEditorsFocusLostListener() {
 
-		// 
+		//
 		// Note: black magic code to disable focusLost from cancelling the current editor session
 		//
 
@@ -803,28 +779,37 @@ public abstract class AbstractEditorTest extends AbstractGhidraHeadedIntegration
 	}
 
 	protected void checkEnablement(CompositeEditorTableAction action, boolean expectedEnablement) {
-		AtomicBoolean result = new AtomicBoolean();
-		runSwing(() -> result.set(action.isEnabledForContext(provider.getActionContext(null))));
-		boolean actionEnablement = result.get();
-		assertEquals(action.getName() + " is unexpectedly " +
-			(actionEnablement ? "enabled" : "disabled") + ".", expectedEnablement,
-			actionEnablement);
+		boolean isEnabled =
+			runSwing(() -> action.isEnabledForContext(provider.getActionContext(null)));
+		assertEquals(
+			action.getName() + " is unexpectedly " + (isEnabled ? "enabled" : "disabled") + ".",
+			expectedEnablement, isEnabled);
 	}
 
-	protected void assertIsInternallyAligned(boolean aligned) {
-		assertEquals(aligned, ((CompEditorModel) model).isAligned());
+	protected void assertIsPackingEnabled(boolean aligned) {
+		assertEquals(aligned, ((CompEditorModel) model).isPackingEnabled());
 	}
 
-	protected void assertPackingValue(int value) {
-		assertEquals(value, ((CompEditorModel) model).getPackingValue());
+	protected void assertDefaultPacked() {
+		assertEquals(PackingType.DEFAULT, ((CompEditorModel) model).getPackingType());
 	}
 
-	protected void assertMinimumAlignmentType(AlignmentType alignmentType) {
-		assertEquals(alignmentType, ((CompEditorModel) model).getMinimumAlignmentType());
+	protected void assertPacked(int pack) {
+		assertEquals(PackingType.EXPLICIT, ((CompEditorModel) model).getPackingType());
+		assertEquals(pack, ((CompEditorModel) model).getExplicitPackingValue());
 	}
 
-	protected void assertMinimumAlignmentValue(int value) {
-		assertEquals(value, ((CompEditorModel) model).getMinimumAlignment());
+	protected void assertIsDefaultAligned() {
+		assertEquals(AlignmentType.DEFAULT, ((CompEditorModel) model).getAlignmentType());
+	}
+
+	protected void assertIsMachineAligned() {
+		assertEquals(AlignmentType.MACHINE, ((CompEditorModel) model).getAlignmentType());
+	}
+
+	protected void assertExplicitAlignment(int alignment) {
+		assertEquals(AlignmentType.EXPLICIT, ((CompEditorModel) model).getAlignmentType());
+		assertEquals(alignment, ((CompEditorModel) model).getExplicitMinimumAlignment());
 	}
 
 	protected void assertActualAlignment(int value) {
@@ -835,4 +820,11 @@ public abstract class AbstractEditorTest extends AbstractGhidraHeadedIntegration
 		assertEquals(value, ((CompEditorModel) model).getLength());
 	}
 
+	protected void setOptions(String optionName, boolean b) {
+		runSwing(() -> {
+			Options options = tool.getOptions("Editors");
+			assertTrue(options.isRegistered(optionName));
+			options.setBoolean(optionName, b);
+		});
+	}
 }

@@ -17,32 +17,40 @@
 #include "emulate.hh"
 #include "flow.hh"
 
-/// \param s is the XML stream to write to
-void LoadTable::saveXml(ostream &s) const
+namespace ghidra {
+
+
+AttributeId ATTRIB_LABEL = AttributeId("label",131);
+AttributeId ATTRIB_NUM = AttributeId("num",132);
+
+ElementId ELEM_BASICOVERRIDE = ElementId("basicoverride",211);
+ElementId ELEM_DEST = ElementId("dest",212);
+ElementId ELEM_JUMPTABLE = ElementId("jumptable",213);
+ElementId ELEM_LOADTABLE = ElementId("loadtable",214);
+ElementId ELEM_NORMADDR = ElementId("normaddr",215);
+ElementId ELEM_NORMHASH = ElementId("normhash",216);
+ElementId ELEM_STARTVAL = ElementId("startval",217);
+
+/// \param encoder is the stream encoder
+void LoadTable::encode(Encoder &encoder) const
 
 {
-  s << "<loadtable";
-  a_v_i(s,"size",size);
-  a_v_i(s,"num",num);
-  s << ">\n  ";
-  addr.saveXml(s);
-  s << "</loadtable>\n";
+  encoder.openElement(ELEM_LOADTABLE);
+  encoder.writeSignedInteger(ATTRIB_SIZE, size);
+  encoder.writeSignedInteger(ATTRIB_NUM, num);
+  addr.encode(encoder);
+  encoder.closeElement(ELEM_LOADTABLE);
 }
 
-/// \param el is the root \<loadtable> tag
-/// \param glb is the architecture for resolving address space tags
-void LoadTable::restoreXml(const Element *el,Architecture *glb)
+/// \param decoder is the stream decoder
+void LoadTable::decode(Decoder &decoder)
 
 {
-  istringstream s1(el->getAttributeValue("size"));	
-  s1.unsetf(ios::dec | ios::hex | ios::oct);
-  s1 >> size;
-  istringstream s2(el->getAttributeValue("num"));	
-  s2.unsetf(ios::dec | ios::hex | ios::oct);
-  s2 >> num;
-  const List &list( el->getChildren() );
-  List::const_iterator iter = list.begin();
-  addr = Address::restoreXml( *iter, glb);
+  uint4 elemId = decoder.openElement(ELEM_LOADTABLE);
+  size = decoder.readSignedInteger(ATTRIB_SIZE);
+  num = decoder.readSignedInteger(ATTRIB_NUM);
+  addr = Address::decode( decoder );
+  decoder.closeElement(elemId);
 }
 
 /// We assume the list of LoadTable entries is sorted and perform an in-place
@@ -79,7 +87,7 @@ void EmulateFunction::executeLoad(void)
 {
   if (collectloads) {
     uintb off = getVarnodeValue(currentOp->getIn(1));
-    AddrSpace *spc = Address::getSpaceFromConst(currentOp->getIn(0)->getAddr());
+    AddrSpace *spc = currentOp->getIn(0)->getSpaceFromConst();
     off = AddrSpace::addressToByte(off,spc->getWordSize());
     int4 sz = currentOp->getOut()->getSize();
     loadpoints.push_back(LoadTable(Address(spc,off),sz));
@@ -336,9 +344,14 @@ bool JumpValuesRangeDefault::contains(uintb val) const
 bool JumpValuesRangeDefault::initializeForReading(void) const
 
 {
-  if (range.getSize()==0) return false;
-  curval = range.getMin();
-  lastvalue = false;
+  if (range.getSize()==0) {
+    curval = extravalue;
+    lastvalue = true;
+  }
+  else {
+    curval = range.getMin();
+    lastvalue = false;
+  }
   return true;
 }
 
@@ -497,6 +510,46 @@ uintb JumpBasic::backup2Switch(Funcdata *fd,uintb output,Varnode *outvn,Varnode 
   return output;
 }
 
+/// If the Varnode has a restricted range due to masking via INT_AND, the maximum value of this range is returned.
+/// Otherwise, 0 is returned, indicating that the Varnode can take all possible values.
+/// \param vn is the given Varnode
+/// \return the maximum value or 0
+uintb JumpBasic::getMaxValue(Varnode *vn)
+
+{
+  uintb maxValue = 0;		// 0 indicates maximum possible value
+  if (!vn->isWritten())
+    return maxValue;
+  PcodeOp *op = vn->getDef();
+  if (op->code() == CPUI_INT_AND) {
+    Varnode *constvn = op->getIn(1);
+    if (constvn->isConstant()) {
+      maxValue = coveringmask( constvn->getOffset() );
+      maxValue = (maxValue + 1) & calc_mask(vn->getSize());
+    }
+  }
+  else if (op->code() == CPUI_MULTIEQUAL) {	// Its possible the AND is duplicated across multiple blocks
+    int4 i;
+    for(i=0;i<op->numInput();++i) {
+      Varnode *subvn = op->getIn(i);
+      if (!subvn->isWritten()) break;
+      PcodeOp *andOp = subvn->getDef();
+      if (andOp->code() != CPUI_INT_AND) break;
+      Varnode *constvn = andOp->getIn(1);
+      if (!constvn->isConstant()) break;
+      if (maxValue < constvn->getOffset())
+	maxValue = constvn->getOffset();
+    }
+    if (i == op->numInput()) {
+      maxValue = coveringmask( maxValue );
+      maxValue = (maxValue + 1) & calc_mask(vn->getSize());
+    }
+    else
+      maxValue = 0;
+  }
+  return maxValue;
+}
+
 /// \brief Calculate the initial set of Varnodes that might be switch variables
 ///
 /// Paths that terminate at the given PcodeOp are calculated and organized
@@ -506,39 +559,33 @@ uintb JumpBasic::backup2Switch(Funcdata *fd,uintb output,Varnode *outvn,Varnode 
 void JumpBasic::findDeterminingVarnodes(PcodeOp *op,int4 slot)
 
 {
-  vector<PcodeOp *> path;
-  vector<int4> slotpath;
-  PcodeOp *curop;
-  Varnode *curvn;
+  vector<PcodeOpNode> path;
   bool firstpoint = false;	// Have not seen likely switch variable yet
 
-  path.push_back(op);
-  slotpath.push_back(slot);
+  path.push_back(PcodeOpNode(op,slot));
 
   do {	// Traverse through tree of inputs to final address
-    curop = path.back();
-    curvn = curop->getIn(slotpath.back());
+    PcodeOpNode &node(path.back());
+    Varnode *curvn = node.op->getIn(node.slot);
     if (isprune(curvn)) {	// Here is a node of the tree
       if (ispoint(curvn)) {	// Is it a possible switch variable
 	if (!firstpoint) {	// If it is the first possible
-	  pathMeld.set(path,slotpath);	// Take the current path as the result
+	  pathMeld.set(path);	// Take the current path as the result
 	  firstpoint = true;
 	}
 	else			// If we have already seen at least one possible
-	  pathMeld.meld(path,slotpath);
+	  pathMeld.meld(path);
       }
 
-      slotpath.back() += 1;
-      while(slotpath.back() >= path.back()->numInput()) {
+      path.back().slot += 1;
+      while(path.back().slot >= path.back().op->numInput()) {
 	path.pop_back();
-	slotpath.pop_back();
 	if (path.empty()) break;
-	slotpath.back() += 1;
+	path.back().slot += 1;
       }
     }
     else {			// This varnode is not pruned
-      path.push_back(curvn->getDef());
-      slotpath.push_back(0);
+      path.push_back(PcodeOpNode(curvn->getDef(),0));
     }
   } while(path.size() > 1);
   if (pathMeld.empty()) {	// Never found a likely point, which means that
@@ -567,7 +614,8 @@ static bool matching_constants(Varnode *vn1,Varnode *vn2)
 /// \param path is the specific branch to take from the CBRANCH to reach the switch
 /// \param rng is the range of values causing the switch path to be taken
 /// \param v is the Varnode holding the value controlling the CBRANCH
-GuardRecord::GuardRecord(PcodeOp *bOp,PcodeOp *rOp,int4 path,const CircleRange &rng,Varnode *v)
+/// \param unr is \b true if the guard is duplicated across multiple blocks
+GuardRecord::GuardRecord(PcodeOp *bOp,PcodeOp *rOp,int4 path,const CircleRange &rng,Varnode *v,bool unr)
 
 {
   cbranch = bOp;
@@ -576,6 +624,7 @@ GuardRecord::GuardRecord(PcodeOp *bOp,PcodeOp *rOp,int4 path,const CircleRange &
   range = rng;
   vn = v;
   baseVn = quasiCopy(v,bitsPreserved);		// Look for varnode whose bits are copied
+  unrolled = unr;
 }
 
 /// \brief Determine if \b this guard applies to the given Varnode
@@ -785,7 +834,7 @@ void PathMeld::internalIntersect(vector<int4> &parentMap)
 /// \param cutOff is the number of PcodeOps with an input in the common path
 /// \param parentMap is the map from old common Varnodes to the new common Varnodes
 /// \return the index of the last (earliest) Varnode in the common path or -1
-int4 PathMeld::meldOps(const vector<PcodeOp *> &path,int4 cutOff,const vector<int4> &parentMap)
+int4 PathMeld::meldOps(const vector<PcodeOpNode> &path,int4 cutOff,const vector<int4> &parentMap)
 
 {
   // First update opMeld.rootVn with new intersection information
@@ -804,7 +853,7 @@ int4 PathMeld::meldOps(const vector<PcodeOp *> &path,int4 cutOff,const vector<in
   int4 meldPos = 0;				// Ops moved from old opMeld into newMeld
   const BlockBasic *lastBlock = (const BlockBasic *)0;
   for(int4 i=0;i<cutOff;++i) {
-    PcodeOp *op = path[i];			// Current op in the new path
+    PcodeOp *op = path[i].op;			// Current op in the new path
     PcodeOp *curOp = (PcodeOp *)0;
     while(meldPos < opMeld.size()) {
       PcodeOp *trialOp = opMeld[meldPos].op;	// Current op in the old opMeld
@@ -874,15 +923,14 @@ void PathMeld::set(const PathMeld &op2)
 }
 
 /// This container is initialized to hold a single data-flow path.
-/// \param path is the list of PcodeOps in the path (in reverse execution order)
-/// \param slot is the list of each Varnode presented as an input slot in the corresponding PcodeOp
-void PathMeld::set(const vector<PcodeOp *> &path,const vector<int4> &slot)
+/// \param path is the list of PcodeOpNode edges in the path (in reverse execution order)
+void PathMeld::set(const vector<PcodeOpNode> &path)
 
 {
   for(int4 i=0;i<path.size();++i) {
-    PcodeOp *op = path[i];
-    Varnode *vn = op->getIn(slot[i]);
-    opMeld.push_back(RootedOp(op,i));
+    const PcodeOpNode &node(path[i]);
+    Varnode *vn = node.op->getIn(node.slot);
+    opMeld.push_back(RootedOp(node.op,i));
     commonVn.push_back(vn);
   }
 }
@@ -921,23 +969,23 @@ void PathMeld::clear(void)
 /// Add the new path, recalculating the set of Varnodes common to all paths.
 /// Paths are trimmed to ensure that any path that splits from the common intersection
 /// must eventually rejoin.
-/// \param path is the new path of PcodeOps to meld, in reverse execution order
-/// \param slot is the set of Varnodes in the new path presented as input slots to the corresponding PcodeOp
-void PathMeld::meld(vector<PcodeOp *> &path,vector<int4> &slot)
+/// \param path is the new path of PcodeOpNode edges to meld, in reverse execution order
+void PathMeld::meld(vector<PcodeOpNode> &path)
 
 {
   vector<int4> parentMap;
 
   for(int4 i=0;i<path.size();++i) {
-    Varnode *vn = path[i]->getIn(slot[i]);
-    vn->setMark();		// Mark varnodes in the new path, so its easy to see intersection
+    PcodeOpNode &node(path[i]);
+    node.op->getIn(node.slot)->setMark();	// Mark varnodes in the new path, so its easy to see intersection
   }
   internalIntersect(parentMap);	// Calculate varnode intersection, and map from old intersection -> new
   int4 cutOff = -1;
 
   // Calculate where the cutoff point is in the new path
   for(int4 i=0;i<path.size();++i) {
-    Varnode *vn = path[i]->getIn(slot[i]);
+    PcodeOpNode &node(path[i]);
+    Varnode *vn = node.op->getIn(node.slot);
     if (!vn->isMark()) {	// If mark already cleared, we know it is in intersection
       cutOff = i + 1;		// Cut-off must at least be past this -vn-
     }
@@ -948,7 +996,6 @@ void PathMeld::meld(vector<PcodeOp *> &path,vector<int4> &slot)
   if (newCutoff >= 0)					// If not all ops could be ordered
     truncatePaths(newCutoff);				// Cut off at the point where we couldn't order
   path.resize(cutOff);
-  slot.resize(cutOff);
 }
 
 /// The starting Varnode, common to all paths, is provided as an index.
@@ -1023,7 +1070,12 @@ void JumpBasic::analyzeGuards(BlockBasic *bl,int4 pathout)
     else {
       pathout = -1;		// Make sure not to use pathout next time around
       for(;;) {
-	if (bl->sizeIn() != 1) return; // Assume only 1 path to switch
+	if (bl->sizeIn() != 1) {
+	  if (bl->sizeIn() > 1)
+	    checkUnrolledGuard(bl, maxpullback, usenzmask);
+	  return;
+	}
+	// Only 1 flow path to the switch
 	prevbl = (BlockBasic *)bl->getIn(0);
 	if (prevbl->sizeOut() != 1) break; // Is it possible to deviate from switch path in this block
 	bl = prevbl;		// If not, back up to next block
@@ -1080,17 +1132,7 @@ void JumpBasic::calcRange(Varnode *vn,CircleRange &rng) const
   else if (vn->isWritten() && vn->getDef()->isBoolOutput())
     rng = CircleRange(0,2,1,1);	// Only 0 or 1 possible
   else {			// Should we go ahead and use nzmask in all cases?
-    uintb maxValue = 0;		// Every possible value
-    if (vn->isWritten()) {
-      PcodeOp *andop = vn->getDef();
-      if (andop->code() == CPUI_INT_AND) {
-	Varnode *constvn = andop->getIn(1);
-	if (constvn->isConstant()) {
-	  maxValue = coveringmask( constvn->getOffset() );
-	  maxValue = (maxValue + 1) & calc_mask(vn->getSize());
-	}
-      }
-    }
+    uintb maxValue = getMaxValue(vn);
     stride = getStride(vn);
     rng = CircleRange(0,maxValue,vn->getSize(),stride);
   }
@@ -1206,8 +1248,9 @@ void JumpBasic::markFoldableGuards(void)
   int4 bitsPreserved;
   Varnode *baseVn = GuardRecord::quasiCopy(vn, bitsPreserved);
   for(int4 i=0;i<selectguards.size();++i) {
-    if (selectguards[i].valueMatch(vn,baseVn,bitsPreserved)==0) {
-      selectguards[i].clear();		// Indicate this is not a true guard
+    GuardRecord &guardRecord(selectguards[i]);
+    if (guardRecord.valueMatch(vn,baseVn,bitsPreserved)==0 || guardRecord.isUnrolled()) {
+      guardRecord.clear();		// Indicate this guard was not used or should not be folded
     }
   }
 }
@@ -1244,6 +1287,75 @@ bool JumpBasic::flowsOnlyToModel(Varnode *vn,PcodeOp *trailOp)
       return false;
   }
   return true;
+}
+
+/// All CBRANCHs in addition to flowing to the given block, must also flow to another common block,
+/// and each boolean value must select between the given block and the common block in the same way.
+/// If this flow exists, \b true is returned and the boolean Varnode inputs to each CBRANCH are passed back.
+/// \param varArray will hold the input Varnodes being passed back
+/// \param bl is the given block
+/// \return \b true if the common CBRANCH flow exists across all incoming blocks
+bool JumpBasic::checkCommonCbranch(vector<Varnode *> &varArray,BlockBasic *bl)
+
+{
+  BlockBasic *curBlock = (BlockBasic *)bl->getIn(0);
+  PcodeOp *op  = curBlock->lastOp();
+  if (op == (PcodeOp *)0 || op->code() != CPUI_CBRANCH)
+    return false;
+  int4 outslot = bl->getInRevIndex(0);
+  bool isOpFlip = op->isBooleanFlip();
+  varArray.push_back(op->getIn(1));	// Pass back boolean input to CBRANCH
+  for(int4 i=1;i<bl->sizeIn();++i) {
+    curBlock = (BlockBasic *)bl->getIn(i);
+    op = curBlock->lastOp();
+    if (op == (PcodeOp *)0 || op->code() != CPUI_CBRANCH)
+      return false;				// All blocks must end with CBRANCH
+    if (op->isBooleanFlip() != isOpFlip)
+      return false;
+    if (outslot != bl->getInRevIndex(i))
+      return false;				// Boolean value must have some meaning
+    varArray.push_back(op->getIn(1));		// Pass back boolean input to CBRANCH
+  }
+  return true;
+}
+
+/// \brief Check for a guard that has been unrolled across multiple blocks
+///
+/// A guard calculation can be duplicated across multiple blocks that all branch to the basic block
+/// performing the final BRANCHIND.  In this case, the switch variable is also duplicated across multiple Varnodes
+/// that are all inputs to a MULTIEQUAL whose output is used for the final BRANCHIND calculation.  This method
+/// looks for this situation and creates a GuardRecord associated with this MULTIEQUAL output.
+/// \param bl is the basic block on the path to the switch with multiple incoming flows
+/// \param maxpullback is the maximum number of times to pull back from the guard CBRANCH to the putative switch variable
+/// \param usenzmask is \b true if the NZMASK should be used as part of the pull-back operation
+void JumpBasic::checkUnrolledGuard(BlockBasic *bl,int4 maxpullback,bool usenzmask)
+
+{
+  vector<Varnode *> varArray;
+  if (!checkCommonCbranch(varArray,bl))
+    return;
+  int4 indpath = bl->getInRevIndex(0);
+  bool toswitchval = (indpath == 1);
+  PcodeOp *cbranch = ((BlockBasic *)bl->getIn(0))->lastOp();
+  if (cbranch->isBooleanFlip())
+    toswitchval = !toswitchval;
+  CircleRange rng(toswitchval);
+  int4 indpathstore = bl->getIn(0)->getFlipPath() ? 1-indpath : indpath;
+  PcodeOp *readOp = cbranch;
+  for(int4 j=0;j<maxpullback;++j) {
+    PcodeOp *multiOp = bl->findMultiequal(varArray);
+    if (multiOp != (PcodeOp *)0) {
+      selectguards.push_back(GuardRecord(cbranch,readOp,indpathstore,rng,multiOp->getOut(),true));
+    }
+    Varnode *markup;		// Throw away markup information
+    Varnode *vn = varArray[0];
+    if (!vn->isWritten()) break;
+    PcodeOp *readOp = vn->getDef();
+    vn = rng.pullBack(readOp,&markup,usenzmask);
+    if (vn == (Varnode *)0) break;
+    if (rng.isEmpty()) break;
+    if (!BlockBasic::liftVerifyUnroll(varArray, readOp->getSlot(vn))) break;
+  }
 }
 
 bool JumpBasic::foldInOneGuard(Funcdata *fd,GuardRecord &guard,JumpTable *jump)
@@ -1321,12 +1433,18 @@ void JumpBasic::buildAddresses(Funcdata *fd,PcodeOp *indop,vector<Address> &addr
   if (loadpoints != (vector<LoadTable> *)0)
     emul.setLoadCollect(true);
 
+  uintb mask = ~((uintb)0);
+  int4 bit = fd->getArch()->funcptr_align;
+  if (bit != 0) {
+    mask = (mask >> bit) << bit;
+  }
   AddrSpace *spc = indop->getAddr().getSpace();
   bool notdone = jrange->initializeForReading();
   while(notdone) {
     val = jrange->getValue();
     addr = emul.emulatePath(val,pathMeld,jrange->getStartOp(),jrange->getStartVarnode());
     addr = AddrSpace::addressToByte(addr,spc->getWordSize());
+    addr &= mask;
     addresstable.push_back(Address(spc,addr));
     notdone = jrange->next();
   }
@@ -1520,16 +1638,16 @@ bool JumpBasic2::foldInOneGuard(Funcdata *fd,GuardRecord &guard,JumpTable *jump)
   return true;
 }
 
-void JumpBasic2::initializeStart(const PathMeld &pathMeld)
+void JumpBasic2::initializeStart(const PathMeld &pMeld)
 
 {
-  if (pathMeld.empty()) {
+  if (pMeld.empty()) {
     extravn = (Varnode *)0;
     return;
   }
   // Initialize at point where the JumpBasic model failed
-  extravn = pathMeld.getVarnode(pathMeld.numCommonVarnode()-1);
-  origPathMeld.set(pathMeld);
+  extravn = pMeld.getVarnode(pMeld.numCommonVarnode()-1);
+  origPathMeld.set(pMeld);
 }
 
 bool JumpBasic2::recoverModel(Funcdata *fd,PcodeOp *indop,uint4 matchsize,uint4 maxtablesize)
@@ -1901,55 +2019,61 @@ void JumpBasicOverride::clear(void)
   istrivial = false;
 }
 
-void JumpBasicOverride::saveXml(ostream &s) const
+void JumpBasicOverride::encode(Encoder &encoder) const
 
 {
   set<Address>::const_iterator iter;
 
-  s << "<basicoverride>\n";
+  encoder.openElement(ELEM_BASICOVERRIDE);
   for(iter=adset.begin();iter!=adset.end();++iter) {
-    s << "  <dest";
+    encoder.openElement(ELEM_DEST);
     AddrSpace *spc = (*iter).getSpace();
     uintb off = (*iter).getOffset();
-    spc->saveXmlAttributes(s,off);
-    s << "/>\n";
+    spc->encodeAttributes(encoder,off);
+    encoder.closeElement(ELEM_DEST);
   }
   if (hash != 0) {
-    s << "  <normaddr";
-    normaddress.getSpace()->saveXmlAttributes(s,normaddress.getOffset());
-    s << "/>\n";
-    s << "  <normhash>0x" << hex << hash << "</normhash>\n";
+    encoder.openElement(ELEM_NORMADDR);
+    normaddress.getSpace()->encodeAttributes(encoder,normaddress.getOffset());
+    encoder.closeElement(ELEM_NORMADDR);
+    encoder.openElement(ELEM_NORMHASH);
+    encoder.writeUnsignedInteger(ATTRIB_CONTENT, hash);
+    encoder.closeElement(ELEM_NORMHASH);
   }
   if (startingvalue != 0) {
-    s << "  <startval>0x" << hex << startingvalue << "</startval>\n";
+    encoder.openElement(ELEM_STARTVAL);
+    encoder.writeUnsignedInteger(ATTRIB_CONTENT, startingvalue);
+    encoder.closeElement(ELEM_STARTVAL);
   }
-  s << "</basicoverride>\n";
+  encoder.closeElement(ELEM_BASICOVERRIDE);
 }
 
-void JumpBasicOverride::restoreXml(const Element *el,Architecture *glb)
+void JumpBasicOverride::decode(Decoder &decoder)
 
 {
-  const List &list( el->getChildren() );
-  List::const_iterator iter = list.begin();
-  while(iter != list.end()) {
-    const Element *subel = *iter;
-    ++iter;
-    if (subel->getName() == "dest") {
-      adset.insert( Address::restoreXml(subel,glb) );
+  uint4 elemId = decoder.openElement(ELEM_BASICOVERRIDE);
+  for(;;) {
+    uint4 subId = decoder.openElement();
+    if (subId == 0) break;
+    if (subId == ELEM_DEST) {
+      VarnodeData vData;
+      vData.decodeFromAttributes(decoder);
+      adset.insert( vData.getAddr() );
     }
-    else if (subel->getName() == "normaddr")
-      normaddress = Address::restoreXml(subel,glb);
-    else if (subel->getName() == "normhash") {
-      istringstream s1(subel->getContent());	
-      s1.unsetf(ios::dec | ios::hex | ios::oct);
-      s1 >> hash;
+    else if (subId == ELEM_NORMADDR) {
+      VarnodeData vData;
+      vData.decodeFromAttributes(decoder);
+      normaddress = vData.getAddr();
     }
-    else if (subel->getName() == "startval") {
-      istringstream s2(subel->getContent());	
-      s2.unsetf(ios::dec | ios::hex | ios::oct);
-      s2 >> startingvalue;
+    else if (subId == ELEM_NORMHASH) {
+      hash = decoder.readUnsignedInteger(ATTRIB_CONTENT);
     }
+    else if (subId == ELEM_STARTVAL) {
+      startingvalue = decoder.readUnsignedInteger(ATTRIB_CONTENT);
+    }
+    decoder.closeElement(subId);
   }
+  decoder.closeElement(elemId);
   if (adset.empty())
     throw LowlevelError("Empty jumptable override");
 }
@@ -2008,9 +2132,15 @@ void JumpAssisted::buildAddresses(Funcdata *fd,PcodeOp *indop,vector<Address> &a
   for(int4 i=0;i<numInputs;++i)
     inputs.push_back(assistOp->getIn(i+1)->getOffset());
 
+  uintb mask = ~((uintb)0);
+  int4 bit = fd->getArch()->funcptr_align;
+  if (bit != 0) {
+    mask = (mask >> bit) << bit;
+  }
   for(int4 index=0;index<sizeIndices;++index) {
     inputs[0] = index;
     uintb output = pcodeScript->evaluate(inputs);
+    output &= mask;
     addresstable.push_back(Address(spc,output));
   }
   ExecutablePcode *defaultScript = (ExecutablePcode *)fd->getArch()->pcodeinjectlib->getPayload(userop->getDefaultAddr());
@@ -2087,7 +2217,7 @@ void JumpTable::recoverModel(Funcdata *fd)
 {
   if (jmodel != (JumpModel *)0) {
     if (jmodel->isOverride()) {	// If preexisting model is override
-      jmodel->recoverModel(fd,indirect,0,maxtablesize);
+      jmodel->recoverModel(fd,indirect,0,glb->max_jumptable_size);
       return;
     }
     delete jmodel;		// Otherwise this is an old attempt we should remove
@@ -2098,18 +2228,18 @@ void JumpTable::recoverModel(Funcdata *fd)
     if (op->code() == CPUI_CALLOTHER) {
       JumpAssisted *jassisted = new JumpAssisted(this);
       jmodel = jassisted;
-      if (jmodel->recoverModel(fd,indirect,addresstable.size(),maxtablesize))
+      if (jmodel->recoverModel(fd,indirect,addresstable.size(),glb->max_jumptable_size))
 	return;
     }
   }
   JumpBasic *jbasic = new JumpBasic(this);
   jmodel = jbasic;
-  if (jmodel->recoverModel(fd,indirect,addresstable.size(),maxtablesize))
+  if (jmodel->recoverModel(fd,indirect,addresstable.size(),glb->max_jumptable_size))
     return;
   jmodel = new JumpBasic2(this);
   ((JumpBasic2 *)jmodel)->initializeStart(jbasic->getPathMeld());
   delete jbasic;
-  if (jmodel->recoverModel(fd,indirect,addresstable.size(),maxtablesize))
+  if (jmodel->recoverModel(fd,indirect,addresstable.size(),glb->max_jumptable_size))
     return;
   delete jmodel;
   jmodel = (JumpModel *)0;
@@ -2213,7 +2343,6 @@ JumpTable::JumpTable(Architecture *g,Address ad)
   switchVarConsume = ~((uintb)0);
   defaultBlock = -1;
   lastBlock = -1;
-  maxtablesize = 1024;
   maxaddsub = 1;
   maxleftright = 1;
   maxext = 1;
@@ -2234,7 +2363,6 @@ JumpTable::JumpTable(const JumpTable *op2)
   switchVarConsume = ~((uintb)0);
   defaultBlock = -1;
   lastBlock = op2->lastBlock;
-  maxtablesize = op2->maxtablesize;
   maxaddsub = op2->maxaddsub;
   maxleftright = op2->maxleftright;
   maxext = op2->maxext;
@@ -2552,7 +2680,7 @@ bool JumpTable::recoverLabels(Funcdata *fd)
   }
   else {
     jmodel = new JumpModelTrivial(this);
-    jmodel->recoverModel(fd,indirect,addresstable.size(),maxtablesize);
+    jmodel->recoverModel(fd,indirect,addresstable.size(),glb->max_jumptable_size);
     jmodel->buildAddresses(fd,indirect,addresstable,(vector<LoadTable> *)0);
     trivialSwitchOver();
     jmodel->buildLabels(fd,addresstable,label,origmodel);
@@ -2564,8 +2692,7 @@ bool JumpTable::recoverLabels(Funcdata *fd)
   return multistagerestart;
 }
 
-/// Clear out any data that is specific to a Funcdata instance.  The address table is not cleared
-/// if it was recovered, and override information is left intact.
+/// Clear out any data that is specific to a Funcdata instance.
 /// Right now this is only getting called, when the jumptable is an override in order to clear out derived data.
 void JumpTable::clear(void)
 
@@ -2580,93 +2707,93 @@ void JumpTable::clear(void)
     delete jmodel;
     jmodel = (JumpModel *)0;
   }
+  addresstable.clear();
   block2addr.clear();
   lastBlock = -1;
   label.clear();
   loadpoints.clear();
   indirect = (PcodeOp *)0;
   switchVarConsume = ~((uintb)0);
+  defaultBlock = -1;
   recoverystage = 0;
   // -opaddress- -maxtablesize- -maxaddsub- -maxleftright- -maxext- -collectloads- are permanent
 }
 
-/// The recovered addresses and case labels are saved to the XML stream.
-/// If override information is present, this is also incorporated into the tag.
-/// \param s is the stream to write to
-void JumpTable::saveXml(ostream &s) const
+/// The recovered addresses and case labels are encode to the stream.
+/// If override information is present, this is also incorporated into the element.
+/// \param encoder is the stream encoder
+void JumpTable::encode(Encoder &encoder) const
 
 {
   if (!isRecovered())
     throw LowlevelError("Trying to save unrecovered jumptable");
 
-  s << "<jumptable>\n";
-  opaddress.saveXml(s);
-  s << '\n';
+  encoder.openElement(ELEM_JUMPTABLE);
+  opaddress.encode(encoder);
   for(int4 i=0;i<addresstable.size();++i) {
-    s << "<dest";
+    encoder.openElement(ELEM_DEST);
     AddrSpace *spc = addresstable[i].getSpace();
     uintb off = addresstable[i].getOffset();
     if (spc != (AddrSpace *)0)
-      spc->saveXmlAttributes(s,off);
+      spc->encodeAttributes(encoder,off);
     if (i<label.size()) {
       if (label[i] != 0xBAD1ABE1)
-	a_v_u(s,"label",label[i]);
+	encoder.writeUnsignedInteger(ATTRIB_LABEL, label[i]);
     }
-    s << "/>\n";
+    encoder.closeElement(ELEM_DEST);
   }
   if (!loadpoints.empty()) {
     for(int4 i=0;i<loadpoints.size();++i)
-      loadpoints[i].saveXml(s);
+      loadpoints[i].encode(encoder);
   }
   if ((jmodel != (JumpModel *)0)&&(jmodel->isOverride()))
-    jmodel->saveXml(s);
-  s << "</jumptable>\n";
+    jmodel->encode(encoder);
+  encoder.closeElement(ELEM_JUMPTABLE);
 }
 
-/// Restore the addresses, \e case labels, and any override information from the tag.
+/// Parse addresses, \e case labels, and any override information from a \<jumptable> element.
 /// Other parts of the model and jump-table will still need to be recovered.
-/// \param el is the root \<jumptable> tag to restore from
-void JumpTable::restoreXml(const Element *el)
+/// \param decoder is the stream decoder
+void JumpTable::decode(Decoder &decoder)
 
 {
-  const List &list( el->getChildren() );
-  List::const_iterator iter = list.begin();
-  opaddress = Address::restoreXml( *iter, glb);
+  uint4 elemId = decoder.openElement(ELEM_JUMPTABLE);
+  opaddress = Address::decode( decoder );
   bool missedlabel = false;
-  ++iter;
-  while(iter != list.end()) {
-    const Element *subel = *iter;
-    if (subel->getName() == "dest") {
-      addresstable.push_back( Address::restoreXml( subel, glb) );
-      int4 maxnum = subel->getNumAttributes();
-      int4 i;
-      for(i=0;i<maxnum;++i) {
-	if (subel->getAttributeName(i) == "label") break;
+  for(;;) {
+    uint4 subId = decoder.peekElement();
+    if (subId == 0) break;
+    if (subId == ELEM_DEST) {
+      decoder.openElement();
+      bool foundlabel = false;
+      for(;;) {
+	uint4 attribId = decoder.getNextAttributeId();
+	if (attribId == 0) break;
+	if (attribId == ATTRIB_LABEL) {
+	  if (missedlabel)
+	    throw LowlevelError("Jumptable entries are missing labels");
+	  uintb lab = decoder.readUnsignedInteger();
+	  label.push_back(lab);
+	  foundlabel = true;
+	  break;
+	}
       }
-      if (i<maxnum) {		// Found a label attribute
-	if (missedlabel)
-	  throw LowlevelError("Jumptable entries are missing labels");
-	istringstream s1(subel->getAttributeValue(i));	
-	s1.unsetf(ios::dec | ios::hex | ios::oct);
-	uintb lab;
-	s1 >> lab;
-	label.push_back(lab);
-      }
-      else			// No label attribute
+      if (!foundlabel)		// No label attribute
 	missedlabel = true;	// No following entries are allowed to have a label attribute
+      addresstable.push_back( Address::decode( decoder ) );
     }
-    else if (subel->getName() == "loadtable") {
-      loadpoints.push_back(LoadTable());
-      loadpoints.back().restoreXml(subel,glb);
+    else if (subId == ELEM_LOADTABLE) {
+      loadpoints.emplace_back();
+      loadpoints.back().decode(decoder);
     }
-    else if (subel->getName() == "basicoverride") {
+    else if (subId == ELEM_BASICOVERRIDE) {
       if (jmodel != (JumpModel *)0)
 	throw LowlevelError("Duplicate jumptable override specs");
       jmodel = new JumpBasicOverride(this);
-      jmodel->restoreXml(subel,glb);
+      jmodel->decode(decoder);
     }
-    ++iter;
   }
+  decoder.closeElement(elemId);
 
   if (label.size()!=0) {
     while(label.size() < addresstable.size())
@@ -2691,3 +2818,5 @@ bool JumpTable::checkForMultistage(Funcdata *fd)
   }
   return false;
 }
+
+} // End namespace ghidra

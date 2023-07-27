@@ -102,13 +102,37 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 			clearSet = new AddressSet();
 
 			while (cuIter.hasNext()) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 				CodeUnit cu = cuIter.next();
 				if (cu instanceof Instruction) {
 					Instruction instr = (Instruction) cu;
+
+					// check for function on delay slot
+					if (listing.getFunctionAt(instr.getMinAddress()) != null) {
+						continue; // skip since it will be picked-up by flow if appropriate
+					}
+
+					// check for fallthrough to instruction
 					Address ffAddr = instr.getFallFrom();
 					if (ffAddr != null && startAddrs.contains(ffAddr)) {
-						continue; // skip since it will be picked-up by flow
+						continue; // skip since it will be picked-up by flow if appropriate
+					}
+
+					// check for flow into delay slot
+					if (instr.isInDelaySlot()) {
+						boolean skip = false;
+						ReferenceIterator refToIter = instr.getReferenceIteratorTo();
+						while (refToIter.hasNext()) {
+							Reference ref = refToIter.next();
+							RefType refType = ref.getReferenceType();
+							if (refType.isJump() || refType.isCall()) {
+								skip = true;
+								break;
+							}
+						}
+						if (skip) {
+							continue; // skip since it will be picked-up by flow if appropriate
+						}
 					}
 				}
 				else {
@@ -133,7 +157,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 			HashSet<Address> ptrDestinations = new HashSet<>();
 
 			while (!todoStarts.isEmpty()) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 				Address addr = todoStarts.pop();
 				if (clearSet.contains(addr)) {
 					continue;
@@ -190,7 +214,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 				SymbolTable symTable = program.getSymbolTable();
 				Iterator<Address> iter = ptrDestinations.iterator();
 				while (iter.hasNext()) {
-					monitor.checkCanceled();
+					monitor.checkCancelled();
 					Address addr = iter.next();
 					Symbol[] syms = symTable.getSymbols(addr);
 					for (Symbol sym : syms) {
@@ -235,7 +259,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 
 		ReferenceIterator refIter = refMgr.getReferencesTo(destAddr);
 		while (refIter.hasNext()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			Reference ref = refIter.next();
 			RefType refType = ref.getReferenceType();
 			if (refType instanceof FlowType) {
@@ -266,7 +290,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 
 		AddressIterator fromAddrIter = refMgr.getReferenceSourceIterator(refFromSet, true);
 		while (fromAddrIter.hasNext()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 
 			Address fromAddr = fromAddrIter.next();
 
@@ -295,7 +319,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 				boolean clearIt = true;
 				ReferenceIterator refIter = refMgr.getReferencesTo(toAddr);
 				while (refIter.hasNext()) {
-					monitor.checkCanceled();
+					monitor.checkCancelled();
 					Reference ref = refIter.next();
 					if (!clearSet.contains(ref.getFromAddress())) {
 						clearIt = false;
@@ -366,8 +390,8 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 			// re-parse instruction to regenerate fall-through context
 			program.getLanguage().parse(instr, context, instr.isInDelaySlot());
 			RegisterValue contextValue = context.getFlowContextValue(fallThroughAddr, true);
-			program.getProgramContext().setRegisterValue(fallThroughAddr, fallThroughAddr,
-				contextValue);
+			program.getProgramContext()
+					.setRegisterValue(fallThroughAddr, fallThroughAddr, contextValue);
 		}
 		catch (Exception e) {
 			return;
@@ -399,13 +423,13 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 		}
 		AddressIterator addrIter = refMgr.getReferenceDestinationIterator(clearSet, true);
 		while (addrIter.hasNext()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			Address addr = addrIter.next();
 			ReferenceIterator refIter = refMgr.getReferencesTo(addr);
 
 			Address dataRefAddr = null;
 			while (refIter.hasNext()) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 				Reference ref = refIter.next();
 				RefType refType = ref.getReferenceType();
 				if (refType.isFlow()) {
@@ -413,7 +437,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 						continue;
 					}
 					disassemblePoints.addRange(addr, addr);
-					if (contextReg != null) {
+					if (contextReg != Register.NO_CONTEXT) {
 						if (seedContext == null) {
 							seedContext = new DisassemblerContextImpl(programContext);
 						}
@@ -440,7 +464,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 		// get any in the clear set that were entry points
 		AddressIterator aiter = clearSet.getAddresses(true);
 		while (aiter.hasNext()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			Address addr = aiter.next();
 			if (program.getSymbolTable().isExternalEntryPoint(addr)) {
 				disassemblePoints.addRange(addr, addr);
@@ -454,7 +478,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 		cmd.setSeedContext(seedContext);
 		cmd.applyTo(program, monitor);
 
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 		// Analyze new data reference points (DisassembleCommand has already analyzed code)
 		AutoAnalysisManager analysisMgr = AutoAnalysisManager.getAnalysisManager(program);
@@ -479,7 +503,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 
 		AddressRangeIterator rangeIter = clearSet.getAddressRanges();
 		while (rangeIter.hasNext()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			AddressRange range = rangeIter.next();
 			Address addr = range.getMinAddress();
 			int searchCnt = 0;
@@ -503,7 +527,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 					if (ftAddr != null && (ignoreStart == null || !ftAddr.equals(ignoreStart))) {
 //                        alreadyCleared.addRange(ftAddr, addr);
 						disassemblePoints.addRange(ftAddr, ftAddr);
-						if (contextReg != null) {
+						if (contextReg != Register.NO_CONTEXT) {
 							if (seedContext == null) {
 								seedContext = new DisassemblerContextImpl(programContext);
 							}
@@ -523,8 +547,9 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 //         clearSet.add(alreadyCleared);
 
 		// Get rid of any bad bookmarks at seed points, will be put back if they are still bad.
-		program.getBookmarkManager().removeBookmarks(disassemblePoints, BookmarkType.ERROR,
-			Disassembler.ERROR_BOOKMARK_CATEGORY, monitor);
+		program.getBookmarkManager()
+				.removeBookmarks(disassemblePoints, BookmarkType.ERROR,
+					Disassembler.ERROR_BOOKMARK_CATEGORY, monitor);
 
 		// Disassemble fallthrough reference points
 		DisassembleCommand cmd = new DisassembleCommand(disassemblePoints, null);
@@ -547,7 +572,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 
 			Iterator<Function> fnIter = fnMgr.getFunctionsOverlapping(sub);
 			while (fnIter.hasNext()) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 				Function f = fnIter.next();
 				if (!starts.contains(f.getEntryPoint())) {
 					Msg.warn(this,
@@ -558,7 +583,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 
 			fnIter = fnMgr.getFunctionsOverlapping(sub);
 			while (fnIter.hasNext()) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 				Function f = fnIter.next();
 				if (starts.remove(f.getEntryPoint())) {
 					AddressSetView oldBody = f.getBody();
@@ -581,7 +606,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 
 			Iterator<Address> entryIter = starts.iterator();
 			while (entryIter.hasNext()) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 				Address entry = entryIter.next();
 				CreateFunctionCmd cmd = new CreateFunctionCmd(entry);
 				cmd.applyTo(program, monitor);
@@ -645,23 +670,24 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 
 		// Follow start block flow and build graph
 		while (!todoVertices.isEmpty()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			BlockVertex fromVertex = todoVertices.pop();
 			CodeBlock fromBlock = fromVertex.block;
 			if (protectedSet.contains(fromBlock.getMinAddress())) {
 				continue;
 			}
-			fromBlock = adjustBlockForSplitProtectedBlock(program, blockModel, fromBlock.getFirstStartAddress(), fromBlock);
+			fromBlock = adjustBlockForSplitProtectedBlock(program, blockModel,
+				fromBlock.getFirstStartAddress(), fromBlock);
 
-	        // HOT SPOT - getDestinations()
+			// HOT SPOT - getDestinations()
 			CodeBlockReferenceIterator blockRefIter = fromBlock.getDestinations(monitor);
 			if (clearOffcut) {
 				findDestAddrs(fromBlock, destAddrs); // Needed for detecting offcut flows
 			}
 			while (blockRefIter.hasNext()) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 				CodeBlockReference cbRef = blockRefIter.next();
-				
+
 				Address blockAddr = cbRef.getReference();
 				if (protectedSet.contains(blockAddr)) {
 					continue;
@@ -671,7 +697,8 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 				}
 				CodeBlock destBlock = cbRef.getDestinationBlock();
 				if (blockAddr.equals(destBlock.getFirstStartAddress())) {
-				    destBlock = adjustBlockForSplitProtectedBlock(program, blockModel, blockAddr, destBlock);
+					destBlock = adjustBlockForSplitProtectedBlock(program, blockModel, blockAddr,
+						destBlock);
 				}
 				if (neverSnipStartBlock && destBlock.equals(startBlock)) {
 					continue; // do not allow incoming edges to startBlock vertex
@@ -696,13 +723,13 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 							continue;
 						}
 					}
-                    // TODO: check disassembly hint
+					// TODO: check disassembly hint
 					blockSet.add(destBlock);
 					destVertex = new BlockVertex(destBlock);
 					vertexMap.put(blockAddr, destVertex);
 					todoVertices.push(destVertex);
 				}
-		        // HOT SPOT - HashSet.add()
+				// HOT SPOT - HashSet.add()
 				fromVertex.destVertices.add(destVertex);
 				destVertex.srcVertices.add(fromVertex);
 			}
@@ -717,7 +744,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 		FunctionManager functionManager = program.getFunctionManager();
 		Iterator<BlockVertex> vertexIter = vertexMap.values().iterator();
 		while (vertexIter.hasNext()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			BlockVertex v = vertexIter.next();
 			if (v == startVertex || v.srcVertices.isEmpty()) {
 				continue;
@@ -741,7 +768,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 					continue;
 				}
 				while (refIter.hasNext()) {
-					monitor.checkCanceled();
+					monitor.checkCancelled();
 					Reference ref = refIter.next();
 					Address fromAddr = ref.getFromAddress();
 					RefType refType = ref.getReferenceType();
@@ -767,8 +794,8 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 		return blockSet;
 	}
 
-	private CodeBlock adjustBlockForSplitProtectedBlock(Program program, SimpleBlockModel blockModel, Address blockAddr,
-			CodeBlock blockToAdjust) {
+	private CodeBlock adjustBlockForSplitProtectedBlock(Program program,
+			SimpleBlockModel blockModel, Address blockAddr, CodeBlock blockToAdjust) {
 		if (!protectedSet.isEmpty()) {
 			AddressSet intersect = protectedSet.intersectRange(blockToAdjust.getMinAddress(),
 				blockToAdjust.getMaxAddress());
@@ -792,7 +819,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 		Listing listing = program.getListing();
 		InstructionIterator iter = listing.getInstructions(destBlock.getMinAddress(), true);
 		while (iter.hasNext() && offcutStart == null) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			Instruction nextInstr = iter.next();
 			Address nextInstrAddr = nextInstr.getMinAddress();
 			if (nextInstrAddr.compareTo(blockEnd) > 0) {
@@ -819,7 +846,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 			Program program = offcutInstr.getProgram();
 			Listing listing = program.getListing();
 
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 
 			// Record outgoing flows as new starts for clearing
 			Reference[] refs = offcutInstr.getReferencesFrom();
@@ -857,8 +884,9 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 	public static void clearBadBookmarks(Program program, Address start, Address end,
 			TaskMonitor monitor) throws CancelledException {
 		AddressSet set = new AddressSet(start, end);
-		program.getBookmarkManager().removeBookmarks(set, BookmarkType.ERROR,
-			Disassembler.ERROR_BOOKMARK_CATEGORY, monitor);
+		program.getBookmarkManager()
+				.removeBookmarks(set, BookmarkType.ERROR, Disassembler.ERROR_BOOKMARK_CATEGORY,
+					monitor);
 	}
 
 	public static void clearBadBookmarks(Program program, AddressSetView set, TaskMonitor monitor)
@@ -869,7 +897,7 @@ public class ClearFlowAndRepairCmd extends BackgroundCommand {
 		// Check data fall-through locations for bookmarks
 		Listing listing = program.getListing();
 		for (AddressRange range : set.getAddressRanges()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			Address maxAddr = range.getMaxAddress();
 			Instruction lastInstr = listing.getInstructionContaining(maxAddr);
 			if (lastInstr == null) {

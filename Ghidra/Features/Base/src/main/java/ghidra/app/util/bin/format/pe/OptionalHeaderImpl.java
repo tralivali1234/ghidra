@@ -18,7 +18,7 @@ package ghidra.app.util.bin.format.pe;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.format.pe.ImageCor20Header.ImageCor20Flags;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOutOfBoundsException;
@@ -139,29 +139,11 @@ public class OptionalHeaderImpl implements OptionalHeader {
 	protected DataDirectory[] dataDirectory;
 
 	protected NTHeader ntHeader;
-	protected FactoryBundledWithBinaryReader reader;
+	protected BinaryReader reader;
 	protected int startIndex;
 	private long startOfDataDirs;
 
-	protected long originalImageBase;
-	protected boolean wasRebased;
-
-	static OptionalHeader createOptionalHeader(NTHeader ntHeader,
-			FactoryBundledWithBinaryReader reader, int startIndex) throws IOException {
-		OptionalHeaderImpl optionalHeaderImpl =
-			(OptionalHeaderImpl) reader.getFactory().create(OptionalHeaderImpl.class);
-		optionalHeaderImpl.initOptionalHeaderImpl(ntHeader, reader, startIndex);
-		return optionalHeaderImpl;
-	}
-
-	/**
-	 * DO NOT USE THIS CONSTRUCTOR, USE create*(GenericFactory ...) FACTORY METHODS INSTEAD.
-	 */
-	public OptionalHeaderImpl() {
-	}
-
-	private void initOptionalHeaderImpl(NTHeader ntHeader, FactoryBundledWithBinaryReader reader,
-			int startIndex) throws IOException {
+	OptionalHeaderImpl(NTHeader ntHeader, BinaryReader reader, int startIndex) throws IOException {
 		this.ntHeader = ntHeader;
 		this.reader = reader;
 		this.startIndex = startIndex;
@@ -195,11 +177,6 @@ public class OptionalHeaderImpl implements OptionalHeader {
 	@Override
 	public long getImageBase() {
 		return imageBase;
-	}
-
-	@Override
-	public long getOriginalImageBase() {
-		return originalImageBase;
 	}
 
 	@Override
@@ -284,13 +261,17 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 	@Override
 	public void processDataDirectories(TaskMonitor monitor) throws IOException {
-		monitor.setMessage("Parsing exports...");
+		reader.setPointerIndex(startOfDataDirs);
 
 		dataDirectory = new DataDirectory[numberOfRvaAndSizes];
-		int ndata = 0;
+		if (numberOfRvaAndSizes == 0) {
+			return;
+		}
 
+		int ndata = 0;
+		monitor.setMessage("Parsing exports...");
 		try {
-			dataDirectory[ndata] = ExportDataDirectory.createExportDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new ExportDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -303,7 +284,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing imports...");
 		try {
-			dataDirectory[ndata] = ImportDataDirectory.createImportDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new ImportDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -316,8 +297,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing resources...");
 		try {
-			dataDirectory[ndata] =
-				ResourceDataDirectory.createResourceDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new ResourceDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -330,8 +310,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing exceptions...");
 		try {
-			dataDirectory[ndata] =
-				ExceptionDataDirectory.createExceptionDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new ExceptionDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -344,8 +323,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing security...");
 		try {
-			dataDirectory[ndata] =
-				SecurityDataDirectory.createSecurityDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new SecurityDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -358,8 +336,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing relocations...");
 		try {
-			dataDirectory[ndata] =
-				BaseRelocationDataDirectory.createBaseRelocationDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new BaseRelocationDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -372,7 +349,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing debug information...");
 		try {
-			dataDirectory[ndata] = DebugDataDirectory.createDebugDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new DebugDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -385,8 +362,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing architecture...");
 		try {
-			dataDirectory[ndata] =
-				ArchitectureDataDirectory.createArchitectureDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new ArchitectureDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -399,8 +375,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing global pointer...");
 		try {
-			dataDirectory[ndata] =
-				GlobalPointerDataDirectory.createGlobalPointerDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new GlobalPointerDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -413,7 +388,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing TLS data...");
 		try {
-			dataDirectory[ndata] = TLSDataDirectory.createTLSDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new TLSDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -426,8 +401,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing load config data...");
 		try {
-			dataDirectory[ndata] =
-				LoadConfigDataDirectory.createLoadConfigDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new LoadConfigDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -440,8 +414,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing bound imports...");
 		try {
-			dataDirectory[ndata] =
-				BoundImportDataDirectory.createBoundImportDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new BoundImportDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -454,9 +427,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing import address table...");
 		try {
-			dataDirectory[ndata] =
-				ImportAddressTableDataDirectory.createImportAddressTableDataDirectory(ntHeader,
-					reader);
+			dataDirectory[ndata] = new ImportAddressTableDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -469,8 +440,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing delay imports...");
 		try {
-			dataDirectory[ndata] =
-				DelayImportDataDirectory.createDelayImportDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new DelayImportDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -483,8 +453,7 @@ public class OptionalHeaderImpl implements OptionalHeader {
 
 		monitor.setMessage("Parsing COM descriptors...");
 		try {
-			dataDirectory[ndata] =
-				COMDescriptorDataDirectory.createCOMDescriptorDataDirectory(ntHeader, reader);
+			dataDirectory[ndata] = new COMDescriptorDataDirectory(ntHeader, reader);
 		}
 		catch (RuntimeException re) {
 			if (PortableExecutable.DEBUG) {
@@ -538,23 +507,10 @@ public class OptionalHeaderImpl implements OptionalHeader {
 		if (is64bit()) {
 			baseOfData = -1;//not used
 			imageBase = reader.readNextLong();
-			if (imageBase <= 0) {
-				Msg.warn(this, "Non-standard image base: 0x" + Long.toHexString(imageBase));
-				originalImageBase = imageBase;
-				imageBase = 0x10000;
-				wasRebased = true;
-			}
 		}
 		else {
 			baseOfData = reader.readNextInt();
-			int imgBase = reader.readNextInt();
-			imageBase = imgBase & Conv.INT_MASK;
-			if (imgBase <= 0) {
-				Msg.warn(this, "Non-standard image base " + Integer.toHexString(imgBase));
-				originalImageBase = imageBase;
-				imageBase = 0x10000;
-				wasRebased = true;
-			}
+			imageBase = Integer.toUnsignedLong(reader.readNextInt());
 		}
 
 		sectionAlignment = reader.readNextInt();
@@ -768,20 +724,13 @@ public class OptionalHeaderImpl implements OptionalHeader {
 	}
 
 	@Override
-	public boolean wasRebased() {
-		return wasRebased;
-	}
-
-	@Override
 	public boolean isCLI() throws IOException {
 		long origPointerIndex = reader.getPointerIndex();
 
 		reader.setPointerIndex(startOfDataDirs + (DataDirectory.IMAGE_SIZEOF_IMAGE_DIRECTORY_ENTRY *
 			IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR));
 
-		ImageCor20Header cor20 =
-			COMDescriptorDataDirectory.createCOMDescriptorDataDirectory(ntHeader,
-				reader).getHeader();
+		ImageCor20Header cor20 = new COMDescriptorDataDirectory(ntHeader, reader).getHeader();
 
 		reader.setPointerIndex(origPointerIndex);
 

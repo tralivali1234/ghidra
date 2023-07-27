@@ -100,7 +100,7 @@ public class GhidraPythonInterpreter extends InteractiveInterpreter {
 		// Store the default python path in case we need to reset it later.
 		defaultPythonPath = new ArrayList<>();
 		for (Object object : systemState.path) {
-			defaultPythonPath.add(Py.newString(object.toString()));
+			defaultPythonPath.add(Py.newStringOrUnicode(object.toString()));
 		}
 
 		// Allow interruption of python code to occur when various code paths are
@@ -121,8 +121,6 @@ public class GhidraPythonInterpreter extends InteractiveInterpreter {
 
 		// Add __builtin__ module for code completion
 		builtinModule = (PyModule) imp.load("__builtin__");
-
-		initializePythonPath();
 	}
 
 	/**
@@ -134,19 +132,19 @@ public class GhidraPythonInterpreter extends InteractiveInterpreter {
 		systemState.path.retainAll(defaultPythonPath);
 
 		// Add in Ghidra script source directories
-		for (ResourceFile resourceFile : GhidraScriptUtil.getScriptSourceDirectories()) {
-			systemState.path.append(Py.newString(resourceFile.getFile(false).getAbsolutePath()));
+		for (ResourceFile resourceFile : GhidraScriptUtil.getEnabledScriptSourceDirectories()) {
+			systemState.path.append(Py.newStringOrUnicode(resourceFile.getFile(false).getAbsolutePath()));
 		}
 
 		for (ResourceFile resourceFile : GhidraScriptUtil.getExplodedCompiledSourceBundlePaths()) {
-			systemState.path.append(Py.newString(resourceFile.getFile(false).getAbsolutePath()));
+			systemState.path.append(Py.newStringOrUnicode(resourceFile.getFile(false).getAbsolutePath()));
 		}
 
 		// Add in the PyDev remote debugger module
 		if (!SystemUtilities.isInDevelopmentMode()) {
 			File pyDevSrcDir = PyDevUtils.getPyDevSrcDir();
 			if (pyDevSrcDir != null) {
-				systemState.path.append(Py.newString(pyDevSrcDir.getAbsolutePath()));
+				systemState.path.append(Py.newStringOrUnicode(pyDevSrcDir.getAbsolutePath()));
 			}
 		}
 	}
@@ -168,6 +166,7 @@ public class GhidraPythonInterpreter extends InteractiveInterpreter {
 				"Ghidra python interpreter has already been cleaned up.");
 		}
 
+		initializePythonPath();
 		injectScriptHierarchy(script);
 
 		if (buffer.length() > 0) {
@@ -207,9 +206,13 @@ public class GhidraPythonInterpreter extends InteractiveInterpreter {
 				"Ghidra python interpreter has already been cleaned up.");
 		}
 
+		initializePythonPath();
 		injectScriptHierarchy(script);
 
 		Py.getThreadState().tracefunc = interruptTraceFunction;
+
+		// The Python import system sets the __file__ attribute to the file it's executing
+		setVariable("__file__", new PyString(file.getAbsolutePath()));
 
 		// If the remote python debugger is alive, initialize it by calling settrace()
 		if (!SystemUtilities.isInDevelopmentMode() && !SystemUtilities.isInHeadlessMode()) {
@@ -218,8 +221,12 @@ public class GhidraPythonInterpreter extends InteractiveInterpreter {
 					InetAddress localhost = InetAddress.getLocalHost();
 					new Socket(localhost, PyDevUtils.PYDEV_REMOTE_DEBUGGER_PORT).close();
 					Msg.info(this, "Python debugger found");
-					exec("import pydevd; pydevd.settrace(host=\"" + localhost.getHostName() +
+					StringBuilder dbgCmds = new StringBuilder();
+					dbgCmds.append("import pydevd;");
+					dbgCmds.append("pydevd.threadingCurrentThread().__pydevd_main_thread = True;");
+					dbgCmds.append("pydevd.settrace(host=\"" + localhost.getHostName() +
 						"\", port=" + PyDevUtils.PYDEV_REMOTE_DEBUGGER_PORT + ", suspend=False);");
+					exec(dbgCmds.toString());
 					Msg.info(this, "Connected to a python debugger.");
 				}
 				catch (IOException e) {
@@ -245,8 +252,14 @@ public class GhidraPythonInterpreter extends InteractiveInterpreter {
 	 * @param str The string to print.
 	 */
 	void printErr(String str) {
-		getSystemState().stderr.invoke("write", new PyString(str + "\n"));
-		getSystemState().stderr.invoke("flush");
+		try {
+			getSystemState().stderr.invoke("write", new PyString(str + "\n"));
+			getSystemState().stderr.invoke("flush");
+		}
+		catch (PyException e) {
+			// if the python interp state's stdin/stdout/stderr is messed up, it can throw an error 
+			Msg.error(this, "Failed to write to stderr", e);
+		}
 	}
 
 	/**
@@ -319,7 +332,7 @@ public class GhidraPythonInterpreter extends InteractiveInterpreter {
 	 *
 	 * @param script The script whose class hierarchy is to be used for injection.
 	 */
-	private void injectScriptHierarchy(PythonScript script) {
+	void injectScriptHierarchy(PythonScript script) {
 
 		if (script == null) {
 			return;
@@ -429,10 +442,18 @@ public class GhidraPythonInterpreter extends InteractiveInterpreter {
 	 *
 	 * @param cmd The command line.
 	 * @param includeBuiltins True if we should include python built-ins; otherwise, false.
+	 * @param caretPos The position of the caret in the input string 'cmd'
 	 * @return A list of possible command completions.  Could be empty if there aren't any.
 	 * @see PythonPlugin#getCompletions
 	 */
-	List<CodeCompletion> getCommandCompletions(String cmd, boolean includeBuiltins) {
+	List<CodeCompletion> getCommandCompletions(String cmd, boolean includeBuiltins, int caretPos) {
+		// At this point the caret is assumed to be positioned right after the value we need to
+		// complete (example: "[complete.Me<caret>, rest, code]"). To make the completion work
+		// in our case, it's sufficient (albeit naive) to just remove the text on the right side
+		// of our caret. The later code (on the python's side) will parse the rest properly
+		// and will generate the completions.
+		cmd = cmd.substring(0, caretPos);
+
 		if ((cmd.length() > 0) && (cmd.charAt(cmd.length() - 1) == '(')) {
 			return getMethodCommandCompletions(cmd);
 		}

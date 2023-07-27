@@ -27,13 +27,14 @@ import org.jdom.Element;
 import org.jdom.input.SAXBuilder;
 import org.jdom.output.XMLOutputter;
 
-import docking.framework.*;
+import docking.framework.ApplicationInformationDisplayFactory;
+import docking.framework.DockingApplicationConfiguration;
+import generic.application.GenericApplicationLayout;
 import ghidra.framework.*;
 import ghidra.framework.model.ToolServices;
 import ghidra.util.Msg;
-import ghidra.util.SystemUtilities;
+import ghidra.util.Swing;
 import ghidra.util.classfinder.ClassSearcher;
-import ghidra.util.exception.AssertException;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.xml.GenericXMLOutputter;
 import ghidra.util.xml.XmlUtilities;
@@ -52,51 +53,66 @@ public abstract class StandAloneApplication implements GenericStandAloneApplicat
 	/**
 	 * Creates a new application using the given properties filename. The
 	 * filename is expected reside in the current working directory.
-	 * 
 	 * <p>
 	 * <b>The given properties file is expected to have the
 	 * {@link ApplicationProperties#APPLICATION_NAME_PROPERTY} and
 	 * {@link ApplicationProperties#APPLICATION_VERSION_PROPERTY} properties
 	 * set.</b>
-	 * 
+	 *
 	 * @param propertiesFilename the name of the properties file.
+	 * @throws IOException error causing application initialization failure
 	 */
-	public StandAloneApplication(String propertiesFilename) {
-
-		try {
-			ApplicationProperties properties = ApplicationProperties.fromFile(propertiesFilename);
-			String name = properties.getProperty(ApplicationProperties.APPLICATION_NAME_PROPERTY);
-			if (name == null) {
-				Msg.error(this,
-					"The application.name property is not set in " + propertiesFilename);
-			}
-
-			String version =
-				properties.getProperty(ApplicationProperties.APPLICATION_VERSION_PROPERTY);
-			if (version == null) {
-				Msg.error(this,
-					"The application.name property is not set in " + propertiesFilename);
-			}
-
-			ApplicationLayout applicationLayout = new DockingApplicationLayout(properties);
-			init(applicationLayout);
-		}
-		catch (IOException e) {
-			throw new AssertException(e);
-		}
+	public StandAloneApplication(String propertiesFilename) throws IOException {
+		this(new GenericApplicationLayout(readApplicationProperties(propertiesFilename)));
 	}
 
-	public StandAloneApplication(String name, String version) {
+	/**
+	 * Creates a new application using the specified application name
+	 * and version.
+	 * @param name application name
+	 * @param version application version
+	 * @throws IOException error causing application initialization failure
+	 */
+	public StandAloneApplication(String name, String version) throws IOException {
+		this(new GenericApplicationLayout(name, version));
+	}
 
-		// Setup application layout
-		try {
-			ApplicationLayout applicationLayout = new DockingApplicationLayout(name, version);
-			init(applicationLayout);
-		}
-		catch (IOException e) {
-			throw new AssertException(e);
+	/**
+	 * Creates a new application using the given application layout
+	 * and associated application properties.
+	 * @param applicationLayout application layout
+	 */
+	public StandAloneApplication(ApplicationLayout applicationLayout) {
+		init(applicationLayout);
+	}
+
+	/**
+	 * Read {@link ApplicationProperties} from the specified file path relative
+	 * to the current working directory.
+	 * <p>
+	 * <b>The given properties file is expected to have the
+	 * {@link ApplicationProperties#APPLICATION_NAME_PROPERTY} and
+	 * {@link ApplicationProperties#APPLICATION_VERSION_PROPERTY} properties
+	 * set.</b>
+	 * @param propertiesFilename the name of the properties file.
+	 * @return application properties
+	 * @throws IOException if file read error occurs
+	 */
+	public static ApplicationProperties readApplicationProperties(String propertiesFilename)
+			throws IOException {
+		ApplicationProperties properties = ApplicationProperties.fromFile(propertiesFilename);
+		String name = properties.getProperty(ApplicationProperties.APPLICATION_NAME_PROPERTY);
+		if (name == null) {
+			Msg.error(StandAloneApplication.class,
+				"The application.name property is not set in " + propertiesFilename);
 		}
 
+		String version = properties.getProperty(ApplicationProperties.APPLICATION_VERSION_PROPERTY);
+		if (version == null) {
+			Msg.error(StandAloneApplication.class,
+				"The application.name property is not set in " + propertiesFilename);
+		}
+		return properties;
 	}
 
 	private void init(ApplicationLayout applicationLayout) {
@@ -132,7 +148,7 @@ public abstract class StandAloneApplication implements GenericStandAloneApplicat
 
 		Application.initializeApplication(layout, configuration);
 		try {
-			ClassSearcher.search(false, configuration.getTaskMonitor());
+			ClassSearcher.search(configuration.getTaskMonitor());
 		}
 		catch (CancelledException e) {
 			Msg.debug(this, "Class searching unexpectedly cancelled.");
@@ -141,7 +157,7 @@ public abstract class StandAloneApplication implements GenericStandAloneApplicat
 		setDockIcon();
 
 		try {
-			SystemUtilities.runSwingNow(() -> tool = createTool());
+			Swing.runNow(() -> tool = createTool());
 		}
 		catch (Exception e) {
 			Msg.error(this, "Error creating tool, exiting...", e);
@@ -187,6 +203,7 @@ public abstract class StandAloneApplication implements GenericStandAloneApplicat
 
 	protected void initializeTool(StandAlonePluginTool newTool) {
 		newTool.addExitAction();
+		newTool.installUtilityPlugins();
 	}
 
 	private Element getDefaultToolElement() {

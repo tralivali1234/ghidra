@@ -13,10 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef __CPUI_RULE_COMPILE__
-#define __CPUI_RULE_COMPILE__
+#ifndef __RULECOMPILE_HH__
+#define __RULECOMPILE_HH__
 
 #include "unify.hh"
+
+namespace ghidra {
 
 class RuleLexer {
   static int4 identlist[256];	// 1 is identifier, 2 is digit, 4=namechar
@@ -61,7 +63,6 @@ public:
 class DummyTranslate : public Translate {
 public:
   virtual void initialize(DocumentStorage &store) {}
-  virtual void addRegister(const string &nm,AddrSpace *base,uintb offset,int4 size) {}
   virtual const VarnodeData &getRegister(const string &nm) const { throw LowlevelError("Cannot add register to DummyTranslate"); }
   virtual string getRegisterName(AddrSpace *base,uintb off,int4 size) const { return ""; }
   virtual void getAllRegisters(map<VarnodeData,string> &reglist) const {}
@@ -199,4 +200,5 @@ public:
 
  */
 
+} // End namespace ghidra
 #endif

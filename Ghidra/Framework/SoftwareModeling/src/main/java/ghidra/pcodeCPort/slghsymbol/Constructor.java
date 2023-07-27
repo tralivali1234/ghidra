@@ -22,7 +22,7 @@ import org.jdom.Element;
 
 import generic.stl.IteratorSTL;
 import generic.stl.VectorSTL;
-import ghidra.pcodeCPort.context.*;
+import ghidra.pcodeCPort.context.SleighError;
 import ghidra.pcodeCPort.semantics.ConstTpl.const_type;
 import ghidra.pcodeCPort.semantics.ConstructTpl;
 import ghidra.pcodeCPort.semantics.HandleTpl;
@@ -48,6 +48,7 @@ public class Constructor {
 	private int firstwhitespace; // Index of first whitespace piece in -printpiece-
 	private int flowthruindex; // if >=0 then print only a single operand no markup
 	private boolean inerror;
+	private int sourceFileIndex = -1;    //source file index
 
 	public TokenPattern getPattern() {
 		return pattern;
@@ -75,6 +76,22 @@ public class Constructor {
 
 	public int getLineno() {
 		return location == null ? 0 : location.lineno;
+	}
+
+	/**
+	 * Set the source file index
+	 * @param index index
+	 */
+	public void setSourceFileIndex(int index) {
+		sourceFileIndex = index;
+	}
+
+	/**
+	 * Return the source file index
+	 * @return index
+	 */
+	public int getIndex() {
+		return sourceFileIndex;
 	}
 
 	public void addContext(VectorSTL<ContextChange> vec) {
@@ -110,13 +127,6 @@ public class Constructor {
 
 	public int getNumSections() {
 		return namedtempl.size();
-	}
-
-	public void applyContext(ParserWalkerChange pos) {
-		IteratorSTL<ContextChange> iter = context.begin();
-		for (; !iter.isEnd(); iter.increment()) {
-			iter.get().apply(pos);
-		}
 	}
 
 	public void markSubtableOperands(VectorSTL<Integer> check) {
@@ -279,65 +289,6 @@ public class Constructor {
 		namedtempl.set(id, tpl);
 	}
 
-	public void print(PrintStream s, ParserWalker pos) {
-		IteratorSTL<String> piter;
-		for (piter = printpiece.begin(); !piter.isEnd(); piter.increment()) {
-			if (piter.get().charAt(0) == '\n') {
-				int index = piter.get().charAt(1) - 'A';
-				operands.get(index).print(s, pos);
-			}
-			else {
-				s.append(piter.get());
-			}
-		}
-	}
-
-	public void printMnemonic(PrintStream s, ParserWalker pos) {
-		if (flowthruindex != -1) {
-			TripleSymbol definingSymbol = operands.get(flowthruindex).getDefiningSymbol();
-			if (definingSymbol instanceof SubtableSymbol) {
-				pos.pushOperand(flowthruindex);
-				pos.getConstructor().printMnemonic(s, pos);
-				pos.popOperand();
-				return;
-			}
-		}
-		int endind = (firstwhitespace == -1) ? printpiece.size() : firstwhitespace;
-		for (int i = 0; i < endind; ++i) {
-			if (printpiece.get(i).charAt(0) == '\n') {
-				int index = printpiece.get(i).charAt(1) - 'A';
-				operands.get(index).print(s, pos);
-			}
-			else {
-				s.append(printpiece.get(i));
-			}
-		}
-	}
-
-	public void printBody(PrintStream s, ParserWalker pos) {
-		if (flowthruindex != -1) {
-			TripleSymbol sym = operands.get(flowthruindex).getDefiningSymbol();
-			if (sym instanceof SubtableSymbol) {
-				pos.pushOperand(flowthruindex);
-				pos.getConstructor().printBody(s, pos);
-				pos.popOperand();
-				return;
-			}
-		}
-		if (firstwhitespace == -1) {
-			return; // Nothing to print after firstwhitespace
-		}
-		for (int i = firstwhitespace + 1; i < printpiece.size(); ++i) {
-			if (printpiece.get(i).charAt(0) == '\n') {
-				int index = printpiece.get(i).charAt(1) - 'A';
-				operands.get(index).print(s, pos);
-			}
-			else {
-				s.append(printpiece.get(i));
-			}
-		}
-	}
-
 	// Allow for user to force extra space at end of printing
 	public void removeTrailingSpace() {
 		if ((!printpiece.empty()) && (printpiece.back().equals(" "))) {
@@ -359,6 +310,8 @@ public class Constructor {
 		s.print(minimumlength);
 		s.append("\"");
 		s.append(" line=\"");
+		s.print(sourceFileIndex);
+		s.append(":");
 		s.print(getLineno());
 		s.append("\">\n");
 		for (int i = 0; i < operands.size(); ++i) {

@@ -17,19 +17,21 @@ package ghidra.app.plugin.core.functiongraph;
 
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
-import java.lang.reflect.Constructor;
 import java.util.*;
 
-import javax.swing.*;
+import javax.swing.Icon;
+import javax.swing.KeyStroke;
 
 import docking.ActionContext;
 import docking.DockingUtils;
 import docking.action.*;
 import docking.menu.ActionState;
 import docking.menu.MultiStateDockingAction;
+import docking.options.OptionsService;
 import docking.widgets.EventTrigger;
 import docking.widgets.OptionDialog;
 import edu.uci.ics.jung.graph.Graph;
+import generic.theme.GIcon;
 import ghidra.app.events.ProgramSelectionPluginEvent;
 import ghidra.app.plugin.core.functiongraph.action.*;
 import ghidra.app.plugin.core.functiongraph.graph.FGEdge;
@@ -41,25 +43,32 @@ import ghidra.app.plugin.core.functiongraph.mvc.FGController;
 import ghidra.app.plugin.core.functiongraph.mvc.FGData;
 import ghidra.framework.options.SaveState;
 import ghidra.framework.plugintool.PluginTool;
-import ghidra.framework.plugintool.util.OptionsService;
 import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.listing.Function;
 import ghidra.program.util.ProgramLocation;
 import ghidra.program.util.ProgramSelection;
-import ghidra.util.*;
-import resources.Icons;
-import resources.ResourceManager;
+import ghidra.util.HelpLocation;
+import ghidra.util.SystemUtilities;
 
 class FGActionManager {
 	private static final String EDGE_HOVER_HIGHLIGHT = "EDGE_HOVER_HIGHLIGHT";
 	private static final String EDGE_SELECTION_HIGHLIGHT = "EDGE_SELECTION_HIGHLIGHT";
-	private static final String LAYOUT_NAME = "LAYOUT_NAME";
 
-	private static final ImageIcon EDIT_ICON = ResourceManager.loadImage("images/id.png");
-	private static final ImageIcon FULL_SCREEN_ICON =
-		ResourceManager.loadImage("images/fullscreen_view.png");
-	private static final Icon XREFS_ICON = ResourceManager.loadImage("images/brick_link.png");
+	// save state key names
+	private static final String LAYOUT_NAME = "LAYOUT_NAME";
+	private static final String COMPLEX_LAYOUT_NAME = "COMPLEX_LAYOUT_NAME";
+	private static final String LAYOUT_CLASS_NAME = "LAYOUT_CLASS_NAME";
+
+	//@formatter:off
+	private static final Icon GROUP_ICON = new GIcon("icon.plugin.functiongraph.action.vertex.group");
+	private static final Icon GROUP_ADD_ICON = new GIcon("icon.plugin.functiongraph.action.vertex.group.add");
+	private static final Icon UNGROUP_ICON = new GIcon("icon.plugin.functiongraph.action.vertex.ungroup");
+
+	private static final Icon EDIT_ICON = new GIcon("icon.plugin.functiongraph.action.vertex.edit.label");
+	private static final Icon FULL_SCREEN_ICON = new GIcon("icon.plugin.functiongraph.action.vertex.full.screen");
+	private static final Icon XREFS_ICON = new GIcon("icon.plugin.functiongraph.action.vertex.full.screen");
+	//@formatter:off
 
 	private PluginTool tool;
 	private FunctionGraphPlugin plugin;
@@ -71,7 +80,7 @@ class FGActionManager {
 	private MultiStateDockingAction<EdgeDisplayType> vertexHoverModeAction;
 	private MultiStateDockingAction<EdgeDisplayType> vertexFocusModeAction;
 
-	private MultiStateDockingAction<Class<? extends FGLayoutProvider>> layoutAction;
+	private MultiStateDockingAction<FGLayoutProvider> layoutAction;
 
 	FGActionManager(FunctionGraphPlugin plugin, FGController controller, FGProvider provider) {
 		this.plugin = plugin;
@@ -118,7 +127,7 @@ class FGActionManager {
 
 		// subgroup 3, after the refresh and layout actions
 		chooseFormatsAction.setToolBarData(new ToolBarData(
-			ResourceManager.loadImage("images/field.header.png"), layoutGroup, "3"));
+			new GIcon("icon.plugin.functiongraph.action.vertex.edit.format"), layoutGroup, "3"));
 		chooseFormatsAction.setHelpLocation(
 			new HelpLocation("FunctionGraphPlugin", "Function_Graph_Action_Format"));
 
@@ -135,7 +144,7 @@ class FGActionManager {
 				}
 			};
 		homeAction.setToolBarData(
-			new ToolBarData(ResourceManager.loadImage("images/house.png"), toolBarGroup1));
+			new ToolBarData(new GIcon("icon.plugin.functiongraph.action.viewer.home"), toolBarGroup1));
 		homeAction.setHelpLocation(
 			new HelpLocation("FunctionGraphPlugin", "Function_Graph_Action_Home"));
 
@@ -156,7 +165,8 @@ class FGActionManager {
 				return controller.hasResults();
 			}
 		};
-		resetGraphAction.setToolBarData(new ToolBarData(Icons.REFRESH_ICON, layoutGroup, "1"));
+		resetGraphAction.setToolBarData(
+			new ToolBarData(new GIcon("icon.plugin.functiongraph.action.viewer.reset"), layoutGroup, "1"));
 		resetGraphAction.setDescription("<html>Reloads the graph--All positioning and grouping " +
 			"information is <b>lost</b>");
 		resetGraphAction.setHelpLocation(
@@ -185,8 +195,8 @@ class FGActionManager {
 				return !(context instanceof FunctionGraphVertexLocationInFullViewModeActionContext);
 			}
 		};
-		zoomOutAction.setPopupMenuData(
-			new MenuData(new String[] { "Zoom Out" }, popuEndPopupGroup));
+		zoomOutAction
+				.setPopupMenuData(new MenuData(new String[] { "Zoom Out" }, popuEndPopupGroup));
 		zoomOutAction.setKeyBindingData(new KeyBindingData(
 			KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, DockingUtils.CONTROL_KEY_MODIFIER_MASK)));
 		zoomOutAction.setHelpLocation(new HelpLocation("FunctionGraphPlugin", "Zoom"));
@@ -321,8 +331,8 @@ class FGActionManager {
 		menuData.setMenuSubGroup(Integer.toString(vertexGroupingSubgroupOffset++));
 		editLabelAction.setDescription("Change the label for the code block");
 		editLabelAction.setPopupMenuData(menuData);
-		editLabelAction.setHelpLocation(
-			new HelpLocation("FunctionGraphPlugin", "Vertex_Action_Label"));
+		editLabelAction
+				.setHelpLocation(new HelpLocation("FunctionGraphPlugin", "Vertex_Action_Label"));
 
 		DockingAction fullViewAction = new DockingAction("Vertex View Mode", plugin.getName()) {
 			@Override
@@ -438,7 +448,7 @@ class FGActionManager {
 				}
 			};
 		menuData = new MenuData(new String[] { "Group Selected Vertices" }, popupMutateGroup2);
-		menuData.setIcon(FunctionGraphPlugin.GROUP_ICON);
+		menuData.setIcon(GROUP_ICON);
 		menuData.setMenuSubGroup(Integer.toString(groupingSubgroupOffset++));
 		groupSelectedVertices.setPopupMenuData(menuData);
 		groupSelectedVertices.setHelpLocation(
@@ -497,7 +507,7 @@ class FGActionManager {
 		menuData = new MenuData(new String[] { "Group Selected Vertices - Add to Group" },
 			popupMutateGroup2);
 
-		menuData.setIcon(FunctionGraphPlugin.GROUP_ADD_ICON);
+		menuData.setIcon(GROUP_ADD_ICON);
 		menuData.setMenuSubGroup(Integer.toString(groupingSubgroupOffset++));
 		addSelectedVerticesToGroup.setPopupMenuData(menuData);
 		addSelectedVerticesToGroup.setHelpLocation(new HelpLocation("FunctionGraphPlugin",
@@ -540,7 +550,7 @@ class FGActionManager {
 			};
 		menuData = new MenuData(new String[] { "Ungroup Selected Vertices" }, popupMutateGroup2);
 
-		menuData.setIcon(FunctionGraphPlugin.UNGROUP_ICON);
+		menuData.setIcon(UNGROUP_ICON);
 		menuData.setMenuSubGroup(Integer.toString(groupingSubgroupOffset++));
 		ungroupSelectedVertices.setPopupMenuData(menuData);
 		ungroupSelectedVertices.setHelpLocation(
@@ -649,7 +659,7 @@ class FGActionManager {
 				return controller.getGraphedFunction() != null;
 			}
 		};
-		ImageIcon image = ResourceManager.loadImage("images/camera-photo.png");
+		Icon image = new GIcon("icon.plugin.functiongraph.action.viewer.clone");
 		cloneAction.setToolBarData(new ToolBarData(image, toolbarEndGroup));
 		cloneAction.setDescription(
 			"Create a snapshot (disconnected) copy of this Function Graph window ");
@@ -665,7 +675,7 @@ class FGActionManager {
 				@Override
 				public void actionPerformed(ActionContext context) {
 					OptionsService service = tool.getService(OptionsService.class);
-					service.showOptionsDialog(FunctionGraphPlugin.PLUGIN_OPTIONS_NAME,
+					service.showOptionsDialog(FunctionGraphPlugin.OPTIONS_NAME_PATH,
 						"Function Graph");
 				}
 
@@ -713,8 +723,8 @@ class FGActionManager {
 			};
 		selectHoveredEdgesAction.setPopupMenuData(new MenuData(
 			new String[] { selectionMenuName, "From Hovered Edges" }, popupSelectionGroup2));
-		selectHoveredEdgesAction.setHelpLocation(
-			new HelpLocation("FunctionGraphPlugin", "Path_Selection"));
+		selectHoveredEdgesAction
+				.setHelpLocation(new HelpLocation("FunctionGraphPlugin", "Path_Selection"));
 
 		DockingAction selectFocusedEdgesAction =
 			new DockingAction("Make Selection From Focused Edges", plugin.getName()) {
@@ -747,8 +757,8 @@ class FGActionManager {
 			};
 		selectFocusedEdgesAction.setPopupMenuData(new MenuData(
 			new String[] { selectionMenuName, "From Focused Edges" }, popupSelectionGroup2));
-		selectFocusedEdgesAction.setHelpLocation(
-			new HelpLocation("FunctionGraphPlugin", "Path_Selection"));
+		selectFocusedEdgesAction
+				.setHelpLocation(new HelpLocation("FunctionGraphPlugin", "Path_Selection"));
 
 		DockingAction clearCurrentSelectionAction =
 			new DockingAction("Clear Current Selection", plugin.getName()) {
@@ -771,8 +781,8 @@ class FGActionManager {
 			};
 		clearCurrentSelectionAction.setPopupMenuData(new MenuData(
 			new String[] { selectionMenuName, "Clear Graph Selection" }, popupSelectionGroup3));
-		clearCurrentSelectionAction.setHelpLocation(
-			new HelpLocation("FunctionGraphPlugin", "Path_Selection"));
+		clearCurrentSelectionAction
+				.setHelpLocation(new HelpLocation("FunctionGraphPlugin", "Path_Selection"));
 
 		DockingAction selectAllAction =
 			new DockingAction("Select All Code Units", plugin.getName()) {
@@ -811,12 +821,12 @@ class FGActionManager {
 					return isValidContext(context);
 				}
 			};
-		selectAllAction.setKeyBindingData(
-			new KeyBindingData(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK));
+		selectAllAction
+				.setKeyBindingData(new KeyBindingData(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK));
 		selectAllAction.setPopupMenuData(new MenuData(
 			new String[] { selectionMenuName, "Select All Code Units" }, popupSelectionGroup3));
-		selectAllAction.setHelpLocation(
-			new HelpLocation("FunctionGraphPlugin", "Code_Unit_Selection"));
+		selectAllAction
+				.setHelpLocation(new HelpLocation("FunctionGraphPlugin", "Code_Unit_Selection"));
 
 		provider.addLocalAction(chooseFormatsAction);
 		provider.addLocalAction(homeAction);
@@ -855,18 +865,17 @@ class FGActionManager {
 		HelpLocation layoutHelpLocation =
 			new HelpLocation("FunctionGraphPlugin", "Function_Graph_Action_Layout");
 
-		layoutAction = new MultiStateDockingAction<>("Relayout Graph", plugin.getName(), true) {
+		layoutAction = new MultiStateDockingAction<>("Relayout Graph", plugin.getName()) {
 
 			@Override
-			protected void doActionPerformed(ActionContext context) {
+			public void actionPerformed(ActionContext context) {
 				// this callback is when the user clicks the button
-				Class<? extends FGLayoutProvider> currentUserData = getCurrentUserData();
+				FGLayoutProvider currentUserData = getCurrentUserData();
 				changeLayout(currentUserData);
 			}
 
 			@Override
-			public void actionStateChanged(
-					ActionState<Class<? extends FGLayoutProvider>> newActionState,
+			public void actionStateChanged(ActionState<FGLayoutProvider> newActionState,
 					EventTrigger trigger) {
 				changeLayout(newActionState.getUserData());
 				if (trigger != EventTrigger.API_CALL) {
@@ -878,34 +887,36 @@ class FGActionManager {
 		layoutAction.setSubGroup("2"); // 2 after refresh, which is 1
 		layoutAction.setHelpLocation(layoutHelpLocation);
 
-		List<ActionState<Class<? extends FGLayoutProvider>>> actionStates =
-			loadActionStatesForLayoutProviders();
+		// This icon will display when the action has no icon.   This allows actions with no good
+		// icon to be blank in the menu, but to use this icon on the toolbar.
+		layoutAction.setDefaultIcon(new GIcon("icon.plugin.functiongraph.action.viewer.layout"));
 
-		for (ActionState<Class<? extends FGLayoutProvider>> actionState : actionStates) {
+		List<ActionState<FGLayoutProvider>> actionStates = loadActionStatesForLayoutProviders();
+		for (ActionState<FGLayoutProvider> actionState : actionStates) {
 			layoutAction.addActionState(actionState);
 		}
 
 		provider.addLocalAction(layoutAction);
 	}
 
-	private void changeLayout(Class<? extends FGLayoutProvider> layoutClass) {
-		FGLayoutProvider layoutInstance = getLayoutInstance(layoutClass);
-		if (layoutInstance == null) {
-			return;
-		}
-		controller.changeLayout(layoutInstance);
+	private void changeLayout(FGLayoutProvider layout) {
+		controller.changeLayout(layout);
 	}
 
-	private List<ActionState<Class<? extends FGLayoutProvider>>> loadActionStatesForLayoutProviders() {
-
+	private List<ActionState<FGLayoutProvider>> loadActionStatesForLayoutProviders() {
 		List<FGLayoutProvider> layoutInstances = plugin.getLayoutProviders();
-		List<ActionState<Class<? extends FGLayoutProvider>>> list = new ArrayList<>();
+		return createActionStates(layoutInstances);
+	}
+
+	private List<ActionState<FGLayoutProvider>> createActionStates(
+			List<FGLayoutProvider> layoutProviders) {
+		List<ActionState<FGLayoutProvider>> list = new ArrayList<>();
 		HelpLocation layoutHelpLocation =
 			new HelpLocation("FunctionGraphPlugin", "Function_Graph_Action_Layout");
-		for (FGLayoutProvider layout : layoutInstances) {
+		for (FGLayoutProvider layout : layoutProviders) {
 
-			ActionState<Class<? extends FGLayoutProvider>> layoutState = new ActionState<>(
-				layout.getLayoutName(), layout.getActionIcon(), layout.getClass());
+			ActionState<FGLayoutProvider> layoutState =
+				new ActionState<>(layout.getLayoutName(), layout.getActionIcon(), layout);
 			layoutState.setHelpLocation(layoutHelpLocation);
 			list.add(layoutState);
 		}
@@ -913,41 +924,35 @@ class FGActionManager {
 		return list;
 	}
 
-	private FGLayoutProvider getLayoutInstance(Class<? extends FGLayoutProvider> layoutClass) {
-		FGLayoutProvider layoutInstance = null;
-		try {
-			Constructor<? extends FGLayoutProvider> constructor =
-				layoutClass.getConstructor((Class<?>[]) null);
-			layoutInstance = constructor.newInstance((Object[]) null);
-		}
-		catch (Exception e) {
-			Msg.showError(this, provider.getComponent(), "Unable to Create Graph Layout",
-				"Unable to create layout: " + layoutClass.getName(), e);
-		}
-		return layoutInstance;
-	}
+	private void setLayoutActionStateByClassName(String layoutClassName, String layoutName) {
 
-	@SuppressWarnings("unchecked")
-	private void setLayoutActionStateByClassName(String layoutClassName) {
-		try {
-			Class<?> classInstance = Class.forName(layoutClassName);
-			layoutAction.setCurrentActionStateByUserData(
-				(Class<? extends FGLayoutProvider>) classInstance);
+		if (layoutName == null) {
+			return; // this may be null when coming from an older version of Ghidra
 		}
-		catch (ClassNotFoundException e) {
-			// give up...leave the action the way it was
+
+		List<ActionState<FGLayoutProvider>> states = layoutAction.getAllActionStates();
+		for (ActionState<FGLayoutProvider> state : states) {
+			FGLayoutProvider layoutProvider = state.getUserData();
+			String stateLayoutName = layoutProvider.getLayoutName();
+			if (stateLayoutName.equals(layoutName)) {
+				layoutAction.setCurrentActionState(state);
+				return;
+			}
 		}
 	}
 
 	private void addVertexHoverModeAction(String group) {
-		Icon pathsToVertexIcon = ResourceManager.loadImage("images/fgin.png");
-		Icon pathsFromVertexIcon = ResourceManager.loadImage("images/fgout.png");
-		Icon pathsFromToVertexIcon = ResourceManager.loadImage("images/fginout.png");
-		Icon cyclesIcon = ResourceManager.loadImage("images/fgloop.png");
-		Icon pathsIcon = ResourceManager.loadImage("images/fgpaths.png");
-		Icon forwardScopedIcon = ResourceManager.loadImage("images/fgblock.png");
-		Icon reverseScopedIcon = ResourceManager.loadImage("images/fgrevblock.png");
-		Icon nothingIcon = ResourceManager.loadImage("images/hoverOff.gif");
+
+		//@formatter:off
+		Icon pathsToVertexIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.paths.to.vertex");
+		Icon pathsFromVertexIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.paths.from.vertex");
+		Icon pathsFromToVertexIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.paths.from.to.vertex");
+		Icon pathsIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.paths.all");
+		Icon cyclesIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.cycles");
+		Icon forwardScopedIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.scoped.flow.forward");
+		Icon reverseScopedIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.scoped.flow.reverse");
+		Icon nothingIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.off");
+		//@formatter:off
 
 		HelpLocation pathHelpLocation =
 			new HelpLocation("FunctionGraphPlugin", "Path_Highlight_Actions");
@@ -998,7 +1003,6 @@ class FGActionManager {
 			};
 		vertexHoverModeAction.setGroup(group);
 		vertexHoverModeAction.setHelpLocation(pathHelpLocation);
-		vertexHoverModeAction.setPerformActionOnPrimaryButtonClick(false);
 
 		vertexHoverModeAction.addActionState(offState);
 		vertexHoverModeAction.addActionState(pathsForwardScopedFlow);
@@ -1016,14 +1020,18 @@ class FGActionManager {
 	}
 
 	private void addVertexSelectedModeAction(String group) {
-		Icon pathsToVertexIcon = ResourceManager.loadImage("images/fgin.png");
-		Icon pathsFromVertexIcon = ResourceManager.loadImage("images/fgout.png");
-		Icon pathsFromToVertexIcon = ResourceManager.loadImage("images/fginout.png");
-		Icon cyclesIcon = ResourceManager.loadImage("images/fgloop.png");
-		Icon allCyclesIcon = ResourceManager.loadImage("images/fgloopall.png");
-		Icon forwardScopedIcon = ResourceManager.loadImage("images/fgblock.png");
-		Icon reverseScopedIcon = ResourceManager.loadImage("images/fgrevblock.png");
-		Icon nothingIcon = ResourceManager.loadImage("images/hoverOff.gif");
+
+		//@formatter:off
+		Icon pathsToVertexIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.paths.to.vertex");
+		Icon pathsFromVertexIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.paths.from.vertex");
+		Icon pathsFromToVertexIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.paths.from.to.vertex");
+		Icon cyclesIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.cycles");
+		Icon allCyclesIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.cycles.all");
+		Icon forwardScopedIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.scoped.flow.forward");
+		Icon reverseScopedIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.scoped.flow.reverse");
+		Icon nothingIcon = new GIcon("icon.plugin.functiongraph.action.viewer.vertex.hover.off");
+		//@formatter:off
+
 
 		HelpLocation pathHelpLocation =
 			new HelpLocation("FunctionGraphPlugin", "Path_Highlight_Actions");
@@ -1067,7 +1075,6 @@ class FGActionManager {
 			};
 		vertexFocusModeAction.setGroup(group);
 		vertexFocusModeAction.setHelpLocation(pathHelpLocation);
-		vertexFocusModeAction.setPerformActionOnPrimaryButtonClick(false);
 
 		vertexFocusModeAction.addActionState(offState);
 		vertexFocusModeAction.addActionState(pathsForwardScopedFlow);
@@ -1091,8 +1098,9 @@ class FGActionManager {
 		AddressSet subtraction = provider.getCurrentProgramSelection().subtract(functionBody);
 
 		ProgramSelection programSelectionWithoutGraphBody = new ProgramSelection(subtraction);
-		plugin.getTool().firePluginEvent(new ProgramSelectionPluginEvent("Spoof!",
-			programSelectionWithoutGraphBody, provider.getCurrentProgram()));
+		plugin.getTool()
+				.firePluginEvent(new ProgramSelectionPluginEvent("Spoof!",
+					programSelectionWithoutGraphBody, provider.getCurrentProgram()));
 	}
 
 	private Set<FGVertex> getAllVertices() {
@@ -1161,8 +1169,9 @@ class FGActionManager {
 
 	private void makeSelectionFromAddresses(AddressSet addresses) {
 		ProgramSelection selection = new ProgramSelection(addresses);
-		plugin.getTool().firePluginEvent(
-			new ProgramSelectionPluginEvent("Spoof!", selection, provider.getCurrentProgram()));
+		plugin.getTool()
+				.firePluginEvent(new ProgramSelectionPluginEvent("Spoof!", selection,
+					provider.getCurrentProgram()));
 	}
 
 	private void ungroupVertices(Set<GroupedFunctionGraphVertex> groupVertices) {
@@ -1213,11 +1222,16 @@ class FGActionManager {
 		togglePopups.setSelected(visible);
 	}
 
-	void setCurrentActionState(ActionState<Class<? extends FGLayoutProvider>> state) {
+	void setCurrentActionState(ActionState<FGLayoutProvider> state) {
 		layoutAction.setCurrentActionState(state);
 	}
 
-	ActionState<Class<? extends FGLayoutProvider>> getCurrentLayoutState() {
+	void setLayouts(List<FGLayoutProvider> layouts) {
+		List<ActionState<FGLayoutProvider>> states = createActionStates(layouts);
+		layoutAction.setActionStates(states);
+	}
+
+	ActionState<FGLayoutProvider> getCurrentLayoutState() {
 		return layoutAction.getCurrentState();
 	}
 
@@ -1230,14 +1244,26 @@ class FGActionManager {
 			vertexFocusModeAction.getCurrentState().getUserData());
 		vertexFocusModeAction.setCurrentActionStateByUserData(selectedState);
 
-		String layoutClassName =
-			saveState.getString(LAYOUT_NAME, layoutAction.getCurrentUserData().getName());
-		setLayoutActionStateByClassName(layoutClassName);
+		FGLayoutProvider layoutProvider = layoutAction.getCurrentUserData();
+		SaveState layoutState = saveState.getSaveState(COMPLEX_LAYOUT_NAME);
+		if (layoutState != null) {
+			String layoutName = layoutState.getString(LAYOUT_NAME, layoutProvider.getLayoutName());
+			String layoutClassName =
+				layoutState.getString(LAYOUT_CLASS_NAME, layoutProvider.getClass().getName());
+			setLayoutActionStateByClassName(layoutClassName, layoutName);
+		}
 	}
 
 	void writeConfigState(SaveState saveState) {
 		saveState.putEnum(EDGE_HOVER_HIGHLIGHT, vertexHoverModeAction.getCurrentUserData());
 		saveState.putEnum(EDGE_SELECTION_HIGHLIGHT, vertexFocusModeAction.getCurrentUserData());
-		saveState.putString(LAYOUT_NAME, layoutAction.getCurrentUserData().getName());
+
+		FGLayoutProvider layoutProvider = layoutAction.getCurrentUserData();
+
+		SaveState layoutState = new SaveState(COMPLEX_LAYOUT_NAME);
+		String layoutName = layoutProvider.getLayoutName();
+		layoutState.putString(LAYOUT_NAME, layoutName);
+		layoutState.putString(LAYOUT_CLASS_NAME, layoutProvider.getClass().getName());
+		saveState.putSaveState(COMPLEX_LAYOUT_NAME, layoutState);
 	}
 }

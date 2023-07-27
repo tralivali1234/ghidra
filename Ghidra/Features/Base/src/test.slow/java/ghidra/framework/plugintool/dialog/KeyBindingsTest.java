@@ -27,10 +27,12 @@ import javax.swing.table.*;
 
 import org.junit.*;
 
+import docking.DockingWindowManager;
 import docking.KeyEntryTextField;
 import docking.action.DockingActionIf;
 import docking.tool.util.DockingToolConstants;
 import docking.widgets.MultiLineLabel;
+import generic.test.TestUtils;
 import ghidra.app.plugin.core.codebrowser.CodeBrowserPlugin;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.test.AbstractGhidraHeadedIntegrationTest;
@@ -234,6 +236,44 @@ public class KeyBindingsTest extends AbstractGhidraHeadedIntegrationTest {
 	}
 
 	@Test
+	public void testSetKeyBinding_AltGraphFix() throws Exception {
+
+		//
+		// This test is verifying a hack that was put in to fix the difference in 'Alt' key handling
+		// on Windows (https://bugs.openjdk.java.net/browse/JDK-8194873).
+		// Create an action and set the keybinding to use the 'Alt' modifier.
+		// Verify that the action will also get mapped to the 'Alt Graph' modifier.
+		//
+
+		// verify that no action is mapped to the new binding
+		int keyCode = KeyEvent.VK_0;
+		int modifiers = InputEvent.ALT_DOWN_MASK | InputEvent.ALT_GRAPH_DOWN_MASK;
+		KeyEvent keyEvent =
+			new KeyEvent(dialog, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), modifiers,
+				keyCode, KeyEvent.CHAR_UNDEFINED);
+		KeyStroke keyStroke = KeyStroke.getKeyStrokeForEvent(keyEvent);
+		DockingWindowManager dwm = DockingWindowManager.getActiveInstance();
+		Action action =
+			(Action) TestUtils.invokeInstanceMethod("getActionForKeyStroke", dwm, keyStroke);
+		assertNull(action);
+
+		// set the new binding that uses the 'Alt' key
+		selectRowForAction(action1);
+		triggerActionKey(keyField, InputEvent.ALT_DOWN_MASK, keyCode);
+		String keyStrokeString = KeyEntryTextField.parseKeyStroke(
+			KeyStroke.getKeyStroke(keyCode, InputEvent.ALT_DOWN_MASK));
+		assertEquals(keyStrokeString, keyField.getText());
+		apply();
+		assertEquals(KeyStroke.getKeyStroke(keyCode, InputEvent.ALT_DOWN_MASK),
+			getKeyStroke(action1));
+
+		// verify the additional binding for 'Alt Graph'
+		action =
+			(Action) TestUtils.invokeInstanceMethod("getActionForKeyStroke", dwm, keyStroke);
+		assertNotNull(action);
+	}
+
+	@Test
 	public void testClearKeyBinding1() throws Exception {
 
 		selectRowForAction(action1);
@@ -295,14 +335,11 @@ public class KeyBindingsTest extends AbstractGhidraHeadedIntegrationTest {
 		setUpDialog();
 		selectRowForAction(action1);
 
-		capture(panel, "pre.keystroke.change");
 		KeyStroke validKeyStroke = KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK);
 		triggerActionKey(keyField, InputEvent.CTRL_DOWN_MASK, validKeyStroke.getKeyCode());
 		assertEquals(KeyEntryTextField.parseKeyStroke(validKeyStroke), keyField.getText());
-		capture(panel, "post.keystroke.change");
 
 		apply();
-		capture(panel, "post.keystroke.apply");
 		assertEquals(validKeyStroke, getKeyStroke(action1));
 
 		// try again to set a reserved binding

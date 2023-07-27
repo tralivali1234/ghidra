@@ -17,6 +17,8 @@ package ghidra.framework.main.datatree;
 
 import static org.junit.Assert.*;
 
+import java.net.URL;
+import java.util.Objects;
 import java.util.Set;
 
 import javax.swing.*;
@@ -24,12 +26,13 @@ import javax.swing.*;
 import org.junit.Assert;
 import org.junit.Test;
 
+import docking.AbstractErrDialog;
 import docking.ActionContext;
 import docking.action.DockingActionIf;
-import docking.widgets.MultiLineLabel;
 import docking.widgets.OptionDialog;
 import docking.widgets.table.GTable;
 import docking.widgets.tree.GTreeNode;
+import generic.theme.GIcon;
 import ghidra.framework.main.projectdata.actions.VersionControlAction;
 import ghidra.framework.model.DomainFile;
 import ghidra.framework.model.DomainFolder;
@@ -40,6 +43,7 @@ import ghidra.program.model.symbol.SymbolTable;
 import ghidra.util.task.TaskMonitor;
 import resources.MultiIcon;
 import resources.ResourceManager;
+import resources.icons.UrlImageIcon;
 
 /**
  * Tests for version control (not multi user).
@@ -146,15 +150,15 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 		GTreeNode nodeC = getNode(PROGRAM_C);
 		selectNodes(nodeA, nodeC);
 
-		final DockingActionIf action = getAction("Add to Version Control");
+		DockingActionIf action = getAction("Add to Version Control");
 		SwingUtilities.invokeLater(
 			() -> action.actionPerformed(getDomainFileActionContext(nodeA, nodeC)));
 		waitForSwing();
 		VersionControlDialog dialog = waitForDialogComponent(VersionControlDialog.class);
 		assertNotNull(dialog);
-		final JTextArea textArea = findComponent(dialog, JTextArea.class);
+		JTextArea textArea = findComponent(dialog, JTextArea.class);
 		assertNotNull(textArea);
-		final JCheckBox cb = findComponent(dialog, JCheckBox.class);
+		JCheckBox cb = findComponent(dialog, JCheckBox.class);
 		assertNotNull(cb);
 		runSwing(() -> {
 			textArea.setText("This is a test");
@@ -176,11 +180,11 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 	@Test
 	public void testCheckOut() throws Exception {
 		// add program to version control
-		final GTreeNode node = getNode(PROGRAM_A);
+		GTreeNode node = getNode(PROGRAM_A);
 		addToVersionControl(node, false);
 
 		selectNode(node);
-		final DockingActionIf action = getAction("CheckOut");
+		DockingActionIf action = getAction("CheckOut");
 		SwingUtilities.invokeLater(() -> action.actionPerformed(getDomainFileActionContext(node)));
 		waitForSwing();
 		waitForTasks();
@@ -190,9 +194,11 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 		assertTrue(icon instanceof MultiIcon);
 		Icon[] icons = ((MultiIcon) icon).getIcons();
 		Icon checkOutIcon = ResourceManager.loadImage("images/checkex.png");
+		URL checkOutIconUrl = getURL(checkOutIcon);
 		boolean found = false;
 		for (Icon element : icons) {
-			if (checkOutIcon.equals(element)) {
+			URL elementUrl = getURL(element);
+			if (Objects.equals(checkOutIconUrl, elementUrl)) {
 				found = true;
 				break;
 			}
@@ -204,11 +210,11 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 
 	@Test
 	public void testCheckIn() throws Exception {
-		final GTreeNode node = getNode(PROGRAM_A);
+		GTreeNode node = getNode(PROGRAM_A);
 		addToVersionControl(node, false);
 
 		selectNode(node);
-		final DockingActionIf action = getAction("CheckOut");
+		DockingActionIf action = getAction("CheckOut");
 		runSwing(() -> action.actionPerformed(getDomainFileActionContext(node)), false);
 		waitForSwing();
 		waitForTasks();
@@ -227,14 +233,15 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 			program.save(null, TaskMonitor.DUMMY);
 		}
 		program.release(this);
-		final DockingActionIf checkInAction = getAction("CheckIn");
+
+		DockingActionIf checkInAction = getAction("CheckIn");
 		runSwing(() -> checkInAction.actionPerformed(getDomainFileActionContext(node)), false);
 		waitForSwing();
 		VersionControlDialog dialog = waitForDialogComponent(VersionControlDialog.class);
 		assertNotNull(dialog);
-		final JTextArea textArea = findComponent(dialog, JTextArea.class);
+		JTextArea textArea = findComponent(dialog, JTextArea.class);
 		assertNotNull(textArea);
-		final JCheckBox cb = findComponent(dialog, JCheckBox.class);
+		JCheckBox cb = findComponent(dialog, JCheckBox.class);
 		assertNotNull(cb);
 		runSwing(() -> {
 			textArea.setText("This is a test");
@@ -253,10 +260,10 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 		setErrorGUIEnabled(true);// expect an error dialog
 		// create 3 versions of the program
 		doCreateVersions();
-		final GTreeNode node = getNode(PROGRAM_A);
+		GTreeNode node = getNode(PROGRAM_A);
 
 		selectNode(node);
-		final DockingActionIf historyAction = getAction("Show History");
+		DockingActionIf historyAction = getAction("Show History");
 		runSwing(() -> historyAction.actionPerformed(getDomainFileActionContext(node)));
 
 		VersionHistoryDialog dialog = waitForDialogComponent(VersionHistoryDialog.class);
@@ -267,14 +274,9 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 		performAction(deleteAction, false);
 
 		// cannot delete a file that is checked out
-		OptionDialog d = waitForDialogComponent(OptionDialog.class);
-		assertNotNull(d);
-
-		MultiLineLabel label = findComponent(d.getComponent(), MultiLineLabel.class);
-		assertNotNull(label);
-		assertEquals("File version has one or more checkouts.", label.getLabel());
-
-		runSwing(() -> d.close());
+		AbstractErrDialog d = waitForErrorDialog();
+		assertEquals("File version has one or more checkouts.", d.getMessage());
+		close(d);
 	}
 
 	@Test
@@ -283,10 +285,10 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 		setErrorGUIEnabled(true);// expect an error dialog
 
 		doCreateVersions();
-		final GTreeNode node = getNode(PROGRAM_A);
+		GTreeNode node = getNode(PROGRAM_A);
 		selectNode(node);
 
-		final DockingActionIf historyAction = getAction("Show History");
+		DockingActionIf historyAction = getAction("Show History");
 		runSwing(() -> historyAction.actionPerformed(getDomainFileActionContext(node)));
 
 		VersionHistoryDialog dialog = waitForDialogComponent(VersionHistoryDialog.class);
@@ -297,17 +299,10 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 		performAction(deleteAction, false);
 
 		//	can delete only the first or last version of the file
-		OptionDialog d = waitForDialogComponent(OptionDialog.class);
-		assertNotNull(d);
-
-		MultiLineLabel label = findComponent(d.getComponent(), MultiLineLabel.class);
-		assertNotNull(label);
-		assertEquals("Only first and last version may be deleted.", label.getLabel());
-
-		runSwing(() -> {
-			d.close();
-			dialog.close();
-		});
+		AbstractErrDialog d = waitForErrorDialog();
+		assertEquals("Only first and last version may be deleted.", d.getMessage());
+		close(d);
+		close(dialog);
 	}
 
 	@Test
@@ -341,7 +336,7 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 
 		assertEquals(rowCount - 1, table.getRowCount());
 
-		runSwing(() -> dialog.close());
+		close(dialog);
 	}
 
 	@Test
@@ -371,7 +366,7 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 		FindCheckoutsDialog dialog = waitForDialogComponent(FindCheckoutsDialog.class);
 		assertNotNull(dialog);
 
-		final GTable table = findComponent(dialog.getComponent(), GTable.class);
+		GTable table = findComponent(dialog.getComponent(), GTable.class);
 		assertNotNull(table);
 		waitForBusyTable(table);
 
@@ -431,4 +426,20 @@ public class VersionControlAction2Test extends AbstractVersionControlActionTest 
 		pressButtonByText(dialog, "Dismiss");
 		waitForTasks();
 	}
+
+	/**
+	 * Gets the URL for the given icon
+	 * @param icon the icon to get a URL for
+	 * @return the URL for the given icon
+	 */
+	public URL getURL(Icon icon) {
+		if (icon instanceof UrlImageIcon urlIcon) {
+			return urlIcon.getUrl();
+		}
+		if (icon instanceof GIcon gIcon) {
+			return gIcon.getUrl();
+		}
+		return null;
+	}
+
 }

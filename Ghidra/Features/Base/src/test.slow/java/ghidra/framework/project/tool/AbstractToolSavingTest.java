@@ -73,7 +73,7 @@ public abstract class AbstractToolSavingTest extends AbstractGhidraHeadedIntegra
 		setToolPosition(tool, defaultPosition);
 
 		closeTool(tool);
-		waitForPostedSwingRunnables();
+		waitForSwing();
 	}
 
 	protected void startGhidra() throws IOException {
@@ -120,7 +120,7 @@ public abstract class AbstractToolSavingTest extends AbstractGhidraHeadedIntegra
 				throw afe;
 			}
 		});
-		waitForPostedSwingRunnables();
+		waitForSwing();
 	}
 
 	protected void closeTool(PluginTool tool) {
@@ -129,7 +129,7 @@ public abstract class AbstractToolSavingTest extends AbstractGhidraHeadedIntegra
 
 	protected void closeToolAndManuallySave(PluginTool tool) {
 		closeTool(tool); // close the changed one (this will trigger a modal dialog)
-		waitForPostedSwingRunnables();
+		waitForSwing();
 		Window saveChangesDialog = getSaveChangesDialog(tool);
 		assertNotNull(saveChangesDialog);
 		pressSave(saveChangesDialog);
@@ -203,7 +203,7 @@ public abstract class AbstractToolSavingTest extends AbstractGhidraHeadedIntegra
 		PluginTool[] tools = activeWorkspace.getTools();
 		List<PluginTool> pluginToolList = new ArrayList<>(tools.length);
 		for (PluginTool tool : tools) {
-			pluginToolList.add((PluginTool) tool);
+			pluginToolList.add(tool);
 		}
 		return pluginToolList;
 	}
@@ -234,13 +234,9 @@ public abstract class AbstractToolSavingTest extends AbstractGhidraHeadedIntegra
 	protected Map<String, Object> getOptionsMap(PluginTool tool) {
 		Map<String, Object> map = new TreeMap<>();
 		Options[] options = tool.getOptions();
+
 		for (Options option : options) {
 			String optionsName = option.getName();
-
-			if (optionsName.equals("Key Bindings")) {
-				Msg.debug(this, "break");
-			}
-
 			List<String> optionNames = option.getOptionNames();
 			for (String name : optionNames) {
 				Object value = invokeInstanceMethod("getObject", option,
@@ -277,7 +273,12 @@ public abstract class AbstractToolSavingTest extends AbstractGhidraHeadedIntegra
 	}
 
 	protected PluginTool launchTool(String toolName) {
-		return testEnv.launchTool(toolName, null);
+		PluginTool tool = testEnv.launchTool(toolName, null);
+
+		// There is some delayed options registration that causes sporadic test failures.  Waiting
+		// for swing here seems to fix that.
+		waitForSwing();
+		return tool;
 	}
 
 	protected void dumpToolFile(String name) throws IOException {
@@ -341,26 +342,13 @@ public abstract class AbstractToolSavingTest extends AbstractGhidraHeadedIntegra
 
 		JFrame toolFrame = tool.getToolFrame();
 		runSwing(() -> {
-			Msg.debug(this, "setting tool location to: " + point + "\n\ton window: " +
-				toolFrame.getTitle() + " (" + System.identityHashCode(toolFrame) + ")");
 			toolFrame.setLocation(point);
 		});
 		waitForSwing();
 
 		waitForCondition(() -> {
-
-			Msg.debug(this,
-				"\tattempt again - setting tool location to: " + point + "\n\ton window: " +
-					toolFrame.getTitle() + " (" + System.identityHashCode(toolFrame) + ")");
 			toolFrame.setLocation(point);
-
-			Msg.debug(this, "checking " + point + " against " + toolFrame.getLocation());
 			return point.equals(toolFrame.getLocation());
-		});
-
-		// debug
-		runSwing(() -> {
-			Msg.debug(this, "\ttool bounds now: " + toolFrame.getBounds());
 		});
 	}
 

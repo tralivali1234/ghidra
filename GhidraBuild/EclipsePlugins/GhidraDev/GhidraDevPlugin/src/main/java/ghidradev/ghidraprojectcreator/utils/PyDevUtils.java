@@ -16,13 +16,23 @@
 package ghidradev.ghidraprojectcreator.utils;
 
 import java.io.File;
+import java.net.URI;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
+import java.util.stream.Stream;
 
 import javax.naming.OperationNotSupportedException;
 
 import org.eclipse.core.runtime.*;
 import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.FrameworkUtil;
+
+import ghidradev.Activator;
 
 /**
  * Utility methods for interacting with PyDev.
@@ -142,21 +152,33 @@ public class PyDevUtils {
 	 * Gets The PyDev source directory.
 	 * 
 	 * @return The PyDev source directory, or null if it was not found.
+	 * @throws CoreException if there was a problem searching for the PyDev source directory.
 	 */
-	public static File getPyDevSrcDir() {
-		String eclipsePath = Platform.getInstallLocation().getURL().getFile();
-		File pluginsDir = new File(eclipsePath, "plugins");
-		File[] pluginSubDirs = pluginsDir.listFiles(File::isDirectory);
-		if (pluginSubDirs != null) {
-			for (File dir : pluginSubDirs) {
-				if (dir.getName().startsWith("org.python.pydev")) {
-					File pysrcDir = new File(dir, "pysrc");
-					if (pysrcDir.isDirectory()) {
-						return pysrcDir;
-					}
+	public static File getPyDevSrcDir() throws CoreException {
+		Bundle[] bundles =
+			FrameworkUtil.getBundle(PyDevUtilsInternal.class).getBundleContext().getBundles();
+
+		Bundle pydevCoreBundle = Stream.of(bundles)
+				.filter(bundle -> bundle.getSymbolicName().contains("org.python.pydev.core"))
+				.findFirst()
+				.orElse(null);
+
+		if (pydevCoreBundle != null) {
+			try {
+				URL pydevDirUrl = FileLocator.toFileURL(pydevCoreBundle.getEntry("/"));
+				URI pydevDirUri =
+					new URI(pydevDirUrl.getProtocol(), pydevDirUrl.getPath(), null).normalize();
+				Path pysrcDir = Paths.get(pydevDirUri).resolve("pysrc");
+				if (Files.exists(pysrcDir)) {
+					return pysrcDir.toFile();
 				}
 			}
+			catch (Exception e) {
+				throw new CoreException(new Status(IStatus.ERROR, Activator.PLUGIN_ID,
+					IStatus.ERROR, "Problem searching for PyDev source directory", e));
+			}
 		}
+
 		return null;
 	}
 }

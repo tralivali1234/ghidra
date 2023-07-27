@@ -43,41 +43,41 @@ public class InputDialog extends DialogComponentProvider {
 	private InputDialogListener listener;
 
 	/**
-	 * Creates a provider for a generic input dialog with the specified title, a text field,
-	 * labeled by the specified label. The user should check the value of
-	 * "isCanceled()" to know whether or not the user canceled the operation.
-	 * Otherwise, use the "getValue()" or "getValues()" to get the value(s)
-	 * entered by the user. Use the tool's "showDialog()" to display the dialog.
+	 * Creates a provider for a generic input dialog with the specified title, a text field, labeled
+	 * by the specified label. The user should check the value of "isCanceled()" to know whether or
+	 * not the user canceled the operation. Otherwise, use the "getValue()" or "getValues()" to get
+	 * the value(s) entered by the user. Use the tool's "showDialog()" to display the dialog.
 	 * <P>
+	 * 
 	 * @param dialogTitle used as the name of the dialog's title bar
 	 * @param label value to use for the label of the text field
 	 */
 	public InputDialog(String dialogTitle, String label) {
-		this(dialogTitle, new String[] { label }, new String[] { DEFAULT_VALUE }, true, null);
+		this(dialogTitle, new String[] { label }, new String[] { DEFAULT_VALUE }, null);
 	}
 
 	/**
-	 * Creates a generic input dialog with the specified title, a text field,
-	 * labeled by the specified label. The user should check the value of
-	 * "isCanceled()" to know whether or not the user canceled the operation.
-	 * Otherwise, use the "getValue()" or "getValues()" to get the value(s)
-	 * entered by the user. Use the tool's "showDialog()" to display the dialog.
+	 * Creates a generic input dialog with the specified title, a text field, labeled by the
+	 * specified label. The user should check the value of "isCanceled()" to know whether or not the
+	 * user canceled the operation. Otherwise, use the "getValue()" or "getValues()" to get the
+	 * value(s) entered by the user. Use the tool's "showDialog()" to display the dialog.
 	 * <P>
+	 * 
 	 * @param dialogTitle used as the name of the dialog's title bar
 	 * @param label value to use for the label of the text field
 	 * @param initialValue initial value to use for the text field
 	 */
 	public InputDialog(String dialogTitle, String label, String initialValue) {
-		this(dialogTitle, new String[] { label }, new String[] { initialValue }, true, null);
+		this(dialogTitle, new String[] { label }, new String[] { initialValue }, null);
 	}
 
 	/**
-	 * Creates a generic input dialog with the specified title, a text field,
-	 * labeled by the specified label. The user should check the value of
-	 * "isCanceled()" to know whether or not the user canceled the operation.
-	 * Otherwise, use the "getValue()" or "getValues()" to get the value(s)
-	 * entered by the user. Use the tool's "showDialog()" to display the dialog.
+	 * Creates a generic input dialog with the specified title, a text field, labeled by the
+	 * specified label. The user should check the value of "isCanceled()" to know whether or not the
+	 * user canceled the operation. Otherwise, use the "getValue()" or "getValues()" to get the
+	 * value(s) entered by the user. Use the tool's "showDialog()" to display the dialog.
 	 * <P>
+	 * 
 	 * @param dialogTitle used as the name of the dialog's title bar
 	 * @param label value to use for the label of the text field
 	 * @param initialValue initial value to use for the text field
@@ -85,56 +85,55 @@ public class InputDialog extends DialogComponentProvider {
 	 */
 	public InputDialog(String dialogTitle, String label, String initialValue,
 			InputDialogListener listener) {
-		this(dialogTitle, new String[] { label }, new String[] { initialValue }, true, listener);
+		this(dialogTitle, new String[] { label }, new String[] { initialValue }, listener);
 	}
 
 	/**
-	 * Creates a generic input dialog with the specified title, a text field,
-	 * labeled by the specified label. The user should check the value of
-	 * "isCanceled()" to know whether or not the user canceled the operation.
-	 * Otherwise, use the "getValue()" or "getValues()" to get the value(s)
-	 * entered by the user. Use the tool's "showDialog()" to display the dialog.
+	 * Creates a generic input dialog with the specified title, a text field, labeled by the
+	 * specified label. The user should check the value of "isCanceled()" to know whether or not the
+	 * user canceled the operation. Otherwise, use the "getValue()" or "getValues()" to get the
+	 * value(s) entered by the user. Use the tool's "showDialog()" to display the dialog.
 	 * <P>
+	 * 
 	 * @param dialogTitle used as the name of the dialog's title bar
 	 * @param label value to use for the label of the text field
 	 * @param initialValue initial value to use for the text field
 	 * @param isModal whether or not the dialog is to be modal
 	 */
 	public InputDialog(String dialogTitle, String label, String initialValue, boolean isModal) {
-		this(dialogTitle, new String[] { label }, new String[] { initialValue }, isModal, null);
+		this(dialogTitle, new String[] { label }, new String[] { initialValue }, null);
 	}
 
 	/**
-	 * Creates a generic input dialog with the specified title, a text field,
-	 * labeled by the specified label. The user should check the value of
-	 * "isCanceled()" to know whether or not the user canceled the operation.
-	 * Otherwise, use the "getValue()" or "getValues()" to get the value(s)
-	 * entered by the user. Use the tool's "showDialog()" to display the dialog.
+	 * Creates a generic input dialog with the specified title, a text field, labeled by the
+	 * specified label. The user should check the value of "isCanceled()" to know whether or not the
+	 * user canceled the operation. Otherwise, use the "getValue()" or "getValues()" to get the
+	 * value(s) entered by the user. Use the tool's "showDialog()" to display the dialog.
 	 * <P>
+	 * 
 	 * @param dialogTitle used as the name of the dialog's title bar
 	 * @param labels values to use for the labels of the text fields
 	 * @param initialValues initial values to use for the text fields
 	 */
 	public InputDialog(String dialogTitle, String[] labels, String[] initialValues) {
-		this(dialogTitle, labels, initialValues, true, null);
+		this(dialogTitle, labels, initialValues, null);
 	}
 
 	/**
-	 * Creates a generic input dialog with the specified title, a text field,
-	 * labeled by the specified label. The user should check the value of
-	 * "isCanceled()" to know whether or not the user canceled the operation.
-	 * Otherwise, use the "getValue()" or "getValues()" to get the value(s)
-	 * entered by the user. Use the tool's "showDialog()" to display the dialog.
+	 * Creates a generic input dialog with the specified title, a text field, labeled by the
+	 * specified label. The user should check the value of "isCanceled()" to know whether or not the
+	 * user canceled the operation. Otherwise, use the "getValue()" or "getValues()" to get the
+	 * value(s) entered by the user. Use the tool's "showDialog()" to display the dialog.
 	 * <P>
+	 * 
 	 * @param dialogTitle used as the name of the dialog's title bar
 	 * @param labels values to use for the labels of the text fields
 	 * @param initialValues initial values to use for the text fields
-	 * @param isModal whether or not the dialog is to be modal
 	 * @param listener listener that is called when the OK button is hit
 	 */
-	public InputDialog(String dialogTitle, String[] labels, String[] initialValues, boolean isModal,
+	public InputDialog(String dialogTitle, String[] labels, String[] initialValues,
 			InputDialogListener listener) {
-		super(dialogTitle, isModal, (listener != null) /* status */, true /* buttons */,
+		super(dialogTitle, true, (listener != null) /* status */, true /* buttons */,
 			false /* no tasks */);
 		this.listener = listener;
 
@@ -152,8 +151,9 @@ public class InputDialog extends DialogComponentProvider {
 		// put the rest of the dialog together
 		inputLabels = labels;
 		this.initialValues = initialValues;
-		this.addOKButton();
-		this.addCancelButton();
+		setTransient(true);
+		addOKButton();
+		addCancelButton();
 		buildMainPanel();
 
 		if (initialValues != null && initialValues[0] != null && initialValues[0].length() > 0) {
@@ -194,6 +194,7 @@ public class InputDialog extends DialogComponentProvider {
 		textFields = new MyTextField[inputLabels.length];
 		for (int i = 0; i < inputValues.length; i++) {
 			textFields[i] = new MyTextField(initialValues[i]);
+			inputValues[i] = initialValues[i];
 			textFields[i].addKeyListener(keyListener);
 			textFields[i].setName("input.dialog.text.field." + i);
 			panel.add(new GLabel(inputLabels[i], SwingConstants.RIGHT));
@@ -221,11 +222,16 @@ public class InputDialog extends DialogComponentProvider {
 	@Override
 	protected void cancelCallback() {
 		isCanceled = true;
+		for (int v = 0; v < inputValues.length; v++) {
+			inputValues[v] = null;
+		}
+
 		close();
 	}
 
 	/**
 	 * Returns if this dialog is cancelled
+	 * 
 	 * @return true if cancelled
 	 */
 	public boolean isCanceled() {
@@ -234,6 +240,7 @@ public class InputDialog extends DialogComponentProvider {
 
 	/**
 	 * Return the value of the first (and maybe only) text field
+	 * 
 	 * @return the text field value
 	 */
 	public String getValue() {
@@ -242,14 +249,27 @@ public class InputDialog extends DialogComponentProvider {
 
 	/**
 	 * Sets the text of the primary text field
+	 * 
 	 * @param text the text
 	 */
 	public void setValue(String text) {
-		textFields[0].setText(text);
+		setValue(text, 0);
+	}
+
+	/**
+	 * Sets the text of the text field at the given index
+	 * 
+	 * @param text the text
+	 * @param index the index of the text field
+	 */
+	public void setValue(String text, int index) {
+		textFields[index].setText(text);
+		inputValues[index] = text;
 	}
 
 	/**
 	 * Return the values for all the text field(s)
+	 * 
 	 * @return the text field values
 	 */
 	public String[] getValues() {
@@ -276,7 +296,8 @@ public class InputDialog extends DialogComponentProvider {
 			}
 
 			/**
-			 * @see javax.swing.text.Document#insertString(int, java.lang.String, javax.swing.text.AttributeSet)
+			 * @see javax.swing.text.Document#insertString(int, java.lang.String,
+			 *      javax.swing.text.AttributeSet)
 			 */
 			@Override
 			public void insertString(int offs, String str, AttributeSet a)

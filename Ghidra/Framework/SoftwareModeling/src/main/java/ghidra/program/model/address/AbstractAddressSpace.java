@@ -19,7 +19,6 @@ import java.math.BigInteger;
 
 import org.apache.commons.lang3.StringUtils;
 
-import generic.util.UnsignedDataUtils;
 import ghidra.util.MathUtilities;
 import ghidra.util.NumericUtilities;
 import ghidra.util.exception.AssertException;
@@ -151,14 +150,6 @@ abstract class AbstractAddressSpace implements AddressSpace {
 
 	@Override
 	public long getAddressableWordOffset(long byteOffset) {
-
-//		if (!isValidOffset(byteOffset)) {
-//			String max = Long.toHexString(maxOffset);
-//			String min = Long.toHexString(minOffset);
-//			throw new AddressOutOfBoundsException("Invalid byte offset 0x" +
-//				Long.toHexString(byteOffset) + ", must be between 0x" + min + " and 0x" + max);
-//		}
-
 		boolean isNegative = false;
 		if (signed && byteOffset < 0) {
 			byteOffset = -byteOffset;
@@ -234,14 +225,14 @@ abstract class AbstractAddressSpace implements AddressSpace {
 		}
 		catch (NumberFormatException e) {
 			throw new AddressFormatException(
-				addrString + ": Cannot parse (" + offStr + ") as a number.");
+				addrString + " contains invalid address hex offset");
 		}
 		catch (AddressOutOfBoundsException e) {
 			throw new AddressFormatException(e.getMessage());
 		}
 	}
 
-	private long parseString(String addr) {
+	private long parseString(String addr) throws NumberFormatException, AddressFormatException {
 		if (addr.startsWith("0x") || addr.startsWith("0X")) {
 			addr = addr.substring(2);
 		}
@@ -250,12 +241,20 @@ abstract class AbstractAddressSpace implements AddressSpace {
 		if (unitSize > 1) {
 			int ix = addr.indexOf('.');
 			if (ix > 0) {
-				mod = (new BigInteger(addr.substring(ix + 1), 16)).longValue();
+				String unitOffset = addr.substring(ix + 1);
+				BigInteger bi = new BigInteger(unitOffset, 16);
+				mod = bi.longValue();
+				if (bi.bitLength() > 8 || mod >= unitSize) {
+					throw new AddressFormatException("invalid address unit offset: ." + unitOffset);
+				}
 				addr = addr.substring(0, ix);
 			}
 		}
 
 		BigInteger bi = new BigInteger(addr, 16);
+		if (bi.bitLength() > 64) {
+			throw new AddressFormatException("unsupported address offset: " + addr);
+		}
 		return (unitSize * bi.longValue()) + mod;
 	}
 
@@ -323,25 +322,21 @@ abstract class AbstractAddressSpace implements AddressSpace {
 				"Address Overflow in subtract: " + addr + " - 0x" + Long.toHexString(displacement));
 		}
 		long addrOff = addr.getOffset();
-		long maxOff = maxAddress.getOffset();
-		long minOff = minAddress.getOffset();
 		long result = addrOff - displacement;
-		if (maxOff < 0) { // 64 bit unsigned
-			if (addrOff >= 0 && result < 0) {
-				throw new AddressOverflowException("Address Overflow in subtract: " + addr +
-					" - 0x" + Long.toHexString(displacement));
-			}
-			else if ((addrOff < 0 && result < 0) || (addrOff >= 0 && result >= 0)) {
-				if (result > addrOff) {
-					throw new AddressOverflowException("Address Overflow in subtract: " + addr +
-						" - 0x" + Long.toHexString(displacement));
-				}
+
+		// An integer underflow occurred if:
+		//   1) the result is less than the address space's min address, or
+		//   2) if the result is greater than the starting addr
+		if (signed) {
+			if (result < minAddress.getOffset() || result > addrOff) {
+				throw new AddressOverflowException(
+					String.format("Address Overflow in subtract: %s - 0x%x", addr, displacement));
 			}
 		}
 		else {
-			if (result > addrOff || result < minOff) {
-				throw new AddressOverflowException("Address Overflow in subtract: " + addr +
-					" - 0x" + Long.toHexString(displacement));
+			if (Long.compareUnsigned(addrOff, result) < 0) {
+				throw new AddressOverflowException(
+					String.format("Address Overflow in subtract: %s - 0x%x", addr, displacement));
 			}
 		}
 		return getUncheckedAddress(result);
@@ -384,27 +379,25 @@ abstract class AbstractAddressSpace implements AddressSpace {
 				"Address Overflow in add: " + addr + " + 0x" + Long.toHexString(displacement));
 		}
 		long addrOff = addr.getOffset();
-		long maxOff = maxAddress.getOffset();
 		long result = addrOff + displacement;
-		if (maxOff < 0) { // 64 bit unsigned
-			if (addrOff < 0 && result >= 0) {
+
+		// An integer overflow occurred if:
+		//   1) the result is larger than the address space's max address (a no-op when unsigned && maxaddr=MAX_UINT64)
+		// or
+		//   2) if the result is less than the starting addr (because result exceeded MAX_UINT64)
+		if (signed) {
+			if (result < addrOff || result > maxAddress.getOffset()) {
 				throw new AddressOverflowException(
-					"Address Overflow in add: " + addr + " + 0x" + Long.toHexString(displacement));
-			}
-			else if ((addrOff < 0 && result < 0) || (addrOff >= 0 && result >= 0)) {
-				if (result < addrOff) {
-					throw new AddressOverflowException("Address Overflow in add: " + addr +
-						" + 0x" + Long.toHexString(displacement));
-				}
+					String.format("Address Overflow in add: %s 0x%x", addr, displacement));
 			}
 		}
 		else {
-			if (result < addrOff || result > maxOff) {
+			if (Long.compareUnsigned(maxAddress.getOffset(), result) < 0 ||
+				Long.compareUnsigned(result, addrOff) < 0) {
 				throw new AddressOverflowException(
-					"Address Overflow in add: " + addr + " + 0x" + Long.toHexString(displacement));
+					String.format("Address Overflow in add: %s 0x%x", addr, displacement));
 			}
 		}
-
 		return getUncheckedAddress(result);
 	}
 
@@ -603,8 +596,10 @@ abstract class AbstractAddressSpace implements AddressSpace {
 
 	@Override
 	public long makeValidOffset(long offset) throws AddressOutOfBoundsException {
-		// TODO: Verify that this handle all cases - seems like it would not
-		if ((offset >= minOffset && offset <= maxOffset) || spaceSize == 0) {
+		if (size == 64 || spaceSize == 0) {
+			return offset;
+		}
+		if ((offset >= minOffset && offset <= maxOffset)) {
 			return offset;
 		}
 		if (signed) {
@@ -613,22 +608,16 @@ abstract class AbstractAddressSpace implements AddressSpace {
 				return offset - spaceSize;
 			}
 		}
-		else if (offset < 0 && offset >= -maxOffset - 1) {
-			// recover from accidental sign extension
-			return offset + spaceSize;
+		else {
+			if (offset < 0 && offset >= -maxOffset - 1) {
+				// recover from accidental sign extension
+				return offset + spaceSize;
+			}
 		}
 		String max = Long.toHexString(maxOffset);
 		String min = Long.toHexString(minOffset);
 		throw new AddressOutOfBoundsException("Offset must be between 0x" + min + " and 0x" + max +
 			", got 0x" + Long.toHexString(offset) + " instead!");
-	}
-
-	private boolean isValidOffset(long offset) {
-		if (signed) {
-			return (offset >= minOffset) && (offset <= maxOffset);
-		}
-		return UnsignedDataUtils.unsignedGreaterThanOrEqual(offset, minOffset) &&
-			UnsignedDataUtils.unsignedLessThanOrEqual(offset, maxOffset);
 	}
 
 	@Override

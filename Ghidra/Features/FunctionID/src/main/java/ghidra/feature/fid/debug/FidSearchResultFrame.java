@@ -64,7 +64,7 @@ public class FidSearchResultFrame extends JFrame implements FidQueryCloseListene
 
 	private void buildFrame() {
 		GTableCellRenderer renderer = new GTableCellRenderer();
-		renderer.setFont(FidDebugUtils.MONOSPACED_FONT);
+		renderer.setFont(renderer.getFixedWidthFont());
 		int columnCount = table.getColumnCount();
 		for (int ii = 0; ii < columnCount; ++ii) {
 			Class<?> columnClass = table.getColumnClass(ii);
@@ -308,6 +308,7 @@ public class FidSearchResultFrame extends JFrame implements FidQueryCloseListene
 
 	@Override
 	public void dispose() {
+		table.dispose();
 		dbService.removeCloseListener(this);
 		super.dispose();
 	}

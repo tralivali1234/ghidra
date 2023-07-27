@@ -23,15 +23,15 @@ import java.util.*;
 import javax.swing.Icon;
 
 import docking.widgets.tree.GTreeNode;
+import generic.theme.GIcon;
 import ghidra.app.plugin.core.symboltree.SymbolCategory;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolType;
 import ghidra.util.task.TaskMonitor;
-import resources.ResourceManager;
 
 public class SymbolTreeRootNode extends SymbolCategoryNode {
-	private static Icon GLOBAL_ICON = ResourceManager.loadImage("images/bullet_green.png");
+	private static Icon GLOBAL_ICON = new GIcon("icon.plugin.symboltree.node.root");
 	private final String name;
 
 	public SymbolTreeRootNode() {
@@ -130,7 +130,10 @@ public class SymbolTreeRootNode extends SymbolCategoryNode {
 		Symbol functionSymbol = searchSymbol.getParentSymbol();
 		SymbolNode parentKey = SymbolNode.createNode(functionSymbol, program);
 		GTreeNode functionNode = findFunctionSymbolNode(parentKey, loadChildren, monitor);
-		return ((SymbolTreeNode) functionNode).findSymbolTreeNode(key, loadChildren, monitor);
+		if (functionNode != null) {
+			return ((SymbolTreeNode) functionNode).findSymbolTreeNode(key, loadChildren, monitor);
+		}
+		return null;
 	}
 
 	private GTreeNode findFunctionSymbolNode(SymbolNode key, boolean loadChildren,

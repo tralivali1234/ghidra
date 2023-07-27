@@ -39,7 +39,6 @@ import ghidra.program.model.symbol.*;
 import ghidra.test.AbstractGhidraHeadedIntegrationTest;
 import ghidra.test.TestEnv;
 import ghidra.util.task.TaskMonitor;
-import ghidra.util.task.TaskMonitorAdapter;
 
 /**
  * <CODE>ProgramMerge2Test</CODE> tests the <CODE>ProgramMerge</CODE> class
@@ -79,7 +78,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			if (resultProgram != null) {
 				resultProgram.flushEvents();
 			}
-			waitForPostedSwingRunnables();
+			waitForSwing();
 
 		}
 		catch (Exception e) {
@@ -104,46 +103,30 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "0x010058f7"), "SampleLabel", namespace,
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "0x010058f7"), "SampleLabel", namespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace = program.getGlobalNamespace();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace = program.getGlobalNamespace();
-					try {
-						st.createLabel(addr(program, "0x010058f7"), "MY.DLL_SampleLabel", namespace,
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "0x010058f7"), "MY.DLL_SampleLabel", namespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -156,8 +139,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x10058f6"), addr(p1, "0x10058fa"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -168,7 +150,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x10058f7"), addr(p1, "0x10058f8"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -190,46 +172,30 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace = program.getGlobalNamespace();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace = program.getGlobalNamespace();
-					try {
-						st.createLabel(addr(program, "0x010058f7"), "MY.DLL_SampleLabel", namespace,
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "0x010058f7"), "MY.DLL_SampleLabel", namespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "0x010058f7"), "SampleLabel", namespace,
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "0x010058f7"), "SampleLabel", namespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -242,8 +208,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x10058f6"), addr(p1, "0x10058fa"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -254,7 +219,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x10058f7"), addr(p1, "0x10058f8"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -276,46 +241,30 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace = program.getGlobalNamespace();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace = program.getGlobalNamespace();
-					try {
-						st.createLabel(addr(program, "0x010058f7"), "MY.DLL_SampleLabel", namespace,
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "0x010058f7"), "MY.DLL_SampleLabel", namespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "0x010058f7"), "SampleLabel", namespace,
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "0x010058f7"), "SampleLabel", namespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -328,8 +277,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x10058f6"), addr(p1, "0x10058fa"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -340,7 +288,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x10058f7"), addr(p1, "0x10058f8"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(expectedDiffs, programMerge.getFilteredDifferences());
 
@@ -365,46 +313,30 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace = program.getGlobalNamespace();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace = program.getGlobalNamespace();
-					try {
-						st.createLabel(addr(program, "0x010058f7"), "MY.DLL_SampleLabel", namespace,
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "0x010058f7"), "MY.DLL_SampleLabel", namespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "0x010058f7"), "SampleLabel", namespace,
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "0x010058f7"), "SampleLabel", namespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -417,8 +349,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x10058f6"), addr(p1, "0x10058fa"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(new ProgramMergeFilter(
@@ -430,7 +361,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x10058f7"), addr(p1, "0x10058f8"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(expectedDiffs, programMerge.getFilteredDifferences());
 
@@ -454,30 +385,23 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		mtf.initialize("NotepadMergeListingTest", new ProgramModifierListener() {
 			@Override
 			public void modifyLatest(ProgramDB program) {
+				// Empty 
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
+				SymbolTable st = program.getSymbolTable();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					SymbolTable st = program.getSymbolTable();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004c1d"));
-						f.setName("SampleFunction", SourceType.USER_DEFINED);
-						Namespace namespace = st.createNameSpace(program.getGlobalNamespace(),
-							"MY.DLL", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004c1d"));
+					f.setName("SampleFunction", SourceType.USER_DEFINED);
+					Namespace namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -490,8 +414,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -502,7 +425,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x1004c1d"), addr(p1, "0x1004c1d"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 //			assertEquals(new AddressSet(p1.getAddressFactory()),
 //			             programMerge.getFilteredDifferences());
@@ -524,30 +447,23 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		mtf.initialize("NotepadMergeListingTest", new ProgramModifierListener() {
 			@Override
 			public void modifyLatest(ProgramDB program) {
+				// Empty
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
+				SymbolTable st = program.getSymbolTable();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					SymbolTable st = program.getSymbolTable();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004c1d"));
-						f.setName("SampleFunction", SourceType.USER_DEFINED);
-						Namespace namespace = st.createNameSpace(program.getGlobalNamespace(),
-							"MY.DLL", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004c1d"));
+					f.setName("SampleFunction", SourceType.USER_DEFINED);
+					Namespace namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -560,8 +476,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.FUNCTION_DIFFS));
 			programMerge.setMergeFilter(
@@ -572,7 +487,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x1004c1d"), addr(p1, "0x1004c1d"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -594,49 +509,33 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				Namespace namespace = program.getGlobalNamespace();
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					Namespace namespace = program.getGlobalNamespace();
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -649,8 +548,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -662,7 +560,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x1002cf5"), addr(p1, "0x1002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -683,34 +581,27 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		mtf.initialize("NotepadMergeListingTest", new ProgramModifierListener() {
 			@Override
 			public void modifyLatest(ProgramDB program) {
+				// Empty
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Address entry = addr(program, "0x0100299e");
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						CreateFunctionCmd cmd = new CreateFunctionCmd(entry);
-						cmd.applyTo(program);
-						Function f = functionMgr.getFunctionAt(entry);
-						f.setName("SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Address entry = addr(program, "0x0100299e");
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					CreateFunctionCmd cmd = new CreateFunctionCmd(entry);
+					cmd.applyTo(program);
+					Function f = functionMgr.getFunctionAt(entry);
+					f.setName("SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -723,8 +614,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x1002998"), addr(p1, "0x1002a0c"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.FUNCTION_DIFFS));
 			programMerge.setMergeFilter(
@@ -735,7 +625,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x0100299e"), addr(p1, "0x0100299e"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			// P1 should now have function in namespace and no diffs.
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
@@ -765,34 +655,27 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Address entry = addr(program, "0x0100299e");
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						CreateFunctionCmd cmd = new CreateFunctionCmd(entry);
-						cmd.applyTo(program);
-						Function f = functionMgr.getFunctionAt(entry);
-						f.setName("SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Address entry = addr(program, "0x0100299e");
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					CreateFunctionCmd cmd = new CreateFunctionCmd(entry);
+					cmd.applyTo(program);
+					Function f = functionMgr.getFunctionAt(entry);
+					f.setName("SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
+				// Empty
 			}
 		});
 
@@ -804,8 +687,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x1002998"), addr(p1, "0x1002a0c"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.FUNCTION_DIFFS));
 			programMerge.setMergeFilter(
@@ -816,7 +698,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x0100299e"), addr(p1, "0x0100299e"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			// P1 should now have a label with the old function name and a diff.
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
@@ -845,47 +727,31 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.IMPORTED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.IMPORTED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -898,8 +764,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.FUNCTION_DIFFS | ProgramDiffFilter.SYMBOL_DIFFS));
@@ -913,7 +778,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			// P1 should now have function in namespace and no diffs.
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
@@ -943,47 +808,31 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.IMPORTED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.IMPORTED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -996,8 +845,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.FUNCTION_DIFFS | ProgramDiffFilter.SYMBOL_DIFFS));
@@ -1012,7 +860,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			// P1 should now have function in namespace and no diffs.
 			AddressSet diffSet = new AddressSet(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
@@ -1049,47 +897,31 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.IMPORTED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.IMPORTED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -1102,8 +934,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.FUNCTION_DIFFS | ProgramDiffFilter.SYMBOL_DIFFS));
@@ -1118,7 +949,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			// P1 should now have function in namespace and no diffs.
 			AddressSet diffSet = new AddressSet(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
@@ -1154,47 +985,31 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.IMPORTED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.IMPORTED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -1207,8 +1022,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			ProgramMergeFilter filter = new ProgramMergeFilter();
@@ -1222,7 +1036,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			// P1 should now have function in namespace and no diffs.
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
@@ -1252,47 +1066,31 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.IMPORTED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.IMPORTED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -1305,8 +1103,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			ProgramMergeFilter filter = new ProgramMergeFilter();
@@ -1320,7 +1117,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			// P1 should now have function in namespace and no diffs.
 			AddressSet diffSet = new AddressSet(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
@@ -1356,47 +1153,31 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.IMPORTED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.IMPORTED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.IMPORTED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -1407,10 +1188,10 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
+
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			ProgramMergeFilter filter = new ProgramMergeFilter();
@@ -1424,7 +1205,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			// P1 should now have function in namespace and no diffs.
 			AddressSet diffSet = new AddressSet(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
@@ -1460,48 +1241,32 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace = program.getGlobalNamespace();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace = program.getGlobalNamespace();
-					try {
-						st.createLabel(addr(program, "0x010058f7"), "MY.DLL_SampleLabel", namespace,
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "0x010058f7"), "MY.DLL_SampleLabel", namespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -1514,8 +1279,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -1529,7 +1293,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
 			mergeSet.addRange(addr(p1, "0x010058f7"), addr(p1, "0x010058f7"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(addr(p1, "0x010058f7"), addr(p1, "0x010058f7")),
 				programMerge.getFilteredDifferences());
@@ -1552,49 +1316,33 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				Namespace namespace = program.getGlobalNamespace();
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					Namespace namespace = program.getGlobalNamespace();
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -1607,8 +1355,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -1620,7 +1367,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -1642,49 +1389,33 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				Namespace namespace = program.getGlobalNamespace();
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					Namespace namespace = program.getGlobalNamespace();
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -1697,8 +1428,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -1711,7 +1441,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -1733,49 +1463,33 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				Namespace namespace = program.getGlobalNamespace();
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					Namespace namespace = program.getGlobalNamespace();
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -1788,8 +1502,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -1801,7 +1514,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(expectedDiffs, programMerge.getFilteredDifferences());
 
@@ -1827,49 +1540,33 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				Namespace namespace = program.getGlobalNamespace();
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					Namespace namespace = program.getGlobalNamespace();
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -1882,8 +1579,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -1896,7 +1592,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(expectedDiffs, programMerge.getFilteredDifferences());
 
@@ -1920,49 +1616,33 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				Namespace namespace = program.getGlobalNamespace();
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					Namespace namespace = program.getGlobalNamespace();
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -1975,8 +1655,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -1989,7 +1668,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(expectedDiffs, programMerge.getFilteredDifferences());
 
@@ -2013,49 +1692,33 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				Namespace namespace = program.getGlobalNamespace();
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					Namespace namespace = program.getGlobalNamespace();
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("MY.DLL_SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace;
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
-							SourceType.USER_DEFINED);
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
-						f.setName("SampleLabel", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					namespace = st.createNameSpace(program.getGlobalNamespace(), "MY.DLL",
+						SourceType.USER_DEFINED);
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01002cf5"));
+					f.setName("SampleLabel", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -2068,8 +1731,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -2082,7 +1744,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01002cf5"), addr(p1, "0x01002cf5"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(expectedDiffs, programMerge.getFilteredDifferences());
 
@@ -2106,70 +1768,54 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace = program.getGlobalNamespace();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace = program.getGlobalNamespace();
-					try {
-						// 0100248f is default function
-						program.getFunctionManager()
+					// 0100248f is default function
+					program.getFunctionManager()
 							.getFunctionAt(addr(program, "0x0100248f"))
 							.getSymbol()
 							.setName("Bud", SourceType.IMPORTED);
-						createDataReference(program, addr(program, "0x01001e81"),
-							addr(program, "0x01001ea0"));
-						Symbol[] symbols = st.getSymbols(addr(program, "0x01001ea0"));
-						symbols[0].setName("Zero", SourceType.IMPORTED);
-						st.createLabel(addr(program, "0x01001ea9"), "One", namespace,
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "0x01001eb5"), "Two", namespace,
-							SourceType.IMPORTED);
-						st.createLabel(addr(program, "0x01001ebc"), "Three", namespace,
-							SourceType.ANALYSIS);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					createDataReference(program, addr(program, "0x01001e81"),
+						addr(program, "0x01001ea0"));
+					Symbol[] symbols = st.getSymbols(addr(program, "0x01001ea0"));
+					symbols[0].setName("Zero", SourceType.IMPORTED);
+					st.createLabel(addr(program, "0x01001ea9"), "One", namespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "0x01001eb5"), "Two", namespace,
+						SourceType.IMPORTED);
+					st.createLabel(addr(program, "0x01001ebc"), "Three", namespace,
+						SourceType.ANALYSIS);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace = program.getGlobalNamespace();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace = program.getGlobalNamespace();
-					try {
-						// 0100248f is default function
-						program.getFunctionManager()
+					// 0100248f is default function
+					program.getFunctionManager()
 							.getFunctionAt(addr(program, "0x0100248f"))
 							.getSymbol()
 							.setName("Bud", SourceType.ANALYSIS);
-						createDataReference(program, addr(program, "0x01001e81"),
-							addr(program, "0x01001ea0"));// Leave this as default.
-						Symbol[] symbols = st.getSymbols(addr(program, "0x01001ea0"));
-						symbols[0].setName("Zero", SourceType.ANALYSIS);
-						st.createLabel(addr(program, "0x01001ea9"), "One", namespace,
-							SourceType.IMPORTED);
-						st.createLabel(addr(program, "0x01001eb5"), "Two", namespace,
-							SourceType.ANALYSIS);
-						st.createLabel(addr(program, "0x01001ebc"), "Three", namespace,
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					createDataReference(program, addr(program, "0x01001e81"),
+						addr(program, "0x01001ea0"));// Leave this as default.
+					Symbol[] symbols = st.getSymbols(addr(program, "0x01001ea0"));
+					symbols[0].setName("Zero", SourceType.ANALYSIS);
+					st.createLabel(addr(program, "0x01001ea9"), "One", namespace,
+						SourceType.IMPORTED);
+					st.createLabel(addr(program, "0x01001eb5"), "Two", namespace,
+						SourceType.ANALYSIS);
+					st.createLabel(addr(program, "0x01001ebc"), "Three", namespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -2180,7 +1826,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
-			programMerge = new ProgramMergeManager(p1, p2, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -2198,7 +1844,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.add(expectedDiffs);
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -2228,7 +1874,6 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			assertEquals(1, syms.length);
 			assertEquals("Three", syms[0].getName());
 			assertEquals(SourceType.USER_DEFINED, syms[0].getSource());
-
 			commit = true;
 		}
 		finally {
@@ -2242,70 +1887,54 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace = program.getGlobalNamespace();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace = program.getGlobalNamespace();
-					try {
-						// 0100248f is default function
-						program.getFunctionManager()
+					// 0100248f is default function
+					program.getFunctionManager()
 							.getFunctionAt(addr(program, "0x0100248f"))
 							.getSymbol()
 							.setName("Bud", SourceType.IMPORTED);
-						createDataReference(program, addr(program, "0x01001e81"),
-							addr(program, "0x01001ea0"));
-						Symbol[] symbols = st.getSymbols(addr(program, "0x01001ea0"));
-						symbols[0].setName("Zero", SourceType.IMPORTED);
-						st.createLabel(addr(program, "0x01001ea9"), "One", namespace,
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "0x01001eb5"), "Two", namespace,
-							SourceType.IMPORTED);
-						st.createLabel(addr(program, "0x01001ebc"), "Three", namespace,
-							SourceType.ANALYSIS);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					createDataReference(program, addr(program, "0x01001e81"),
+						addr(program, "0x01001ea0"));
+					Symbol[] symbols = st.getSymbols(addr(program, "0x01001ea0"));
+					symbols[0].setName("Zero", SourceType.IMPORTED);
+					st.createLabel(addr(program, "0x01001ea9"), "One", namespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "0x01001eb5"), "Two", namespace,
+						SourceType.IMPORTED);
+					st.createLabel(addr(program, "0x01001ebc"), "Three", namespace,
+						SourceType.ANALYSIS);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				Namespace namespace = program.getGlobalNamespace();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					Namespace namespace = program.getGlobalNamespace();
-					try {
-						// 0100248f is default function
-						program.getFunctionManager()
+					// 0100248f is default function
+					program.getFunctionManager()
 							.getFunctionAt(addr(program, "0x0100248f"))
 							.getSymbol()
 							.setName("Bud", SourceType.ANALYSIS);
-						createDataReference(program, addr(program, "0x01001e81"),
-							addr(program, "0x01001ea0"));// Leave this as default.
-						Symbol[] symbols = st.getSymbols(addr(program, "0x01001ea0"));
-						symbols[0].setName("Zero", SourceType.ANALYSIS);
-						st.createLabel(addr(program, "0x01001ea9"), "One", namespace,
-							SourceType.IMPORTED);
-						st.createLabel(addr(program, "0x01001eb5"), "Two", namespace,
-							SourceType.ANALYSIS);
-						st.createLabel(addr(program, "0x01001ebc"), "Three", namespace,
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					createDataReference(program, addr(program, "0x01001e81"),
+						addr(program, "0x01001ea0"));// Leave this as default.
+					Symbol[] symbols = st.getSymbols(addr(program, "0x01001ea0"));
+					symbols[0].setName("Zero", SourceType.ANALYSIS);
+					st.createLabel(addr(program, "0x01001ea9"), "One", namespace,
+						SourceType.IMPORTED);
+					st.createLabel(addr(program, "0x01001eb5"), "Two", namespace,
+						SourceType.ANALYSIS);
+					st.createLabel(addr(program, "0x01001ebc"), "Three", namespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -2316,7 +1945,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
-			programMerge = new ProgramMergeManager(p1, p2, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -2332,7 +1961,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.add(expectedDiffs);
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(mergeSet, programMerge.getFilteredDifferences());
 
@@ -2362,7 +1991,6 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			assertEquals(1, syms.length);
 			assertEquals("Three", syms[0].getName());
 			assertEquals(SourceType.ANALYSIS, syms[0].getSource());
-
 			commit = true;
 		}
 		finally {
@@ -2376,45 +2004,29 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				Namespace namespace = program.getGlobalNamespace();
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					Namespace namespace = program.getGlobalNamespace();
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						f.setName("printf", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					f.setName("printf", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						// Already has a "undefined4 param_1".
-						f.setVarArgs(true);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					// Already has a "undefined4 param_1".
+					f.setVarArgs(true);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -2429,8 +2041,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -2442,7 +2053,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -2466,44 +2077,28 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						f.setVarArgs(true);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					f.setVarArgs(true);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						// Already has a "undefined4 param_1".
-						Variable var = new LocalVariableImpl(null, new DWordDataType(), 8, program);
-						f.addParameter(var, SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					// Already has a "undefined4 param_1".
+					Variable var = new LocalVariableImpl(null, new DWordDataType(), 8, program);
+					f.addParameter(var, SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -2518,8 +2113,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -2531,7 +2125,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -2549,6 +2143,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		finally {
 			p1.endTransaction(txId, commit);
 		}
+
 	}
 
 	@Test
@@ -2557,45 +2152,29 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				Namespace namespace = program.getGlobalNamespace();
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					Namespace namespace = program.getGlobalNamespace();
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						f.setName("printf", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					f.setName("printf", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						// Already has a "undefined4 param_1".
-						f.setInline(true);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					// Already has a "undefined4 param_1".
+					f.setInline(true);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -2610,8 +2189,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -2623,7 +2201,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -2647,44 +2225,28 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						f.setInline(true);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					f.setInline(true);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						// Already has a "undefined4 param_1".
-						Variable var = new LocalVariableImpl(null, new DWordDataType(), 8, program);
-						f.addParameter(var, SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					// Already has a "undefined4 param_1".
+					Variable var = new LocalVariableImpl(null, new DWordDataType(), 8, program);
+					f.addParameter(var, SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -2699,8 +2261,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -2712,7 +2273,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -2738,45 +2299,29 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				Namespace namespace = program.getGlobalNamespace();
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					Namespace namespace = program.getGlobalNamespace();
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						f.setName("printf", SourceType.USER_DEFINED);
-						f.setParentNamespace(namespace);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					f.setName("printf", SourceType.USER_DEFINED);
+					f.setParentNamespace(namespace);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						// Already has a "undefined4 param_1".
-						f.setNoReturn(true);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					// Already has a "undefined4 param_1".
+					f.setNoReturn(true);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -2791,8 +2336,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -2804,7 +2348,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -2828,44 +2372,28 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						f.setNoReturn(true);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					f.setNoReturn(true);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						// Already has a "undefined4 param_1".
-						Variable var = new LocalVariableImpl(null, new DWordDataType(), 8, program);
-						f.addParameter(var, SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					// Already has a "undefined4 param_1".
+					Variable var = new LocalVariableImpl(null, new DWordDataType(), 8, program);
+					f.addParameter(var, SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -2880,8 +2408,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -2893,7 +2420,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -2920,42 +2447,26 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						f.addTag("TagA");
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					f.addTag("TagA");
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						f.addTag("TagB");
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					f.addTag("TagB");
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -2970,8 +2481,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.FUNCTION_TAG_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -2983,7 +2493,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			Function f = fm1.getFunctionAt(entryPoint1);
 			assertEquals("FUN_01004132", f.getName());
@@ -2996,7 +2506,6 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			assertTrue(tagNames.size() == 2);
 			assertTrue(tagNames.contains("TagA"));
 			assertTrue(tagNames.contains("TagB"));
-
 			commit = true;
 		}
 		finally {
@@ -3011,42 +2520,26 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						f.addTag("TagA");
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					f.addTag("TagA");
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						f.addTag("TagB");
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					f.addTag("TagB");
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -3061,8 +2554,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.FUNCTION_TAG_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -3074,7 +2566,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			Function f = fm1.getFunctionAt(entryPoint1);
 			assertEquals("FUN_01004132", f.getName());
@@ -3086,7 +2578,6 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			assertTrue(tagNames.size() == 1);
 			assertTrue(tagNames.contains("TagB"));
-
 			commit = true;
 		}
 		finally {
@@ -3107,34 +2598,27 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		mtf.initialize("NotepadMergeListingTest_X86", new ProgramModifierListener() {
 			@Override
 			public void modifyLatest(ProgramDB program) {
+				// Empty
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01006420"));
-						f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
-						f = functionMgr.getFunctionAt(addr(program, "0x01001ae3"));
-						f.setCallingConvention("__stdcall");
-						f = functionMgr.getFunctionAt(addr(program, "0x010021f3"));
-						f.setCallingConvention("__thiscall");
-						f = functionMgr.getFunctionAt(addr(program, "0x0100248f"));
-						f.setCallingConvention("__fastcall");
-						f = functionMgr.getFunctionAt(addr(program, "0x01002c93"));
-						f.setCallingConvention("__cdecl");
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01006420"));
+					f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
+					f = functionMgr.getFunctionAt(addr(program, "0x01001ae3"));
+					f.setCallingConvention("__stdcall");
+					f = functionMgr.getFunctionAt(addr(program, "0x010021f3"));
+					f.setCallingConvention("__thiscall");
+					f = functionMgr.getFunctionAt(addr(program, "0x0100248f"));
+					f.setCallingConvention("__fastcall");
+					f = functionMgr.getFunctionAt(addr(program, "0x01002c93"));
+					f.setCallingConvention("__cdecl");
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -3153,8 +2637,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -3182,7 +2665,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -3222,58 +2705,42 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01006420"));
-						f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
-						f = functionMgr.getFunctionAt(addr(program, "0x01001ae3"));
-						f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
-						f = functionMgr.getFunctionAt(addr(program, "0x010021f3"));
-						f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
-						f = functionMgr.getFunctionAt(addr(program, "0x0100248f"));
-						f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
-						f = functionMgr.getFunctionAt(addr(program, "0x01002c93"));
-						f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01006420"));
+					f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
+					f = functionMgr.getFunctionAt(addr(program, "0x01001ae3"));
+					f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
+					f = functionMgr.getFunctionAt(addr(program, "0x010021f3"));
+					f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
+					f = functionMgr.getFunctionAt(addr(program, "0x0100248f"));
+					f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
+					f = functionMgr.getFunctionAt(addr(program, "0x01002c93"));
+					f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01006420"));
-						f.setCallingConvention(Function.UNKNOWN_CALLING_CONVENTION_STRING);
-						f = functionMgr.getFunctionAt(addr(program, "0x01001ae3"));
-						f.setCallingConvention("__stdcall");
-						f = functionMgr.getFunctionAt(addr(program, "0x010021f3"));
-						f.setCallingConvention("__thiscall");
-						f = functionMgr.getFunctionAt(addr(program, "0x0100248f"));
-						f.setCallingConvention("__fastcall");
-						f = functionMgr.getFunctionAt(addr(program, "0x01002c93"));
-						f.setCallingConvention("__cdecl");
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01006420"));
+					f.setCallingConvention(Function.UNKNOWN_CALLING_CONVENTION_STRING);
+					f = functionMgr.getFunctionAt(addr(program, "0x01001ae3"));
+					f.setCallingConvention("__stdcall");
+					f = functionMgr.getFunctionAt(addr(program, "0x010021f3"));
+					f.setCallingConvention("__thiscall");
+					f = functionMgr.getFunctionAt(addr(program, "0x0100248f"));
+					f.setCallingConvention("__fastcall");
+					f = functionMgr.getFunctionAt(addr(program, "0x01002c93"));
+					f.setCallingConvention("__cdecl");
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -3292,8 +2759,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -3321,7 +2787,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -3361,58 +2827,42 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01006420"));
-						f.setCallingConvention("__stdcall");
-						f = functionMgr.getFunctionAt(addr(program, "0x01001ae3"));
-						f.setCallingConvention("__stdcall");
-						f = functionMgr.getFunctionAt(addr(program, "0x010021f3"));
-						f.setCallingConvention("__stdcall");
-						f = functionMgr.getFunctionAt(addr(program, "0x0100248f"));
-						f.setCallingConvention("__stdcall");
-						f = functionMgr.getFunctionAt(addr(program, "0x01002c93"));
-						f.setCallingConvention("__stdcall");
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01006420"));
+					f.setCallingConvention("__stdcall");
+					f = functionMgr.getFunctionAt(addr(program, "0x01001ae3"));
+					f.setCallingConvention("__stdcall");
+					f = functionMgr.getFunctionAt(addr(program, "0x010021f3"));
+					f.setCallingConvention("__stdcall");
+					f = functionMgr.getFunctionAt(addr(program, "0x0100248f"));
+					f.setCallingConvention("__stdcall");
+					f = functionMgr.getFunctionAt(addr(program, "0x01002c93"));
+					f.setCallingConvention("__stdcall");
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01006420"));
-						f.setCallingConvention(Function.UNKNOWN_CALLING_CONVENTION_STRING);
-						f = functionMgr.getFunctionAt(addr(program, "0x01001ae3"));
-						f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
-						f = functionMgr.getFunctionAt(addr(program, "0x010021f3"));
-						f.setCallingConvention("__thiscall");
-						f = functionMgr.getFunctionAt(addr(program, "0x0100248f"));
-						f.setCallingConvention("__fastcall");
-						f = functionMgr.getFunctionAt(addr(program, "0x01002c93"));
-						f.setCallingConvention("__cdecl");
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01006420"));
+					f.setCallingConvention(Function.UNKNOWN_CALLING_CONVENTION_STRING);
+					f = functionMgr.getFunctionAt(addr(program, "0x01001ae3"));
+					f.setCallingConvention(Function.DEFAULT_CALLING_CONVENTION_STRING);
+					f = functionMgr.getFunctionAt(addr(program, "0x010021f3"));
+					f.setCallingConvention("__thiscall");
+					f = functionMgr.getFunctionAt(addr(program, "0x0100248f"));
+					f.setCallingConvention("__fastcall");
+					f = functionMgr.getFunctionAt(addr(program, "0x01002c93"));
+					f.setCallingConvention("__cdecl");
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -3431,8 +2881,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -3460,7 +2909,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -3492,52 +2941,37 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						st.createLabel(addr(program, "TextOverlay::01001630"), "OVL1630",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "TextOverlay::01001630"), "OVL1630",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						st.createLabel(addr(program, "TextOverlay::01001639"), "OVL1639",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "TextOverlay::01001639"), "OVL1639",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
 
 		p1 = mtf.getResultProgram();
 		p2 = mtf.getPrivateProgram();
+
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
@@ -3546,8 +2980,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "TextOverlay::01001630"),
 				addr(p1, "TextOverlay::0100182f"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -3559,7 +2992,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "TextOverlay::01001630"), addr(p1, "TextOverlay::0100182f"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(addr1630, addr1630), programMerge.getFilteredDifferences());
 			commit = true;
@@ -3586,56 +3019,41 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						st.createLabel(addr(program, "TextOverlay::01001630"), "OVL1630Latest",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "TextOverlay::01001639"), "OVL1639Latest",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646Latest",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "TextOverlay::01001630"), "OVL1630Latest",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "TextOverlay::01001639"), "OVL1639Latest",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646Latest",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						st.createLabel(addr(program, "TextOverlay::01001630"), "OVL1630My",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "TextOverlay::01001639"), "OVL1639My",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646My",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "TextOverlay::01001630"), "OVL1630My",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "TextOverlay::01001639"), "OVL1639My",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646My",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
 
 		p1 = mtf.getResultProgram();
 		p2 = mtf.getPrivateProgram();
+
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
@@ -3645,8 +3063,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "TextOverlay::01001630"),
 				addr(p1, "TextOverlay::0100182f"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -3660,7 +3077,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "TextOverlay::01001630"), addr(p1, "TextOverlay::01001630"));
 			mergeSet.addRange(addr(p1, "TextOverlay::01001646"), addr(p1, "TextOverlay::01001646"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 			commit = true;
 		}
 		finally {
@@ -3685,56 +3102,41 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						st.createLabel(addr(program, "TextOverlay::01001630"), "OVL1630Latest",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "TextOverlay::01001639"), "OVL1639Latest",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646Latest",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "TextOverlay::01001630"), "OVL1630Latest",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "TextOverlay::01001639"), "OVL1639Latest",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646Latest",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						st.createLabel(addr(program, "TextOverlay::01001630"), "OVL1630My",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "TextOverlay::01001639"), "OVL1639My",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646My",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "TextOverlay::01001630"), "OVL1630My",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "TextOverlay::01001639"), "OVL1639My",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "TextOverlay::01001646"), "OVL1646My",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
 
 		p1 = mtf.getResultProgram();
 		p2 = mtf.getPrivateProgram();
+
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
@@ -3744,8 +3146,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "TextOverlay::01001630"),
 				addr(p1, "TextOverlay::0100182f"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -3758,7 +3159,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "TextOverlay::01001630"), addr(p1, "TextOverlay::0100182f"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 			commit = true;
 		}
 		finally {
@@ -3787,60 +3188,44 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
 				try {
-					try {
-						Memory memory = program.getMemory();
-						memory.createInitializedBlock("Foo", addr(program, "0x01000000"), 0x180L,
-							(byte) 0x0, null, true);
+					Memory memory = program.getMemory();
+					memory.createInitializedBlock("Foo", addr(program, "0x01000000"), 0x180L,
+						(byte) 0x0, null, true);
 
-						SymbolTable st = program.getSymbolTable();
-						Namespace globalNamespace = program.getGlobalNamespace();
-						st.createLabel(addr(program, "Foo:0x01000030"), "Sample0030",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo:0x01000079"), "Sample0079",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo:0x0100017f"), "Sample017f",
-							globalNamespace, SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					SymbolTable st = program.getSymbolTable();
+					Namespace globalNamespace = program.getGlobalNamespace();
+					st.createLabel(addr(program, "Foo:0x01000030"), "Sample0030", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo:0x01000079"), "Sample0079", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo:0x0100017f"), "Sample017f", globalNamespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
 				try {
-					try {
-						Memory memory = program.getMemory();
-						memory.createInitializedBlock("Foo", addr(program, "0x01000080"), 0x180L,
-							(byte) 0x0, null, true);
+					Memory memory = program.getMemory();
+					memory.createInitializedBlock("Foo", addr(program, "0x01000080"), 0x180L,
+						(byte) 0x0, null, true);
 
-						SymbolTable st = program.getSymbolTable();
-						Namespace globalNamespace = program.getGlobalNamespace();
-						st.createLabel(addr(program, "Foo:0x01000080"), "Other0080",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo:0x01000180"), "Other0180",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo:0x01000200"), "Other0200",
-							globalNamespace, SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					SymbolTable st = program.getSymbolTable();
+					Namespace globalNamespace = program.getGlobalNamespace();
+					st.createLabel(addr(program, "Foo:0x01000080"), "Other0080", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo:0x01000180"), "Other0180", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo:0x01000200"), "Other0200", globalNamespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -3851,7 +3236,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
-			programMerge = new ProgramMergeManager(p1, p2, null, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, null, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -3863,7 +3248,6 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			expectedDiffs.addRange(addr(p1, "Foo:0x01000079"), addr(p1, "Foo:0x01000079"));
 			expectedDiffs.addRange(addr(p1, "Foo:0x0100017f"), addr(p1, "Foo:0x0100017f"));
 			assertEquals(expectedDiffs, programMerge.getFilteredDifferences());
-
 			commit = true;
 		}
 		finally {
@@ -3877,64 +3261,48 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
 				try {
-					try {
-						Memory memory = program.getMemory();
-						memory.createInitializedBlock("Foo", addr(program, "0x01000000"), 0x200L,
-							(byte) 0x0, null, true);
+					Memory memory = program.getMemory();
+					memory.createInitializedBlock("Foo", addr(program, "0x01000000"), 0x200L,
+						(byte) 0x0, null, true);
 
-						SymbolTable st = program.getSymbolTable();
-						Namespace globalNamespace = program.getGlobalNamespace();
-						st.createLabel(addr(program, "Foo::0x01000030"), "Sample0030",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x0100007f"), "Sample007f",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x0100017f"), "Sample017f",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x01000100"), "Sample0100",
-							globalNamespace, SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					SymbolTable st = program.getSymbolTable();
+					Namespace globalNamespace = program.getGlobalNamespace();
+					st.createLabel(addr(program, "Foo::0x01000030"), "Sample0030", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x0100007f"), "Sample007f", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x0100017f"), "Sample017f", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x01000100"), "Sample0100", globalNamespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
 				try {
-					try {
-						Memory memory = program.getMemory();
-						memory.createInitializedBlock("Foo", addr(program, "0x01000000"), 0x200L,
-							(byte) 0x0, null, true);
+					Memory memory = program.getMemory();
+					memory.createInitializedBlock("Foo", addr(program, "0x01000000"), 0x200L,
+						(byte) 0x0, null, true);
 
-						SymbolTable st = program.getSymbolTable();
-						Namespace globalNamespace = program.getGlobalNamespace();
-						st.createLabel(addr(program, "Foo::0x01000080"), "Other0080",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x01000180"), "Other0180",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x010001ff"), "Other01ff",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x01000100"), "Other0100",
-							globalNamespace, SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					SymbolTable st = program.getSymbolTable();
+					Namespace globalNamespace = program.getGlobalNamespace();
+					st.createLabel(addr(program, "Foo::0x01000080"), "Other0080", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x01000180"), "Other0180", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x010001ff"), "Other01ff", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x01000100"), "Other0100", globalNamespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -3945,7 +3313,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
-			programMerge = new ProgramMergeManager(p1, p2, null, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, null, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -3969,7 +3337,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			mergeSet.addRange(addr(p1, "Foo::0x0100017f"), addr(p1, "Foo::0x0100017f"));
 			mergeSet.addRange(addr(p1, "Foo::0x01000180"), addr(p1, "Foo::0x01000180"));
 			mergeSet.addRange(addr(p1, "Foo::0x010001ff"), addr(p1, "Foo::0x010001ff"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(new AddressSet(), programMerge.getFilteredDifferences());
 
@@ -3986,7 +3354,6 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			symbols = st.getSymbols(addr(p1, "Foo::0x010001ff"));
 			assertEquals(1, symbols.length);
 			assertEquals("Other01ff", symbols[0].getName(true));
-
 			commit = true;
 		}
 		finally {
@@ -4018,64 +3385,48 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
 				try {
-					try {
-						Memory memory = program.getMemory();
-						memory.createInitializedBlock("Foo", addr(program, "0x01000000"), 0x200L,
-							(byte) 0x0, null, true);
+					Memory memory = program.getMemory();
+					memory.createInitializedBlock("Foo", addr(program, "0x01000000"), 0x200L,
+						(byte) 0x0, null, true);
 
-						SymbolTable st = program.getSymbolTable();
-						Namespace globalNamespace = program.getGlobalNamespace();
-						st.createLabel(addr(program, "Foo::0x01000030"), "Sample0030",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x0100007f"), "Sample007f",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x0100017f"), "Sample017f",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x01000100"), "Sample0100",
-							globalNamespace, SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					SymbolTable st = program.getSymbolTable();
+					Namespace globalNamespace = program.getGlobalNamespace();
+					st.createLabel(addr(program, "Foo::0x01000030"), "Sample0030", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x0100007f"), "Sample007f", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x0100017f"), "Sample017f", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x01000100"), "Sample0100", globalNamespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
 				try {
-					try {
-						Memory memory = program.getMemory();
-						memory.createInitializedBlock("Foo", addr(program, "0x01000000"), 0x200L,
-							(byte) 0x0, null, true);
+					Memory memory = program.getMemory();
+					memory.createInitializedBlock("Foo", addr(program, "0x01000000"), 0x200L,
+						(byte) 0x0, null, true);
 
-						SymbolTable st = program.getSymbolTable();
-						Namespace globalNamespace = program.getGlobalNamespace();
-						st.createLabel(addr(program, "Foo::0x01000080"), "Other0080",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x01000180"), "Other0180",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x010001ff"), "Other01ff",
-							globalNamespace, SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "Foo::0x01000100"), "Other0100",
-							globalNamespace, SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					SymbolTable st = program.getSymbolTable();
+					Namespace globalNamespace = program.getGlobalNamespace();
+					st.createLabel(addr(program, "Foo::0x01000080"), "Other0080", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x01000180"), "Other0180", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x010001ff"), "Other01ff", globalNamespace,
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "Foo::0x01000100"), "Other0100", globalNamespace,
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -4086,7 +3437,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
-			programMerge = new ProgramMergeManager(p1, p2, null, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, null, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(
 				ProgramDiffFilter.SYMBOL_DIFFS | ProgramDiffFilter.FUNCTION_DIFFS));
@@ -4110,7 +3461,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			mergeSet.addRange(addr(p1, "Foo::0x0100017f"), addr(p1, "Foo::0x0100017f"));
 			mergeSet.addRange(addr(p1, "Foo::0x01000180"), addr(p1, "Foo::0x01000180"));
 			mergeSet.addRange(addr(p1, "Foo::0x010001ff"), addr(p1, "Foo::0x010001ff"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			AddressSet newDiffs = new AddressSet();
 			newDiffs.addRange(addr(p1, "Foo::0x01000030"), addr(p1, "Foo::0x01000030"));
@@ -4151,7 +3502,6 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			symbols = st.getSymbols(addr(p1, "Foo::0x010001ff"));
 			assertEquals(1, symbols.length);
 			assertEquals("Other01ff", symbols[0].getName(true));
-
 			commit = true;
 		}
 		finally {
@@ -4184,46 +3534,30 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
 				try {
-					try {
-						ReferenceManager refMgr = program.getReferenceManager();
-						refMgr.addMemoryReference(addr(program, "0x01001e81"),
-							addr(program, "0x01001ea0"), RefType.DATA, SourceType.USER_DEFINED, 0);
-						refMgr.addMemoryReference(addr(program, "0x01001ea0"),
-							addr(program, "0x01001eba"), RefType.DATA, SourceType.IMPORTED, 0);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					ReferenceManager refMgr = program.getReferenceManager();
+					refMgr.addMemoryReference(addr(program, "0x01001e81"),
+						addr(program, "0x01001ea0"), RefType.DATA, SourceType.USER_DEFINED, 0);
+					refMgr.addMemoryReference(addr(program, "0x01001ea0"),
+						addr(program, "0x01001eba"), RefType.DATA, SourceType.IMPORTED, 0);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
 				try {
-					try {
-						ReferenceManager refMgr = program.getReferenceManager();
-						refMgr.addMemoryReference(addr(program, "0x01001e81"),
-							addr(program, "0x01001ea0"), RefType.DATA, SourceType.IMPORTED, 0);
-						refMgr.addMemoryReference(addr(program, "0x01001ea0"),
-							addr(program, "0x01001eba"), RefType.DATA, SourceType.ANALYSIS, 0);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					ReferenceManager refMgr = program.getReferenceManager();
+					refMgr.addMemoryReference(addr(program, "0x01001e81"),
+						addr(program, "0x01001ea0"), RefType.DATA, SourceType.IMPORTED, 0);
+					refMgr.addMemoryReference(addr(program, "0x01001ea0"),
+						addr(program, "0x01001eba"), RefType.DATA, SourceType.ANALYSIS, 0);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -4234,7 +3568,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
-			programMerge = new ProgramMergeManager(p1, p2, null, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, null, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.REFERENCE_DIFFS));
 			programMerge.setMergeFilter(
@@ -4247,7 +3581,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01001e4f"), addr(p1, "0x01001efc"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			AddressSet newDiffs = new AddressSet();
 			assertEquals(newDiffs, programMerge.getFilteredDifferences());
@@ -4261,7 +3595,6 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			refs = rm.getReferencesFrom(addr(p1, "0x01001ea0"));
 			assertEquals(1, refs.length);
 			assertEquals(SourceType.IMPORTED, refs[0].getSource());
-
 			commit = true;
 		}
 		finally {
@@ -4290,45 +3623,29 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				program.getGlobalNamespace();
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					program.getGlobalNamespace();
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						assertNotNull(f);
-						assertTrue(functionMgr.removeFunction(addr(program, "0x01004132")));
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					assertNotNull(f);
+					assertTrue(functionMgr.removeFunction(addr(program, "0x01004132")));
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						Symbol sym = st.createLabel(addr(program, "0x01004136"), "stuff",
-							SourceType.USER_DEFINED);
-						assertNotNull(sym);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Symbol sym = st.createLabel(addr(program, "0x01004136"), "stuff",
+						SourceType.USER_DEFINED);
+					assertNotNull(sym);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -4341,8 +3658,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -4355,7 +3671,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
 			mergeSet.addRange(addr(p1, "0x01004136"), addr(p1, "0x01004136"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			expectedDiffs.deleteRange(addr(p1, "0x01004136"), addr(p1, "0x01004136"));
 			assertEquals(expectedDiffs, programMerge.getFilteredDifferences());
@@ -4383,54 +3699,38 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f;
-						f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						assertNotNull(f);
-						assertTrue(functionMgr.removeFunction(addr(program, "0x01004132")));
-						String name =
-							SymbolUtilities.getDefaultFunctionName(addr(program, "0x01004136"));
-						AddressSet body = new AddressSet();
-						body.addRange(addr(program, "0x01004136"), addr(program, "0x01004149"));
-						f = functionMgr.createFunction(name, addr(program, "0x01004136"), body,
-							SourceType.USER_DEFINED);
-						assertNotNull(f);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f;
+					f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					assertNotNull(f);
+					assertTrue(functionMgr.removeFunction(addr(program, "0x01004132")));
+					String name =
+						SymbolUtilities.getDefaultFunctionName(addr(program, "0x01004136"));
+					AddressSet body = new AddressSet();
+					body.addRange(addr(program, "0x01004136"), addr(program, "0x01004149"));
+					f = functionMgr.createFunction(name, addr(program, "0x01004136"), body,
+						SourceType.USER_DEFINED);
+					assertNotNull(f);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						Symbol sym = st.createLabel(
-							addr(program, "0x01004140"), "stuff", program.getFunctionManager()
+					Symbol sym = st.createLabel(addr(program, "0x01004140"), "stuff",
+						program.getFunctionManager()
 								.getFunctionContaining(addr(program, "0x01004140")),
-							SourceType.USER_DEFINED);
-						assertNotNull(sym);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+						SourceType.USER_DEFINED);
+					assertNotNull(sym);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -4443,8 +3743,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -4459,7 +3758,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			mergeSet.addRange(addr(p1, "0x01004132"), addr(p1, "0x01004132"));
 			mergeSet.addRange(addr(p1, "0x01004136"), addr(p1, "0x01004136"));
 			mergeSet.addRange(addr(p1, "0x01004140"), addr(p1, "0x01004140"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(expectedDiffs, programMerge.getFilteredDifferences());
 
@@ -4487,59 +3786,43 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				FunctionManager functionMgr = program.getFunctionManager();
 				try {
-					FunctionManager functionMgr = program.getFunctionManager();
-					try {
-						Function f;
-						f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
-						assertNotNull(f);
-						assertTrue(functionMgr.removeFunction(addr(program, "0x01004132")));
-						String name =
-							SymbolUtilities.getDefaultFunctionName(addr(program, "0x01004136"));
-						AddressSet body = new AddressSet();
-						body.addRange(addr(program, "0x01004136"), addr(program, "0x01004149"));
-						f = functionMgr.createFunction(name, addr(program, "0x01004136"), body,
-							SourceType.USER_DEFINED);
-						assertNotNull(f);
-						f.setName("Foo1234", SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					Function f;
+					f = functionMgr.getFunctionAt(addr(program, "0x01004132"));
+					assertNotNull(f);
+					assertTrue(functionMgr.removeFunction(addr(program, "0x01004132")));
+					String name =
+						SymbolUtilities.getDefaultFunctionName(addr(program, "0x01004136"));
+					AddressSet body = new AddressSet();
+					body.addRange(addr(program, "0x01004136"), addr(program, "0x01004149"));
+					f = functionMgr.createFunction(name, addr(program, "0x01004136"), body,
+						SourceType.USER_DEFINED);
+					assertNotNull(f);
+					f.setName("Foo1234", SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
+				FunctionManager functionManager = program.getFunctionManager();
+				Function f = functionManager.getFunctionContaining(addr(program, "0x01004140"));
 				try {
-					SymbolTable st = program.getSymbolTable();
-					FunctionManager functionManager = program.getFunctionManager();
-					Function f = functionManager.getFunctionContaining(addr(program, "0x01004140"));
-					try {
-						f.setName("Bar1234", SourceType.USER_DEFINED);
-						Symbol sym = st.createLabel(addr(program, "0x01004132"), "doit", f,
-							SourceType.USER_DEFINED);
-						assertNotNull(sym);
-						sym = st.createLabel(addr(program, "0x01004140"), "stuff", f,
-							SourceType.USER_DEFINED);
-						assertNotNull(sym);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					f.setName("Bar1234", SourceType.USER_DEFINED);
+					Symbol sym = st.createLabel(addr(program, "0x01004132"), "doit", f,
+						SourceType.USER_DEFINED);
+					assertNotNull(sym);
+					sym = st.createLabel(addr(program, "0x01004140"), "stuff", f,
+						SourceType.USER_DEFINED);
+					assertNotNull(sym);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
@@ -4552,8 +3835,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x01001a00"), addr(p1, "0x01006500"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -4566,7 +3848,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x1004130"), addr(p1, "0x1004160"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			assertEquals(expectedDiffs, programMerge.getFilteredDifferences());
 
@@ -4596,28 +3878,21 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			@Override
 			public void modifyLatest(ProgramDB program) {
+				//Empty
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
-				try {
-					Listing listing = program.getListing();
-					Instruction instr = listing.getInstructionAt(addr(program, "0x808c"));
-					instr.setFlowOverride(FlowOverride.BRANCH);
-					instr = listing.getInstructionAt(addr(program, "0x8090"));
-					instr.setFallThrough(null);
-					instr = listing.getInstructionAt(addr(program, "0x8098"));
-					instr.setFallThrough(null);
-					instr = listing.getInstructionAt(addr(program, "0x80b4"));
-					instr.setFlowOverride(FlowOverride.CALL);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(txId, commit);
-				}
+				Listing listing = program.getListing();
+				Instruction instr = listing.getInstructionAt(addr(program, "0x808c"));
+				instr.setFlowOverride(FlowOverride.BRANCH);
+				instr = listing.getInstructionAt(addr(program, "0x8090"));
+				instr.setFallThrough(null);
+				instr = listing.getInstructionAt(addr(program, "0x8098"));
+				instr.setFallThrough(null);
+				instr = listing.getInstructionAt(addr(program, "0x80b4"));
+				instr.setFlowOverride(FlowOverride.CALL);
 			}
 		});
 
@@ -4628,8 +3903,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x8080"), addr(p1, "0x80d0"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			//programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			programMerge.setMergeFilter(
@@ -4640,8 +3914,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			expectedDiffs.addRange(addr(p1, "0x80b4"), addr(p1, "0x80b7"));
 			assertEquals(expectedDiffs, programMerge.getFilteredDifferences());
 
-			assertTrue(programMerge.merge(expectedDiffs, TaskMonitorAdapter.DUMMY_MONITOR));
-
+			assertTrue(programMerge.merge(expectedDiffs, TaskMonitor.DUMMY));
 		}
 		finally {
 			p1.endTransaction(txId, true);
@@ -4703,21 +3976,15 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			@Override
 			public void modifyLatest(ProgramDB program) {
-				int txId = program.startTransaction("Modify Latest Program");
-				boolean commit = false;
 				try {
 					Function func = getFunction(program, "0x1000");
 					Parameter parameter1 =
 						new ParameterImpl("stuff", new ByteDataType(), 4, program);
 					func.addParameter(parameter1, SourceType.USER_DEFINED);
-					commit = true;
 				}
 				catch (Exception e) {
 					e.printStackTrace();
 					Assert.fail(e.getMessage());
-				}
-				finally {
-					program.endTransaction(txId, commit);
 				}
 				Function func = getFunction(program, "0x1000");
 				assertEquals("void bob(byte stuff)", func.getPrototypeString(true, false));
@@ -4726,21 +3993,15 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// Forced indirect for the return.
-				int txId = program.startTransaction("Modify My Program");
-				boolean commit = false;
 				try {
 					Structure struct = new StructureDataType("struct", 20);
 					Function func = getFunction(program, "0x1000");
 					Parameter parameter1 = new ParameterImpl("stuff", struct, 4, program);
 					func.addParameter(parameter1, SourceType.USER_DEFINED);
-					commit = true;
 				}
 				catch (Exception e) {
 					e.printStackTrace();
 					Assert.fail(e.getMessage());
-				}
-				finally {
-					program.endTransaction(txId, commit);
 				}
 				Function func = getFunction(program, "0x1000");
 				assertEquals("void bob(struct stuff)", func.getPrototypeString(true, false));
@@ -4757,8 +4018,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x1000"), addr(p1, "0x1000"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.FUNCTION_DIFFS));
 			programMerge.setMergeFilter(
@@ -4769,7 +4029,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x1000"), addr(p1, "0x1000"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			AddressSet expectedDiffsAfter = new AddressSet();
 			assertEquals(expectedDiffsAfter, programMerge.getFilteredDifferences());
@@ -4801,21 +4061,15 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			@Override
 			public void modifyLatest(ProgramDB program) {
-				int txId = program.startTransaction("Modify Latest Program");
-				boolean commit = false;
 				try {
 					Structure struct = new StructureDataType("struct", 20);
 					Function func = getFunction(program, "0x1000");
 					Parameter parameter1 = new ParameterImpl("stuff", struct, 4, program);
 					func.addParameter(parameter1, SourceType.USER_DEFINED);
-					commit = true;
 				}
 				catch (Exception e) {
 					e.printStackTrace();
 					Assert.fail(e.getMessage());
-				}
-				finally {
-					program.endTransaction(txId, commit);
 				}
 				Function func = getFunction(program, "0x1000");
 				assertEquals("void bob(struct stuff)", func.getPrototypeString(true, false));
@@ -4826,21 +4080,15 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// Forced indirect for the return.
-				int txId = program.startTransaction("Modify My Program");
-				boolean commit = false;
 				try {
 					Function func = getFunction(program, "0x1000");
 					Parameter parameter1 =
 						new ParameterImpl("stuff", new ByteDataType(), 4, program);
 					func.addParameter(parameter1, SourceType.USER_DEFINED);
-					commit = true;
 				}
 				catch (Exception e) {
 					e.printStackTrace();
 					Assert.fail(e.getMessage());
-				}
-				finally {
-					program.endTransaction(txId, commit);
 				}
 				Function func = getFunction(program, "0x1000");
 				assertEquals("void bob(byte stuff)", func.getPrototypeString(true, false));
@@ -4855,8 +4103,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x1000"), addr(p1, "0x1000"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.FUNCTION_DIFFS));
 			programMerge.setMergeFilter(
@@ -4867,7 +4114,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x1000"), addr(p1, "0x1000"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			AddressSet expectedDiffsAfter = new AddressSet();
 			assertEquals(expectedDiffsAfter, programMerge.getFilteredDifferences());
@@ -4899,21 +4146,15 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			@Override
 			public void modifyLatest(ProgramDB program) {
-				int txId = program.startTransaction("Modify Latest Program");
-				boolean commit = false;
 				try {
 					Function func = getFunction(program, "0x1002249");
 					func.getParameter(1).setName("jim", SourceType.USER_DEFINED);
 					func.setReturn(Undefined4DataType.dataType, VariableStorage.UNASSIGNED_STORAGE,
 						SourceType.USER_DEFINED);
-					commit = true;
 				}
 				catch (Exception e) {
 					e.printStackTrace();
 					Assert.fail(e.getMessage());
-				}
-				finally {
-					program.endTransaction(txId, commit);
 				}
 				Function func = getFunction(program, "0x1002249");
 				assertEquals("undefined4 FUN_01002249(MyClass * this, int jim)",
@@ -4928,8 +4169,6 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// Forced indirect for the return.
-				int txId = program.startTransaction("Modify My Program");
-				boolean commit = false;
 				try {
 					Structure struct = new StructureDataType("struct", 20);
 					Function func = getFunction(program, "0x1002249");
@@ -4938,14 +4177,10 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 					func.setReturn(struct, VariableStorage.UNASSIGNED_STORAGE,
 						SourceType.USER_DEFINED);
 					func.setCallingConvention(CompilerSpec.CALLING_CONVENTION_stdcall);
-					commit = true;
 				}
 				catch (Exception e) {
 					e.printStackTrace();
 					Assert.fail(e.getMessage());
-				}
-				finally {
-					program.endTransaction(txId, commit);
 				}
 				Function func = getFunction(program, "0x1002249");
 				assertEquals("struct * FUN_01002249(struct * __return_storage_ptr__, int bob)",
@@ -4967,8 +4202,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x1002249"), addr(p1, "0x1002249"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.FUNCTION_DIFFS));
 			programMerge.setMergeFilter(
@@ -4979,7 +4213,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x1002249"), addr(p1, "0x1002249"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			AddressSet expectedDiffsAfter = new AddressSet();
 			assertEquals(expectedDiffsAfter, programMerge.getFilteredDifferences());
@@ -5009,8 +4243,6 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			@Override
 			public void modifyLatest(ProgramDB program) {
-				int txId = program.startTransaction("Modify Latest Program");
-				boolean commit = false;
 				try {
 					Structure struct = new StructureDataType("struct", 20);
 					Function func = getFunction(program, "0x1002249");
@@ -5019,14 +4251,10 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 					func.setReturn(struct, VariableStorage.UNASSIGNED_STORAGE,
 						SourceType.USER_DEFINED);
 					func.setCallingConvention(CompilerSpec.CALLING_CONVENTION_stdcall);
-					commit = true;
 				}
 				catch (Exception e) {
 					e.printStackTrace();
 					Assert.fail(e.getMessage());
-				}
-				finally {
-					program.endTransaction(txId, commit);
 				}
 				Function func = getFunction(program, "0x1002249");
 				assertEquals("struct * FUN_01002249(struct * __return_storage_ptr__, int bob)",
@@ -5042,21 +4270,15 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// Forced indirect for the return.
-				int txId = program.startTransaction("Modify My Program");
-				boolean commit = false;
 				try {
 					Function func = getFunction(program, "0x1002249");
 					func.getParameter(1).setName("jim", SourceType.USER_DEFINED);
 					func.setReturn(Undefined4DataType.dataType, VariableStorage.UNASSIGNED_STORAGE,
 						SourceType.USER_DEFINED);
-					commit = true;
 				}
 				catch (Exception e) {
 					e.printStackTrace();
 					Assert.fail(e.getMessage());
-				}
-				finally {
-					program.endTransaction(txId, commit);
 				}
 				Function func = getFunction(program, "0x1002249");
 				assertEquals("undefined4 FUN_01002249(MyClass * this, int jim)",
@@ -5077,8 +4299,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			AddressSet setToDiff = new AddressSet();
 			setToDiff.addRange(addr(p1, "0x1002249"), addr(p1, "0x1002249"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.FUNCTION_DIFFS));
 			programMerge.setMergeFilter(
@@ -5089,7 +4310,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			AddressSet mergeSet = new AddressSet();
 			mergeSet.addRange(addr(p1, "0x1002249"), addr(p1, "0x1002249"));
-			programMerge.merge(mergeSet, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(mergeSet, TaskMonitor.DUMMY);
 
 			AddressSet expectedDiffsAfter = new AddressSet();
 			assertEquals(expectedDiffsAfter, programMerge.getFilteredDifferences());
@@ -5115,60 +4336,49 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						program.getMemory().createInitializedBlock("SomeOverlay",
-							addr(program, "0x01001630"), 0x200, (byte) 0, TaskMonitor.DUMMY, true);
-						program.getMemory().createInitializedBlock("OtherOverlay",
-							addr(program, "0x01001630"), 0x300, (byte) 0, TaskMonitor.DUMMY, true);
-						st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "OtherOverlay::01001866"), "OVL1866",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					program.getMemory()
+							.createInitializedBlock("SomeOverlay", addr(program, "0x01001630"),
+								0x200, (byte) 0, TaskMonitor.DUMMY, true);
+					program.getMemory()
+							.createInitializedBlock("OtherOverlay", addr(program, "0x01001630"),
+								0x300, (byte) 0, TaskMonitor.DUMMY, true);
+					st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "OtherOverlay::01001866"), "OVL1866",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						program.getMemory().createInitializedBlock("OtherOverlay",
-							addr(program, "0x01001630"), 0x200, (byte) 0, TaskMonitor.DUMMY, true);
-						program.getMemory().createInitializedBlock("SomeOverlay",
-							addr(program, "0x01001630"), 0x300, (byte) 0, TaskMonitor.DUMMY, true);
-						st.createLabel(addr(program, "SomeOverlay::01001889"), "OVL1889",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					program.getMemory()
+							.createInitializedBlock("OtherOverlay", addr(program, "0x01001630"),
+								0x200, (byte) 0, TaskMonitor.DUMMY, true);
+					program.getMemory()
+							.createInitializedBlock("SomeOverlay", addr(program, "0x01001630"),
+								0x300, (byte) 0, TaskMonitor.DUMMY, true);
+					st.createLabel(addr(program, "SomeOverlay::01001889"), "OVL1889",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
 
 		p1 = mtf.getResultProgram();
 		p2 = mtf.getPrivateProgram();
+
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
@@ -5179,8 +4389,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 				addr(p2, "SomeOverlay::0100192f"));
 			setToDiff.addRange(addr(p1, "OtherOverlay::01001630"),
 				addr(p1, "OtherOverlay::0100192f"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			AddressSet expectedDiffs = new AddressSet();
@@ -5194,7 +4403,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			programMerge.setMergeFilter(
 				new ProgramMergeFilter(ProgramMergeFilter.SYMBOLS, ProgramMergeFilter.MERGE));
-			programMerge.merge(expectedDiffs, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(expectedDiffs, TaskMonitor.DUMMY);
 
 			AddressSet expectedPostMergeDiffs = new AddressSet();
 			expectedPostMergeDiffs.addRange(addr(p1, "SomeOverlay::01001630"),
@@ -5234,60 +4443,49 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						program.getMemory().createInitializedBlock("SomeOverlay",
-							addr(program, "0x01001630"), 0x200, (byte) 0, TaskMonitor.DUMMY, true);
-						program.getMemory().createInitializedBlock("OtherOverlay",
-							addr(program, "0x01001630"), 0x300, (byte) 0, TaskMonitor.DUMMY, true);
-						st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "OtherOverlay::01001866"), "OVL1866",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					program.getMemory()
+							.createInitializedBlock("SomeOverlay", addr(program, "0x01001630"),
+								0x200, (byte) 0, TaskMonitor.DUMMY, true);
+					program.getMemory()
+							.createInitializedBlock("OtherOverlay", addr(program, "0x01001630"),
+								0x300, (byte) 0, TaskMonitor.DUMMY, true);
+					st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "OtherOverlay::01001866"), "OVL1866",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						program.getMemory().createInitializedBlock("OtherOverlay",
-							addr(program, "0x01001630"), 0x200, (byte) 0, TaskMonitor.DUMMY, true);
-						program.getMemory().createInitializedBlock("SomeOverlay",
-							addr(program, "0x01001630"), 0x300, (byte) 0, TaskMonitor.DUMMY, true);
-						st.createLabel(addr(program, "SomeOverlay::01001889"), "OVL1889",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					program.getMemory()
+							.createInitializedBlock("OtherOverlay", addr(program, "0x01001630"),
+								0x200, (byte) 0, TaskMonitor.DUMMY, true);
+					program.getMemory()
+							.createInitializedBlock("SomeOverlay", addr(program, "0x01001630"),
+								0x300, (byte) 0, TaskMonitor.DUMMY, true);
+					st.createLabel(addr(program, "SomeOverlay::01001889"), "OVL1889",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
 
 		p1 = mtf.getResultProgram();
 		p2 = mtf.getPrivateProgram();
+
 		int txId = p1.startTransaction("Replace in Program 1");
 		boolean commit = false;
 		try {
@@ -5298,8 +4496,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 				addr(p2, "SomeOverlay::0100192f"));
 			setToDiff.addRange(addr(p1, "OtherOverlay::01001630"),
 				addr(p1, "OtherOverlay::0100192f"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			AddressSet expectedDiffs = new AddressSet();
@@ -5313,7 +4510,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			programMerge.setMergeFilter(
 				new ProgramMergeFilter(ProgramMergeFilter.SYMBOLS, ProgramMergeFilter.REPLACE));
-			programMerge.merge(expectedDiffs, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(expectedDiffs, TaskMonitor.DUMMY);
 
 			AddressSet expectedPostMergeDiffs = new AddressSet();
 			expectedPostMergeDiffs.addRange(addr(p1, "OtherOverlay::01001866"),
@@ -5350,60 +4547,49 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						program.getMemory().createInitializedBlock("SomeOverlay",
-							addr(program, "0x01001630"), 0x200, (byte) 0, TaskMonitor.DUMMY, true);
-						program.getMemory().createInitializedBlock("OtherOverlay",
-							addr(program, "0x01001630"), 0x300, (byte) 0, TaskMonitor.DUMMY, true);
-						st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630_Latest",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646_Latest",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					program.getMemory()
+							.createInitializedBlock("SomeOverlay", addr(program, "0x01001630"),
+								0x200, (byte) 0, TaskMonitor.DUMMY, true);
+					program.getMemory()
+							.createInitializedBlock("OtherOverlay", addr(program, "0x01001630"),
+								0x300, (byte) 0, TaskMonitor.DUMMY, true);
+					st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630_Latest",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646_Latest",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						program.getMemory().createInitializedBlock("OtherOverlay",
-							addr(program, "0x01001630"), 0x200, (byte) 0, TaskMonitor.DUMMY, true);
-						program.getMemory().createInitializedBlock("SomeOverlay",
-							addr(program, "0x01001630"), 0x300, (byte) 0, TaskMonitor.DUMMY, true);
-						st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630_Private",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646_Private",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					program.getMemory()
+							.createInitializedBlock("OtherOverlay", addr(program, "0x01001630"),
+								0x200, (byte) 0, TaskMonitor.DUMMY, true);
+					program.getMemory()
+							.createInitializedBlock("SomeOverlay", addr(program, "0x01001630"),
+								0x300, (byte) 0, TaskMonitor.DUMMY, true);
+					st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630_Private",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646_Private",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
 
 		p1 = mtf.getResultProgram();
 		p2 = mtf.getPrivateProgram();
+
 		int txId = p1.startTransaction("Merge into Program 1");
 		boolean commit = false;
 		try {
@@ -5414,8 +4600,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 				addr(p2, "SomeOverlay::0100192f"));
 			setToDiff.addRange(addr(p1, "OtherOverlay::01001630"),
 				addr(p1, "OtherOverlay::0100192f"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			AddressSet expectedDiffs = new AddressSet();
@@ -5427,7 +4612,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			programMerge.setMergeFilter(
 				new ProgramMergeFilter(ProgramMergeFilter.SYMBOLS, ProgramMergeFilter.MERGE));
-			programMerge.merge(expectedDiffs, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(expectedDiffs, TaskMonitor.DUMMY);
 
 			AddressSet expectedPostMergeDiffs = new AddressSet();
 			expectedPostMergeDiffs.addRange(addr(p1, "SomeOverlay::01001630"),
@@ -5462,62 +4647,51 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 			@Override
 			public void modifyLatest(ProgramDB program) {
 				// P1 program
-				int txId = program.startTransaction("Modify Program 1");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						program.getMemory().createInitializedBlock("SomeOverlay",
-							addr(program, "0x01001630"), 0x200, (byte) 0, TaskMonitor.DUMMY, true);
-						program.getMemory().createInitializedBlock("OtherOverlay",
-							addr(program, "0x01001630"), 0x300, (byte) 0, TaskMonitor.DUMMY, true);
+					program.getMemory()
+							.createInitializedBlock("SomeOverlay", addr(program, "0x01001630"),
+								0x200, (byte) 0, TaskMonitor.DUMMY, true);
+					program.getMemory()
+							.createInitializedBlock("OtherOverlay", addr(program, "0x01001630"),
+								0x300, (byte) 0, TaskMonitor.DUMMY, true);
 
-						st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630_Latest",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646_Latest",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630_Latest",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646_Latest",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) {
 				// P2 program
-				int txId = program.startTransaction("Modify Program 2");
-				boolean commit = false;
+				SymbolTable st = program.getSymbolTable();
 				try {
-					SymbolTable st = program.getSymbolTable();
-					try {
-						program.getMemory().createInitializedBlock("OtherOverlay",
-							addr(program, "0x01001630"), 0x200, (byte) 0, TaskMonitor.DUMMY, true);
-						program.getMemory().createInitializedBlock("SomeOverlay",
-							addr(program, "0x01001630"), 0x300, (byte) 0, TaskMonitor.DUMMY, true);
+					program.getMemory()
+							.createInitializedBlock("OtherOverlay", addr(program, "0x01001630"),
+								0x200, (byte) 0, TaskMonitor.DUMMY, true);
+					program.getMemory()
+							.createInitializedBlock("SomeOverlay", addr(program, "0x01001630"),
+								0x300, (byte) 0, TaskMonitor.DUMMY, true);
 
-						st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630_Private",
-							SourceType.USER_DEFINED);
-						st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646_Private",
-							SourceType.USER_DEFINED);
-					}
-					catch (Exception e) {
-						Assert.fail(e.getMessage());
-					}
-					commit = true;
+					st.createLabel(addr(program, "SomeOverlay::01001630"), "OVL1630_Private",
+						SourceType.USER_DEFINED);
+					st.createLabel(addr(program, "OtherOverlay::01001646"), "OVL1646_Private",
+						SourceType.USER_DEFINED);
 				}
-				finally {
-					program.endTransaction(txId, commit);
+				catch (Exception e) {
+					Assert.fail(e.getMessage());
 				}
 			}
 		});
 
 		p1 = mtf.getResultProgram();
 		p2 = mtf.getPrivateProgram();
+
 		int txId = p1.startTransaction("Replace in Program 1");
 		boolean commit = false;
 		try {
@@ -5528,8 +4702,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 				addr(p2, "SomeOverlay::0100192f"));
 			setToDiff.addRange(addr(p1, "OtherOverlay::01001630"),
 				addr(p1, "OtherOverlay::0100192f"));
-			programMerge =
-				new ProgramMergeManager(p1, p2, setToDiff, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge = new ProgramMergeManager(p1, p2, setToDiff, TaskMonitor.DUMMY);
 
 			programMerge.setDiffFilter(new ProgramDiffFilter(ProgramDiffFilter.SYMBOL_DIFFS));
 			AddressSet expectedDiffs = new AddressSet();
@@ -5541,7 +4714,7 @@ public class ProgramMerge2Test extends AbstractGhidraHeadedIntegrationTest {
 
 			programMerge.setMergeFilter(
 				new ProgramMergeFilter(ProgramMergeFilter.SYMBOLS, ProgramMergeFilter.REPLACE));
-			programMerge.merge(expectedDiffs, TaskMonitorAdapter.DUMMY_MONITOR);
+			programMerge.merge(expectedDiffs, TaskMonitor.DUMMY);
 
 			AddressSet expectedPostMergeDiffs = new AddressSet();
 			assertEquals(expectedPostMergeDiffs, programMerge.getFilteredDifferences());

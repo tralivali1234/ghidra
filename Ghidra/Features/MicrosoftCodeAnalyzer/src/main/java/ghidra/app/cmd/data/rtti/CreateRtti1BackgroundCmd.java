@@ -71,54 +71,67 @@ public class CreateRtti1BackgroundCmd extends AbstractCreateDataBackgroundCmd<Rt
 	@Override
 	protected boolean createAssociatedData() throws CancelledException {
 
-		return createRtti0();
+		return createRtti0() | createRtti3();
 	}
 
 	private boolean createRtti0() throws CancelledException {
 
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 		CreateTypeDescriptorBackgroundCmd cmd =
 			new CreateTypeDescriptorBackgroundCmd(model.getRtti0Model(), applyOptions);
 		return cmd.applyTo(model.getProgram(), monitor);
 	}
 
+	private boolean createRtti3() throws CancelledException {
+
+		monitor.checkCancelled();
+
+		CreateRtti3BackgroundCmd cmd =
+			new CreateRtti3BackgroundCmd(model.getRtti3Model(), applyOptions);
+		return cmd.applyTo(model.getProgram(), monitor);
+	}
+
 	@Override
 	protected boolean createMarkup() throws CancelledException {
 
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 		Program program = model.getProgram();
 		TypeDescriptorModel rtti0Model = model.getRtti0Model();
 
-		monitor.checkCanceled();
+		if (rtti0Model == null) {
+			return true;
+		}
 
-		if (rtti0Model != null) {
+		monitor.checkCancelled();
+		
+		String suffix = "";
+		try {
+			suffix = " at " + getPMDAttrList(program);
+		}
+		catch (InvalidDataTypeException e) {
+			// Couldn't get pmd and attributes so leave it off and simply log the error.
+			String message =
+				"Unable to get PMD and attributes for RTTI1 at " + getDataAddress() + ".";
+			handleError(message);
+		}
 
-			String suffix = "";
-			try {
-				suffix = " at " + getPMDAttrList(program);
-			}
-			catch (InvalidDataTypeException e) {
-				// Couldn't get pmd and attributes so leave it off and simply log the error.
-				String message = "Unable to get PMD and attributes for RTTI1 at " + getDataAddress() + ".";
-				handleError(message);
-			}
+		// Label
+		boolean shouldCreateComment = true;
+		if (applyOptions.shouldCreateLabel()) {
+			String rtti1Suffix = RTTI_1_NAME + suffix;
+			rtti1Suffix = SymbolUtilities.replaceInvalidChars(rtti1Suffix, true);
+			shouldCreateComment = RttiUtil.createSymbolFromDemangledType(program, getDataAddress(), rtti0Model,
+				rtti1Suffix);
+		}
 
-			// Plate Comment
+		// Plate Comment
+		if (shouldCreateComment) {
+			// comment created if a label was created, or createLabel option off
 			EHDataTypeUtilities.createPlateCommentIfNeeded(program,
-				RttiUtil.getDescriptorTypeNamespace(rtti0Model) + Namespace.DELIMITER,
-				RTTI_1_NAME, suffix, getDataAddress(), applyOptions);
-
-			monitor.checkCanceled();
-
-			// Label
-			if (applyOptions.shouldCreateLabel()) {
-				String rtti1Suffix = RTTI_1_NAME + suffix;
-				rtti1Suffix = SymbolUtilities.replaceInvalidChars(rtti1Suffix, true);
-				RttiUtil.createSymbolFromDemangledType(program, getDataAddress(), rtti0Model, rtti1Suffix);
-			}
-
+					RttiUtil.getDescriptorTypeNamespace(rtti0Model) + Namespace.DELIMITER, RTTI_1_NAME,
+					suffix, getDataAddress(), applyOptions);
 		}
 
 		return true;

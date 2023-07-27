@@ -1,6 +1,5 @@
 /* ###
  * IP: GHIDRA
- * REVIEWED: YES
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +15,17 @@
  */
 package ghidra.feature.vt.api.impl;
 
+import java.io.IOException;
+
+import javax.swing.Icon;
+
+import db.DBHandle;
+import db.OpenMode;
+import db.buffers.BufferFile;
+import generic.theme.GIcon;
 import ghidra.feature.vt.api.db.VTSessionDB;
-import ghidra.framework.data.*;
+import ghidra.framework.data.DBContentHandler;
+import ghidra.framework.data.DomainObjectMergeManager;
 import ghidra.framework.model.ChangeSet;
 import ghidra.framework.model.DomainObject;
 import ghidra.framework.store.*;
@@ -27,37 +35,27 @@ import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.VersionException;
 import ghidra.util.task.TaskMonitor;
 
-import java.io.IOException;
+public class VTSessionContentHandler extends DBContentHandler<VTSessionDB> {
 
-import javax.swing.Icon;
-import javax.swing.ImageIcon;
-
-import resources.ResourceManager;
-import db.DBHandle;
-import db.OpenMode;
-import db.buffers.BufferFile;
-
-public class VTSessionContentHandler extends DBContentHandler {
-	private static ImageIcon ICON = ResourceManager.getScaledIcon(
-		ResourceManager.loadImage("images/start-here_16.png"), 16, 16);
+	private static Icon ICON = new GIcon("icon.version.tracking.session.content.type");
 
 	public final static String CONTENT_TYPE = "VersionTracking";
 
 	@Override
 	public long createFile(FileSystem fs, FileSystem userfs, String path, String name,
-			DomainObject domainObject, TaskMonitor monitor) throws IOException,
-			InvalidNameException, CancelledException {
+			DomainObject domainObject, TaskMonitor monitor)
+			throws IOException, InvalidNameException, CancelledException {
 
 		if (!(domainObject instanceof VTSessionDB)) {
-			throw new IOException("Unsupported domain object: " + domainObject.getClass().getName());
+			throw new IOException(
+				"Unsupported domain object: " + domainObject.getClass().getName());
 		}
 		return createFile((VTSessionDB) domainObject, CONTENT_TYPE, fs, path, name, monitor);
-
 	}
 
 	@Override
-	public ChangeSet getChangeSet(FolderItem versionedFolderItem, int olderVersion, int newerVersion)
-			throws VersionException, IOException {
+	public ChangeSet getChangeSet(FolderItem versionedFolderItem, int olderVersion,
+			int newerVersion) throws VersionException, IOException {
 		return null;
 	}
 
@@ -77,7 +75,7 @@ public class VTSessionContentHandler extends DBContentHandler {
 	}
 
 	@Override
-	public DomainObjectAdapter getDomainObject(FolderItem item, FileSystem userfs, long checkoutId,
+	public VTSessionDB getDomainObject(FolderItem item, FileSystem userfs, long checkoutId,
 			boolean okToUpgrade, boolean okToRecover, Object consumer, TaskMonitor monitor)
 			throws IOException, CancelledException, VersionException {
 
@@ -116,13 +114,13 @@ public class VTSessionContentHandler extends DBContentHandler {
 			if (msg == null) {
 				msg = t.toString();
 			}
-			throw new IOException("Open failed: " + msg);
+			throw new IOException("Open failed: " + msg, t);
 		}
 
 	}
 
 	@Override
-	public Class<? extends DomainObject> getDomainObjectClass() {
+	public Class<VTSessionDB> getDomainObjectClass() {
 		return VTSessionDB.class;
 	}
 
@@ -132,9 +130,9 @@ public class VTSessionContentHandler extends DBContentHandler {
 	}
 
 	@Override
-	public DomainObjectAdapter getImmutableObject(FolderItem item, Object consumer, int version,
-			int minChangeVersion, TaskMonitor monitor) throws IOException, CancelledException,
-			VersionException {
+	public VTSessionDB getImmutableObject(FolderItem item, Object consumer, int version,
+			int minChangeVersion, TaskMonitor monitor)
+			throws IOException, CancelledException, VersionException {
 
 		String contentType = item.getContentType();
 		if (!contentType.equals(CONTENT_TYPE)) {
@@ -145,16 +143,16 @@ public class VTSessionContentHandler extends DBContentHandler {
 	}
 
 	@Override
-	public DomainObjectMergeManager getMergeManager(DomainObject resultsObj,
-			DomainObject sourceObj, DomainObject originalObj, DomainObject latestObj) {
+	public DomainObjectMergeManager getMergeManager(DomainObject resultsObj, DomainObject sourceObj,
+			DomainObject originalObj, DomainObject latestObj) {
 
 		return null;
 	}
 
 	@Override
-	public DomainObjectAdapter getReadOnlyObject(FolderItem item, int version, boolean okToUpgrade,
-			Object consumer, TaskMonitor monitor) throws IOException, VersionException,
-			CancelledException {
+	public VTSessionDB getReadOnlyObject(FolderItem item, int version, boolean okToUpgrade,
+			Object consumer, TaskMonitor monitor)
+			throws IOException, VersionException, CancelledException {
 
 		String contentType = item.getContentType();
 		if (contentType != null && !contentType.equals(CONTENT_TYPE)) {
@@ -181,12 +179,12 @@ public class VTSessionContentHandler extends DBContentHandler {
 			throw e;
 		}
 		catch (Throwable t) {
-			Msg.error(this, "getImmutableObject failed", t);
+			Msg.error(this, "Get read-only object failed", t);
 			String msg = t.getMessage();
 			if (msg == null) {
 				msg = t.toString();
 			}
-			throw new IOException("Open failed: " + msg);
+			throw new IOException("Open failed: " + msg, t);
 		}
 	}
 

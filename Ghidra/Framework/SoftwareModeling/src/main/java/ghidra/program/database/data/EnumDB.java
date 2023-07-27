@@ -15,11 +15,16 @@
  */
 package ghidra.program.database.data;
 
+import static ghidra.program.database.data.EnumSignedState.*;
+
 import java.io.IOException;
 import java.math.BigInteger;
 import java.util.*;
 
-import db.Record;
+import org.apache.commons.lang3.StringUtils;
+
+import db.DBRecord;
+import db.Field;
 import ghidra.docking.settings.Settings;
 import ghidra.docking.settings.SettingsDefinition;
 import ghidra.program.database.DBObjectCache;
@@ -32,21 +37,22 @@ import ghidra.util.UniversalID;
 
 /**
  * Database implementation for the enumerated data type.
- *
  */
 class EnumDB extends DataTypeDB implements Enum {
-
 	private static final SettingsDefinition[] ENUM_SETTINGS_DEFINITIONS =
 		new SettingsDefinition[] { MutabilitySettingsDefinition.DEF };
 
 	private EnumDBAdapter adapter;
 	private EnumValueDBAdapter valueAdapter;
+
 	private Map<String, Long> nameMap; // name to value
-	private Map<Long, List<String>> valueMap; // value to names
+	private SortedMap<Long, List<String>> valueMap; // value to names
+	private Map<String, String> commentMap; // name to comment
 	private List<BitGroup> bitGroups;
+	private EnumSignedState signedState = null;
 
 	EnumDB(DataTypeManagerDB dataMgr, DBObjectCache<DataTypeDB> cache, EnumDBAdapter adapter,
-			EnumValueDBAdapter valueAdapter, Record record) {
+			EnumValueDBAdapter valueAdapter, DBRecord record) {
 		super(dataMgr, cache, record);
 		this.adapter = adapter;
 		this.valueAdapter = valueAdapter;
@@ -82,22 +88,47 @@ class EnumDB extends DataTypeDB implements Enum {
 	private void initialize() throws IOException {
 		bitGroups = null;
 		nameMap = new HashMap<>();
-		valueMap = new HashMap<>();
+		valueMap = new TreeMap<>();
+		commentMap = new HashMap<>();
 
-		long[] ids = valueAdapter.getValueIdsInEnum(key);
-
-		for (long id : ids) {
-			Record rec = valueAdapter.getRecord(id);
+		Field[] ids = valueAdapter.getValueIdsInEnum(key);
+		for (Field id : ids) {
+			DBRecord rec = valueAdapter.getRecord(id.getLongValue());
 			String valueName = rec.getString(EnumValueDBAdapter.ENUMVAL_NAME_COL);
 			long value = rec.getLongValue(EnumValueDBAdapter.ENUMVAL_VALUE_COL);
-			addToCache(valueName, value);
+			String comment = rec.getString(EnumValueDBAdapter.ENUMVAL_COMMENT_COL);
+			addToCache(valueName, value, comment);
 		}
+		signedState = computeSignedness();
 	}
 
-	private void addToCache(String valueName, long value) {
+	private EnumSignedState computeSignedness() {
+		int length = record.getByteValue(EnumDBAdapter.ENUM_SIZE_COL);
+
+		if (valueMap.isEmpty()) {
+			return NONE;
+		}
+
+		long minValue = valueMap.firstKey();
+		long maxValue = valueMap.lastKey();
+
+		if (minValue < 0) {
+			return SIGNED;
+		}
+		if (maxValue > getMaxPossibleValue(length, true)) {
+			return UNSIGNED;
+		}
+
+		return NONE;		// we have no negatives and no large unsigned values
+	}
+
+	private void addToCache(String valueName, long value, String comment) {
 		nameMap.put(valueName, value);
 		List<String> list = valueMap.computeIfAbsent(value, v -> new ArrayList<>());
 		list.add(valueName);
+		if (!StringUtils.isBlank(comment)) {
+			commentMap.put(valueName, comment);
+		}
 	}
 
 	private boolean removeFromCache(String valueName) {
@@ -116,6 +147,7 @@ class EnumDB extends DataTypeDB implements Enum {
 		if (list.isEmpty()) {
 			valueMap.remove(value);
 		}
+		commentMap.remove(valueName);
 		return true;
 	}
 
@@ -154,8 +186,42 @@ class EnumDB extends DataTypeDB implements Enum {
 	}
 
 	@Override
-	public boolean isDynamicallySized() {
+	public String[] getNames(long value) {
+		lock.acquire();
+		try {
+			checkIsValid();
+			initializeIfNeeded();
+			List<String> list = valueMap.get(value);
+			if (list == null || list.isEmpty()) {
+				return new String[0];
+			}
+			return list.toArray(new String[0]);
+		}
+		finally {
+			lock.release();
+		}
+	}
+
+	@Override
+	public boolean hasLanguageDependantLength() {
 		return false;
+	}
+
+	@Override
+	public String getComment(String valueName) {
+		lock.acquire();
+		try {
+			checkIsValid();
+			initializeIfNeeded();
+			String comment = commentMap.get(valueName);
+			if (comment == null) {
+				comment = "";
+			}
+			return comment;
+		}
+		finally {
+			lock.release();
+		}
 	}
 
 	@Override
@@ -164,9 +230,7 @@ class EnumDB extends DataTypeDB implements Enum {
 		try {
 			checkIsValid();
 			initializeIfNeeded();
-			long[] values = valueMap.keySet().stream().mapToLong(Long::longValue).toArray();
-			Arrays.sort(values);
-			return values;
+			return valueMap.keySet().stream().mapToLong(Long::longValue).toArray();
 		}
 		finally {
 			lock.release();
@@ -179,7 +243,15 @@ class EnumDB extends DataTypeDB implements Enum {
 		try {
 			checkIsValid();
 			initializeIfNeeded();
-			return nameMap.keySet().toArray(new String[nameMap.size()]);
+
+			// names are first sorted by int value, then sub-sorted by name value
+			List<String> names = new ArrayList<>();
+			Collection<List<String>> values = valueMap.values();
+			for (List<String> list : values) {
+				Collections.sort(list);
+				names.addAll(list);
+			}
+			return names.toArray(new String[0]);
 		}
 		finally {
 			lock.release();
@@ -201,20 +273,30 @@ class EnumDB extends DataTypeDB implements Enum {
 
 	@Override
 	public void add(String valueName, long value) {
+		add(valueName, value, null);
+	}
+
+	@Override
+	public void add(String valueName, long value, String comment) {
 		lock.acquire();
 		try {
 			checkDeleted();
-			checkValue(value);
 			initializeIfNeeded();
+			checkValue(value);
 			if (nameMap.containsKey(valueName)) {
 				throw new IllegalArgumentException(valueName + " already exists in this enum");
 			}
-			bitGroups = null;
-			valueAdapter.createRecord(key, valueName, value);
-			adapter.updateRecord(record, true);
-			addToCache(valueName, value);
-			dataMgr.dataTypeChanged(this);
 
+			if (StringUtils.isBlank(comment)) {
+				comment = null; // use null values in the db to save space
+			}
+
+			bitGroups = null;
+			valueAdapter.createRecord(key, valueName, value, comment);
+			adapter.updateRecord(record, true);
+			addToCache(valueName, value, comment);
+			signedState = computeSignedness();
+			dataMgr.dataTypeChanged(this, false);
 		}
 		catch (IOException e) {
 			dataMgr.dbError(e);
@@ -225,17 +307,17 @@ class EnumDB extends DataTypeDB implements Enum {
 	}
 
 	private void checkValue(long value) {
-		int length = getLength();
+		int length = record.getByteValue(EnumDBAdapter.ENUM_SIZE_COL);
 		if (length == 8) {
 			return; // all long values permitted
 		}
-		// compute maximum enum value as a positive value: (2^length)-1
-		long max = (1L << (getLength() * 8)) - 1;
-		if (value > max) {
-			throw new IllegalArgumentException(
-				getName() + " enum value 0x" + Long.toHexString(value) +
-					" is outside the range of 0x0 to 0x" + Long.toHexString(max));
 
+		long min = getMinPossibleValue();
+		long max = getMaxPossibleValue();
+		if (value < min || value > max) {
+			throw new IllegalArgumentException(
+				"Attempted to add a value outside the range for this enum: (" + min + ", " + max +
+					"): " + value);
 		}
 	}
 
@@ -248,19 +330,19 @@ class EnumDB extends DataTypeDB implements Enum {
 			if (!removeFromCache(valueName)) {
 				return;
 			}
+
 			bitGroups = null;
-
-			long[] ids = valueAdapter.getValueIdsInEnum(key);
-
-			for (long id : ids) {
-				Record rec = valueAdapter.getRecord(id);
+			Field[] ids = valueAdapter.getValueIdsInEnum(key);
+			for (Field id : ids) {
+				DBRecord rec = valueAdapter.getRecord(id.getLongValue());
 				if (valueName.equals(rec.getString(EnumValueDBAdapter.ENUMVAL_NAME_COL))) {
-					valueAdapter.removeRecord(id);
+					valueAdapter.removeRecord(id.getLongValue());
 					break;
 				}
 			}
 			adapter.updateRecord(record, true);
-			dataMgr.dataTypeChanged(this);
+			signedState = computeSignedness();
+			dataMgr.dataTypeChanged(this, false);
 		}
 		catch (IOException e) {
 			dataMgr.dbError(e);
@@ -275,6 +357,7 @@ class EnumDB extends DataTypeDB implements Enum {
 		if (!(dataType instanceof Enum)) {
 			throw new IllegalArgumentException();
 		}
+
 		Enum enumm = (Enum) dataType;
 		lock.acquire();
 		try {
@@ -282,34 +365,38 @@ class EnumDB extends DataTypeDB implements Enum {
 
 			bitGroups = null;
 			nameMap = new HashMap<>();
-			valueMap = new HashMap<>();
+			valueMap = new TreeMap<>();
+			commentMap = new HashMap<>();
 
-			long[] ids = valueAdapter.getValueIdsInEnum(key);
-			for (long id : ids) {
-				valueAdapter.removeRecord(id);
+			Field[] ids = valueAdapter.getValueIdsInEnum(key);
+			for (Field id : ids) {
+				valueAdapter.removeRecord(id.getLongValue());
 			}
 
 			int oldLength = getLength();
 			int newLength = enumm.getLength();
-
 			if (oldLength != newLength) {
 				record.setByteValue(EnumDBAdapter.ENUM_SIZE_COL, (byte) newLength);
 				adapter.updateRecord(record, true);
 			}
 
 			String[] names = enumm.getNames();
-			for (String name2 : names) {
-				long value = enumm.getValue(name2);
-				valueAdapter.createRecord(key, name2, value);
+			for (String valueName : names) {
+				long value = enumm.getValue(valueName);
+				String comment = enumm.getComment(valueName);
+				if (StringUtils.isBlank(comment)) {
+					comment = null; // use null values in the db to save space
+				}
+				valueAdapter.createRecord(key, valueName, value, comment);
 				adapter.updateRecord(record, true);
-				addToCache(name2, value);
+				addToCache(valueName, value, comment);
 			}
-
+			signedState = computeSignedness();
 			if (oldLength != newLength) {
-				notifySizeChanged();
+				notifySizeChanged(false);
 			}
 			else {
-				dataMgr.dataTypeChanged(this);
+				dataMgr.dataTypeChanged(this, false);
 			}
 		}
 		catch (IOException e) {
@@ -331,6 +418,9 @@ class EnumDB extends DataTypeDB implements Enum {
 
 	@Override
 	public DataType clone(DataTypeManager dtm) {
+		if (dtm == getDataTypeManager()) {
+			return this;
+		}
 		EnumDataType enumDataType =
 			new EnumDataType(getCategoryPath(), getName(), getLength(), getUniversalID(),
 				getSourceArchive(), getLastChangeTime(), getLastChangeTimeInSourceArchive(), dtm);
@@ -364,6 +454,11 @@ class EnumDB extends DataTypeDB implements Enum {
 	}
 
 	@Override
+	public int getAlignedLength() {
+		return getLength();
+	}
+
+	@Override
 	public String getDescription() {
 		lock.acquire();
 		try {
@@ -383,7 +478,7 @@ class EnumDB extends DataTypeDB implements Enum {
 			checkDeleted();
 			record.setString(EnumDBAdapter.ENUM_COMMENT_COL, description);
 			adapter.updateRecord(record, true);
-			dataMgr.dataTypeChanged(this);
+			dataMgr.dataTypeChanged(this, false);
 		}
 		catch (IOException e) {
 			dataMgr.dbError(e);
@@ -477,13 +572,13 @@ class EnumDB extends DataTypeDB implements Enum {
 			return "0";
 		}
 		List<BitGroup> list = getBitGroups();
-		StringBuffer buf = new StringBuffer();
+		StringBuilder buf = new StringBuilder();
 		for (BitGroup bitGroup : list) {
 			long subValue = bitGroup.getMask() & value;
 			if (subValue != 0) {
 				String part = getName(subValue);
 				if (part == null) {
-					part = getStringForNoMatchingValue(subValue);
+					part = Long.toHexString(subValue).toUpperCase() + 'h';
 				}
 				if (buf.length() != 0) {
 					buf.append(" | ");
@@ -496,22 +591,9 @@ class EnumDB extends DataTypeDB implements Enum {
 
 	private List<BitGroup> getBitGroups() {
 		if (bitGroups == null) {
-			bitGroups = EnumValuePartitioner.partition(getValues());
+			bitGroups = EnumValuePartitioner.partition(getValues(), getLength());
 		}
 		return bitGroups;
-	}
-
-	private String getStringForNoMatchingValue(long value) {
-		String valueName;
-		String valueStr;
-		if (value < 0 || value >= 32) {
-			valueStr = "0x" + Long.toHexString(value);
-		}
-		else {
-			valueStr = Long.toString(value);
-		}
-		valueName = "" + valueStr;
-		return valueName;
 	}
 
 	@Override
@@ -528,21 +610,89 @@ class EnumDB extends DataTypeDB implements Enum {
 			getLength() != enumm.getLength() || getCount() != enumm.getCount()) {
 			return false;
 		}
+
+		if (!isEachValueEquivalent(enumm)) {
+			return false;
+		}
+		return true;
+	}
+
+	private boolean isEachValueEquivalent(Enum enumm) {
 		String[] names = getNames();
 		String[] otherNames = enumm.getNames();
 		try {
 			for (int i = 0; i < names.length; i++) {
+				if (!names[i].equals(otherNames[i])) {
+					return false;
+				}
+
 				long value = getValue(names[i]);
 				long otherValue = enumm.getValue(names[i]);
-				if (!names[i].equals(otherNames[i]) || value != otherValue) {
+				if (value != otherValue) {
+					return false;
+				}
+
+				String comment = getComment(names[i]);
+				String otherComment = enumm.getComment(names[i]);
+				if (!comment.equals(otherComment)) {
 					return false;
 				}
 			}
+			return true;
 		}
 		catch (NoSuchElementException e) {
 			return false; // named element not found
 		}
-		return true;
+	}
+
+	@Override
+	public long getMinPossibleValue() {
+		lock.acquire();
+		try {
+			checkIsValid();
+			int length = record.getByteValue(EnumDBAdapter.ENUM_SIZE_COL);
+			return getMinPossibleValue(length, signedState != UNSIGNED);
+		}
+		finally {
+			lock.release();
+		}
+	}
+
+	@Override
+	public long getMaxPossibleValue() {
+		lock.acquire();
+		try {
+			checkIsValid();
+			int length = record.getByteValue(EnumDBAdapter.ENUM_SIZE_COL);
+			return getMaxPossibleValue(length, signedState == SIGNED);
+		}
+		finally {
+			lock.release();
+		}
+	}
+
+	private long getMaxPossibleValue(int bytes, boolean allowNegativeValues) {
+		if (bytes == 8) {
+			return Long.MAX_VALUE;
+		}
+		int bits = bytes * 8;
+		if (allowNegativeValues) {
+			bits -= 1;  // take away 1 bit for the sign
+		}
+
+		// the largest value that can be held in n bits in 2^n -1
+		return (1L << bits) - 1;
+	}
+
+	private long getMinPossibleValue(int bytes, boolean allowNegativeValues) {
+		if (!allowNegativeValues) {
+			return 0;
+		}
+		int bits = bytes * 8;
+
+		// smallest value (largest negative) that can be stored in n bits is when the sign bit
+		// is on (and sign extended), and all less significant bits are 0
+		return -1L << (bits - 1);
 	}
 
 	@Override
@@ -550,8 +700,9 @@ class EnumDB extends DataTypeDB implements Enum {
 		try {
 			nameMap = null;
 			valueMap = null;
+			commentMap = null;
 			bitGroups = null;
-			Record rec = adapter.getRecord(key);
+			DBRecord rec = adapter.getRecord(key);
 			if (rec != null) {
 				record = rec;
 				return super.refresh();
@@ -617,7 +768,7 @@ class EnumDB extends DataTypeDB implements Enum {
 			checkDeleted();
 			record.setLongValue(EnumDBAdapter.ENUM_UNIVERSAL_DT_ID_COL, id.getValue());
 			adapter.updateRecord(record, false);
-			dataMgr.dataTypeChanged(this);
+			dataMgr.dataTypeChanged(this, false);
 		}
 		catch (IOException e) {
 			dataMgr.dbError(e);
@@ -639,7 +790,7 @@ class EnumDB extends DataTypeDB implements Enum {
 			checkDeleted();
 			record.setLongValue(EnumDBAdapter.ENUM_SOURCE_ARCHIVE_ID_COL, id.getValue());
 			adapter.updateRecord(record, false);
-			dataMgr.dataTypeChanged(this);
+			dataMgr.dataTypeChanged(this, false);
 		}
 		catch (IOException e) {
 			dataMgr.dbError(e);
@@ -656,7 +807,7 @@ class EnumDB extends DataTypeDB implements Enum {
 			checkDeleted();
 			record.setLongValue(EnumDBAdapter.ENUM_LAST_CHANGE_TIME_COL, lastChangeTime);
 			adapter.updateRecord(record, false);
-			dataMgr.dataTypeChanged(this);
+			dataMgr.dataTypeChanged(this, false);
 		}
 		catch (IOException e) {
 			dataMgr.dbError(e);
@@ -674,7 +825,7 @@ class EnumDB extends DataTypeDB implements Enum {
 			record.setLongValue(EnumDBAdapter.ENUM_SOURCE_SYNC_TIME_COL,
 				lastChangeTimeInSourceArchive);
 			adapter.updateRecord(record, false);
-			dataMgr.dataTypeChanged(this);
+			dataMgr.dataTypeChanged(this, false);
 		}
 		catch (IOException e) {
 			dataMgr.dbError(e);
@@ -684,4 +835,70 @@ class EnumDB extends DataTypeDB implements Enum {
 		}
 	}
 
+	@Override
+	public boolean contains(String name) {
+		lock.acquire();
+		try {
+			checkIsValid();
+			initializeIfNeeded();
+			return nameMap.containsKey(name);
+		}
+		finally {
+			lock.release();
+		}
+	}
+
+	@Override
+	public boolean contains(long value) {
+		lock.acquire();
+		try {
+			checkIsValid();
+			initializeIfNeeded();
+			return valueMap.containsKey(value);
+		}
+		finally {
+			lock.release();
+		}
+	}
+
+	@Override
+	public boolean isSigned() {
+		lock.acquire();
+		try {
+			checkIsValid();
+			initializeIfNeeded();
+			return signedState == SIGNED;
+		}
+		finally {
+			lock.release();
+		}
+	}
+
+	@Override
+	public int getMinimumPossibleLength() {
+		lock.acquire();
+		try {
+			if (valueMap.isEmpty()) {
+				return 1;
+			}
+			long minValue = valueMap.firstKey();
+			long maxValue = valueMap.lastKey();
+			boolean hasNegativeValues = minValue < 0;
+
+			// check the min and max values in this enum to see if they fit in 1 byte enum, then 
+			// 2 byte enum, then 4 byte enum. If the min min and max values fit, then all other values
+			// will fit as well
+			for (int size = 1; size < 8; size *= 2) {
+				long minPossible = getMinPossibleValue(size, hasNegativeValues);
+				long maxPossible = getMaxPossibleValue(size, hasNegativeValues);
+				if (minValue >= minPossible && maxValue <= maxPossible) {
+					return size;
+				}
+			}
+			return 8;
+		}
+		finally {
+			lock.release();
+		}
+	}
 }

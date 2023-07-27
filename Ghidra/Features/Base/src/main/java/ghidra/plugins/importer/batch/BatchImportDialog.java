@@ -38,8 +38,10 @@ import docking.widgets.filechooser.GhidraFileChooser;
 import docking.widgets.filechooser.GhidraFileChooserMode;
 import docking.widgets.label.GDLabel;
 import docking.widgets.table.*;
+import generic.theme.GThemeDefaults.Colors.Messages;
 import ghidra.app.services.ProgramManager;
-import ghidra.formats.gfilesystem.*;
+import ghidra.formats.gfilesystem.FSRL;
+import ghidra.formats.gfilesystem.FileSystemService;
 import ghidra.framework.model.DomainFolder;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.plugin.importer.ImporterUtilities;
@@ -50,6 +52,8 @@ import ghidra.util.filechooser.GhidraFileFilter;
 import ghidra.util.task.TaskLauncher;
 
 public class BatchImportDialog extends DialogComponentProvider {
+
+	private static final String LAST_IMPORT_DIR = "LastBatchImportDir";
 
 	/**
 	 * Shows the batch import dialog (via runSwingLater) and prompts the user to select
@@ -94,7 +98,6 @@ public class BatchImportDialog extends DialogComponentProvider {
 	private JButton rescanButton;
 	private JSpinner maxDepthSpinner;
 
-	private GhidraFileChooser fileChooser;
 	private SourcesListModel sourceListModel;
 
 	private BatchImportDialog(BatchInfo batchInfo, DomainFolder defaultFolder) {
@@ -231,10 +234,15 @@ public class BatchImportDialog extends DialogComponentProvider {
 		});
 
 		removeSourceButton.addActionListener(e -> {
-			int index = sourceList.getSelectedIndex();
-			if (index >= 0 && index < batchInfo.getUserAddedSources().size()) {
-				UserAddedSourceInfo uasi = batchInfo.getUserAddedSources().get(index);
-				batchInfo.remove(uasi.getFSRL());
+			List<FSRL> sourcesToRemove = new ArrayList<>();
+			for (int index : sourceList.getSelectedIndices()) {
+				if (index >= 0 && index < batchInfo.getUserAddedSources().size()) {
+					UserAddedSourceInfo uasi = batchInfo.getUserAddedSources().get(index);
+					sourcesToRemove.add(uasi.getFSRL());
+				}
+			}
+			for (FSRL fsrl : sourcesToRemove) {
+				batchInfo.remove(fsrl);
 			}
 			refreshData();
 		});
@@ -344,9 +352,8 @@ public class BatchImportDialog extends DialogComponentProvider {
 
 		ListSelectionTableDialog<String> dialog =
 			new ListSelectionTableDialog<>("Application Files", names);
-		dialog.setMultiSelectionMode(true);
 		dialog.hideOkButton();
-		dialog.show(table);
+		dialog.showSelectMultiple(table);
 	}
 
 	private void setOpenAfterImporting(boolean b) {
@@ -381,20 +388,21 @@ public class BatchImportDialog extends DialogComponentProvider {
 	}
 
 	private boolean addSources() {
-		if (fileChooser == null) {
-			fileChooser = new GhidraFileChooser(getComponent());
-			fileChooser.setMultiSelectionEnabled(true);
-			fileChooser.setTitle("Choose File to Batch Import");
-			fileChooser.setApproveButtonText("Select files");
-			fileChooser.setFileSelectionMode(GhidraFileChooserMode.FILES_AND_DIRECTORIES);
-			fileChooser.addFileFilter(ImporterUtilities.LOADABLE_FILES_FILTER);
-			fileChooser.addFileFilter(ImporterUtilities.CONTAINER_FILES_FILTER);
-			fileChooser.setSelectedFileFilter(GhidraFileFilter.ALL);
-		}
 
-		List<File> selectedFiles = fileChooser.getSelectedFiles();
+		GhidraFileChooser chooser = new GhidraFileChooser(getComponent());
+		chooser.setMultiSelectionEnabled(true);
+		chooser.setTitle("Choose File to Batch Import");
+		chooser.setApproveButtonText("Select files");
+		chooser.setFileSelectionMode(GhidraFileChooserMode.FILES_AND_DIRECTORIES);
+		chooser.addFileFilter(ImporterUtilities.LOADABLE_FILES_FILTER);
+		chooser.addFileFilter(ImporterUtilities.CONTAINER_FILES_FILTER);
+		chooser.setSelectedFileFilter(GhidraFileFilter.ALL);
+
+		chooser.setLastDirectoryPreference(LAST_IMPORT_DIR);
+
+		List<File> selectedFiles = chooser.getSelectedFiles();
 		if (selectedFiles.isEmpty()) {
-			return !fileChooser.wasCancelled();
+			return !chooser.wasCancelled();
 		}
 
 		List<FSRL> filesToAdd = new ArrayList<>();
@@ -402,23 +410,16 @@ public class BatchImportDialog extends DialogComponentProvider {
 			filesToAdd.add(FileSystemService.getInstance().getLocalFSRL(selectedFile));
 		}
 
+		chooser.dispose();
+
 		return addSources(filesToAdd);
 	}
 
 	private boolean addSources(List<FSRL> filesToAdd) {
 
-		//@formatter:off
-		List<FSRL> updatedFiles = filesToAdd
-			.stream()
-			.map(fsrl -> {
-				if (fsrl instanceof FSRLRoot && fsrl.getFS().hasContainer()) {
-					fsrl = fsrl.getFS().getContainer();
-				}
-				return fsrl; 
-			})
-			.collect(Collectors.toList())
-			;
-		//@formatter:on
+		List<FSRL> updatedFiles = filesToAdd.stream()
+				.map(FSRL::convertRootToContainer)
+				.collect(Collectors.toList());
 
 		List<FSRL> badFiles = batchInfo.addFiles(updatedFiles);
 		if (!badFiles.isEmpty()) {
@@ -541,7 +542,8 @@ public class BatchImportDialog extends DialogComponentProvider {
 			protected String getText(Object value) {
 				BatchGroupLoadSpec bgls = (BatchGroupLoadSpec) value;
 				return (bgls != null) ? bgls.toString()
-						: "<html><font size=\"-2\" color=\"gray\">Click to set language</font>";
+						: "<html><font size=\"-2\" color=\"" + Messages.HINT +
+							"\">Click to set language</font>";
 			}
 		};
 

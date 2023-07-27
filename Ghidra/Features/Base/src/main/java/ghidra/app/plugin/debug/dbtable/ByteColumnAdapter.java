@@ -1,6 +1,5 @@
 /* ###
  * IP: GHIDRA
- * REVIEWED: YES
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +16,7 @@
 package ghidra.app.plugin.debug.dbtable;
 
 import db.ByteField;
-import db.Record;
+import db.DBRecord;
 
 public class ByteColumnAdapter extends AbstractColumnAdapter {
 
@@ -27,13 +26,13 @@ public class ByteColumnAdapter extends AbstractColumnAdapter {
 	}
 
 	@Override
-	Object getKeyValue(Record rec) {
-		return new Byte(((ByteField) rec.getKeyField()).getByteValue());
+	Object getKeyValue(DBRecord rec) {
+		return Byte.valueOf(((ByteField) rec.getKeyField()).getByteValue());
 	}
 
 	@Override
-	Object getValue(Record rec, int col) {
-		return new Byte(rec.getByteValue(col));
+	Object getValue(DBRecord rec, int col) {
+		return Byte.valueOf(rec.getByteValue(col));
 	}
 
 }

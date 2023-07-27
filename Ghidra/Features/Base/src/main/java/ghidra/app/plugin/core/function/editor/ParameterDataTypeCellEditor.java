@@ -26,13 +26,15 @@ import javax.swing.table.TableCellEditor;
 
 import docking.DialogComponentProvider;
 import docking.widgets.DropDownSelectionTextField;
+import docking.widgets.table.FocusableEditor;
 import ghidra.app.services.DataTypeManagerService;
 import ghidra.app.util.datatype.DataTypeSelectionEditor;
 import ghidra.program.model.data.DataType;
 import ghidra.util.MessageType;
 import ghidra.util.data.DataTypeParser;
 
-class ParameterDataTypeCellEditor extends AbstractCellEditor implements TableCellEditor {
+class ParameterDataTypeCellEditor extends AbstractCellEditor
+		implements TableCellEditor, FocusableEditor {
 	private DataTypeSelectionEditor editor;
 	private DropDownSelectionTextField<DataType> textField;
 	private JButton dataTypeChooserButton;
@@ -61,7 +63,7 @@ class ParameterDataTypeCellEditor extends AbstractCellEditor implements TableCel
 	}
 
 	private void init() {
-		editor = new DataTypeSelectionEditor(service, -1, DataTypeParser.AllowedDataTypes.ALL);
+		editor = new DataTypeSelectionEditor(service, DataTypeParser.AllowedDataTypes.ALL);
 		editor.setTabCommitsEdit(true);
 		editor.setConsumeEnterKeyPress(false); // we want the table to handle Enter key presses
 
@@ -88,25 +90,16 @@ class ParameterDataTypeCellEditor extends AbstractCellEditor implements TableCel
 			}
 		};
 
-		dataTypeChooserButton.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-
-				SwingUtilities.invokeLater(new Runnable() {
-					@Override
-					public void run() {
-						DataType dataType = service.getDataType((String) null);
-						if (dataType != null) {
-							editor.setCellEditorValue(dataType);
-							editor.stopCellEditing();
-						}
-						else {
-							editor.cancelCellEditing();
-						}
-					}
-				});
+		dataTypeChooserButton.addActionListener(e -> SwingUtilities.invokeLater(() -> {
+			DataType dataType = service.getDataType((String) null);
+			if (dataType != null) {
+				editor.setCellEditorValue(dataType);
+				editor.stopCellEditing();
 			}
-		});
+			else {
+				editor.cancelCellEditing();
+			}
+		}));
 
 		FocusAdapter focusListener = new FocusAdapter() {
 			@Override
@@ -120,6 +113,11 @@ class ParameterDataTypeCellEditor extends AbstractCellEditor implements TableCel
 		editorPanel = new JPanel(new BorderLayout());
 		editorPanel.add(textField, BorderLayout.CENTER);
 		editorPanel.add(dataTypeChooserButton, BorderLayout.EAST);
+	}
+
+	@Override
+	public void focusEditor() {
+		textField.requestFocusInWindow();
 	}
 
 	/**

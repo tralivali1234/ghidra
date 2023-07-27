@@ -39,7 +39,7 @@ public class DataTypeParserTest extends AbstractEditorTest {
 		try {
 			DataTypeManager dataTypeManager = cat.getDataTypeManager();
 			if (dt.getDataTypeManager() != dataTypeManager) {
-				dt = (Union) dt.clone(dataTypeManager);
+				dt = dt.clone(dataTypeManager);
 			}
 			CategoryPath categoryPath = cat.getCategoryPath();
 			if (!dt.getCategoryPath().equals(categoryPath)) {
@@ -109,6 +109,49 @@ public class DataTypeParserTest extends AbstractEditorTest {
 	}
 
 	@Test
+	public void testParse_TypeWithNamespaceAndTemplate() throws Exception {
+
+		String typeName = "A::B::C::templated_name<int, void*, A::B::C::custom_type>";
+		StructureDataType structure = new StructureDataType(typeName, 0);
+		PointerDataType pointer = new PointerDataType(structure);
+		String pointerName = pointer.getName();
+
+		tx(program, () -> {
+			programDTM.resolve(structure, null);
+		});
+
+		DataTypeParser parser = new DataTypeParser(dtmService, AllowedDataTypes.ALL);
+		DataType dt = parser.parse(pointerName);
+		assertNotNull(dt);
+		assertTrue(dt.isEquivalent(pointer));
+	}
+
+	@Test
+	public void testParse_Bitfield() throws Exception {
+
+		TypeDef td = new TypedefDataType("foo", ByteDataType.dataType);
+
+		tx(program, () -> {
+			programDTM.resolve(td, null);
+		});
+
+		DataTypeParser parser =
+			new DataTypeParser(programDTM, programDTM, dtmService,
+				AllowedDataTypes.SIZABLE_DYNAMIC_AND_BITFIELD);
+		DataType dt = parser.parse("byte:3");
+		assertTrue(dt instanceof BitFieldDataType);
+		BitFieldDataType bfdt = (BitFieldDataType) dt;
+		assertEquals(3, bfdt.getBitSize());
+		assertTrue(ByteDataType.dataType.isEquivalent(bfdt.getBaseDataType()));
+
+		dt = parser.parse("foo:3");
+		assertTrue(dt instanceof BitFieldDataType);
+		bfdt = (BitFieldDataType) dt;
+		assertEquals(3, bfdt.getBitSize());
+		assertTrue(td.isEquivalent(bfdt.getBaseDataType()));
+	}
+
+	@Test
 	public void testValidDataTypeSyntax() {
 		checkValidDt("byte");
 		checkValidDt("pointer");
@@ -128,6 +171,8 @@ public class DataTypeParserTest extends AbstractEditorTest {
 		checkValidDt("byte*64*32**16*8");
 		checkValidDt("byte*8*");
 		checkValidDt("byte*32*16*32");
+		checkValidDt("byte[]"); // treated the same as byte[0]
+		checkValidDt("byte[0]");
 		checkValidDt("byte[5]");
 		checkValidDt("byte[22][13]");
 		checkValidDt("byte*[2]");
@@ -141,8 +186,6 @@ public class DataTypeParserTest extends AbstractEditorTest {
 		checkInvalidDt("aaa*{");
 		checkInvalidDt("byte*5");
 		checkInvalidDt("byte*16*[.]");
-		checkInvalidDt("byte[]");
-		checkInvalidDt("byte[0]");
 		checkInvalidDt("*byte");
 		checkInvalidDt("byte[7]*[12a]");
 		checkInvalidDt("*");

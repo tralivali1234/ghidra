@@ -23,27 +23,23 @@ import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
-import docking.ActionContext;
-import docking.DialogComponentProvider;
+import docking.ReusableDialogComponentProvider;
 import docking.action.DockingAction;
 import docking.widgets.checkbox.GCheckBox;
 import docking.widgets.label.GDLabel;
 import docking.widgets.label.GLabel;
-import ghidra.app.events.ProgramSelectionPluginEvent;
+import docking.widgets.textfield.HintTextField;
 import ghidra.app.services.GoToService;
 import ghidra.app.util.HelpTopics;
 import ghidra.app.util.PseudoDisassembler;
-import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
-import ghidra.program.util.ProgramSelection;
 import ghidra.util.HelpLocation;
 import ghidra.util.table.*;
 import ghidra.util.table.actions.MakeProgramSelectionAction;
 import ghidra.util.task.Task;
 
-public class AddressTableDialog extends DialogComponentProvider {
+public class AddressTableDialog extends ReusableDialogComponentProvider {
 	private static final int DEFAULT_MINIMUM_TABLE_SIZE = 3;
 	private static final String DIALOG_NAME = "Search For Address Tables";
 
@@ -143,9 +139,9 @@ public class AddressTableDialog extends DialogComponentProvider {
 
 		// make bottom of right panel
 
-		JPanel buttonPanel = new JPanel(new FlowLayout());
-		buttonPanel.add(makeTablePanel);
-		buttonPanel.add(disassemblePanel);
+		JPanel myButtonPanel = new JPanel(new FlowLayout());
+		myButtonPanel.add(makeTablePanel);
+		myButtonPanel.add(disassemblePanel);
 
 		// search options panel   
 		JPanel searchOptionsPanel = new JPanel(new BorderLayout());
@@ -238,18 +234,11 @@ public class AddressTableDialog extends DialogComponentProvider {
 		JLabel viewOffsetLabel = new GDLabel("  ");
 		viewOffsetLabel.setEnabled(false);
 
-		viewOffset = new HintTextField(20);
+		viewOffset = new HintTextField("<table start address>");
 		viewOffset.setName("viewOffset");
 		viewOffset.setToolTipText("Address of the selected table starting at the given offset");
-		viewOffset.setHintText("table start address");
-		viewOffset.showHint();
-
-		// We want the background of this text field to be the same as the panel, so it doesn't
-		// look like something editable.  
-		Color panelColor = makeOptionsPanel.getBackground();
-		viewOffset.setBackground(
-			new Color(panelColor.getRed(), panelColor.getGreen(), panelColor.getBlue()));
-		viewOffset.setEditable(false);
+		viewOffset.setColumns(20);
+		viewOffset.setEnabled(false);
 
 		offsetField = new JTextField(2);
 		offsetField.setName("offset");
@@ -284,7 +273,7 @@ public class AddressTableDialog extends DialogComponentProvider {
 		offsetPanel.add(viewOffset);
 
 		makeOptionsPanel.add(offsetPanel, BorderLayout.NORTH);
-		makeOptionsPanel.add(buttonPanel, BorderLayout.SOUTH);
+		makeOptionsPanel.add(myButtonPanel, BorderLayout.SOUTH);
 
 		// add panels to left panel
 		JPanel optionsPanel = new JPanel(new GridLayout(1, 2));
@@ -342,8 +331,13 @@ public class AddressTableDialog extends DialogComponentProvider {
 
 	@Override
 	public void close() {
+		if (!isShowing()) {
+			return;
+		}
+
 		cancelCurrentTask();
 		super.close();
+		resultsTablePanel.dispose();
 		plugin.dialogDismissed();
 	}
 
@@ -489,10 +483,6 @@ public class AddressTableDialog extends DialogComponentProvider {
 		return resultsTable.getSelectedRows();
 	}
 
-	void setModel(AutoTableDisassemblerModel model) {
-		resultsTablePanel.setModel(model);
-	}
-
 	public void setSelectedRows(int[] selectedRows) {
 		resultsTable.clearSelection();
 
@@ -524,53 +514,12 @@ public class AddressTableDialog extends DialogComponentProvider {
 
 	private void createAction() {
 
-		DockingAction selectAction = new MakeProgramSelectionAction(plugin, resultsTable) {
-			@Override
-			protected ProgramSelection makeSelection(ActionContext context) {
-				Program program = plugin.getProgram();
-				AddressSet set = new AddressSet();
-				AutoTableDisassemblerModel model = plugin.getModel();
-				int[] selectedRows = resultsTable.getSelectedRows();
-				for (int selectedRow : selectedRows) {
-					Address selectedAddress = model.getAddress(selectedRow);
-					AddressTable addrTab = model.get(selectedAddress);
-					if (addrTab != null) {
-						set.addRange(selectedAddress,
-							selectedAddress.add(addrTab.getByteLength() - 1));
-					}
-				}
-				ProgramSelection selection = new ProgramSelection(set);
-				if (!set.isEmpty()) {
-					plugin.firePluginEvent(
-						new ProgramSelectionPluginEvent(plugin.getName(), selection, program));
-				}
-
-				return selection;
-			}
-		};
+		DockingAction selectAction = new MakeProgramSelectionAction(plugin, resultsTable);
 
 		selectionNavigationAction = new SelectionNavigationAction(plugin, resultsTable);
 		selectionNavigationAction.setHelpLocation(
 			new HelpLocation(HelpTopics.SEARCH, "AddressTables_Selection_Navigation"));
 		addAction(selectionNavigationAction);
 		addAction(selectAction);
-	}
-
-	private void doMakeSelection() {
-		Program program = plugin.getProgram();
-		AddressSet set = new AddressSet();
-		AutoTableDisassemblerModel model = plugin.getModel();
-		int[] selectedRows = resultsTable.getSelectedRows();
-		for (int selectedRow : selectedRows) {
-			Address selectedAddress = model.getAddress(selectedRow);
-			AddressTable addrTab = model.get(selectedAddress);
-			if (addrTab != null) {
-				set.addRange(selectedAddress, selectedAddress.add(addrTab.getByteLength() - 1));
-			}
-		}
-		if (!set.isEmpty()) {
-			plugin.firePluginEvent(new ProgramSelectionPluginEvent(plugin.getName(),
-				new ProgramSelection(set), program));
-		}
 	}
 }

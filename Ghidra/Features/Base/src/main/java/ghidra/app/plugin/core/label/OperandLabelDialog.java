@@ -24,7 +24,6 @@ import ghidra.app.cmd.label.AddLabelCmd;
 import ghidra.app.cmd.refs.AssociateSymbolCmd;
 import ghidra.app.context.ListingActionContext;
 import ghidra.app.util.HelpTopics;
-import ghidra.app.util.PluginConstants;
 import ghidra.framework.cmd.CompoundCmd;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
@@ -121,7 +120,7 @@ public class OperandLabelDialog extends DialogComponentProvider {
 	// the presentation at the call or jump instruction, it doesn't matter which symbol of the
 	// same name you pick.
 	private Symbol findSymbol(SymbolTable symTable, String currentLabel, Address symAddr) {
-		Symbol[] symbols = symTable.getSymbols(symAddr);
+		SymbolIterator symbols = symTable.getSymbolsAsIterator(symAddr);
 		for (Symbol symbol : symbols) {
 			if (symbol.getName(true).equals(currentLabel)) {
 				return symbol;
@@ -158,7 +157,7 @@ public class OperandLabelDialog extends DialogComponentProvider {
 		setTitle("Set Label at " + s.getAddress());
 		myChoice.setSelectedItem(s.getName(true));
 		PluginTool tool = plugin.getTool();
-		tool.showDialog(this, tool.getComponentProvider(PluginConstants.CODE_BROWSER));
+		tool.showDialog(this);
 	}
 
 	private Symbol getSymbol(ListingActionContext context) {

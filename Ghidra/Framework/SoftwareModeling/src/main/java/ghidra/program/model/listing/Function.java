@@ -22,6 +22,8 @@ import ghidra.program.database.function.OverlappingFunctionException;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeManager;
+import ghidra.program.model.lang.CompilerSpec;
 import ghidra.program.model.lang.PrototypeModel;
 import ghidra.program.model.symbol.*;
 import ghidra.util.exception.DuplicateNameException;
@@ -29,10 +31,7 @@ import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 /**
- * Interface to define methods available on a function. Functions
- * have a single entry point.
- * 
- *
+ * Interface to define methods available on a function. Functions have a single entry point.
  */
 public interface Function extends Namespace {
 
@@ -45,8 +44,10 @@ public interface Function extends Namespace {
 	public static final String DEFAULT_LOCAL_RESERVED_PREFIX = "local_res";
 	public static final String DEFAULT_LOCAL_TEMP_PREFIX = "temp_";
 	public static final int DEFAULT_LOCAL_PREFIX_LEN = DEFAULT_LOCAL_PREFIX.length();
-	public static final String UNKNOWN_CALLING_CONVENTION_STRING = "unknown";
-	public static final String DEFAULT_CALLING_CONVENTION_STRING = "default";
+	public static final String UNKNOWN_CALLING_CONVENTION_STRING =
+		CompilerSpec.CALLING_CONVENTION_unknown;
+	public static final String DEFAULT_CALLING_CONVENTION_STRING =
+		CompilerSpec.CALLING_CONVENTION_default;
 	public static final String INLINE = "inline";
 	public static final String NORETURN = "noreturn";
 	public static final String THUNK = "thunk";
@@ -110,8 +111,8 @@ public interface Function extends Namespace {
 	public void setCallFixup(String name);
 
 	/**
-	 * Returns the current call-fixup name set on this instruction or null
-	 * if one has not been set.
+	 * Returns the current call-fixup name set on this instruction or null if one has not been set
+	 * @return the name
 	 */
 	public String getCallFixup();
 
@@ -131,6 +132,7 @@ public interface Function extends Namespace {
 	/**
 	 * Returns the function (same as plate) comment as an array of strings where
 	 * each item in the array is a line of text in the comment.
+	 * @return the comments
 	 */
 	public String[] getCommentAsArray();
 
@@ -179,7 +181,7 @@ public interface Function extends Namespace {
 	/**
 	 * Set the function's return type.
 	 * @param type the dataType that will define this functions return type.
-	 * @param source TODO
+	 * @param source signature source
 	 * @throws InvalidInputException if data type is not a fixed length.
 	 */
 	public void setReturnType(DataType type, SourceType source) throws InvalidInputException;
@@ -194,11 +196,15 @@ public interface Function extends Namespace {
 
 	/**
 	 * Set the return data-type and storage.
-	 * <p>NOTE: The storage and source are ignored if the function does not have custom storage enabled.
-	 * @param type
-	 * @param storage
+	 * 
+	 * <p>NOTE: The storage and source are ignored if the function does not have custom storage 
+	 * enabled.
+	 * 
+	 * @param type the data type
+	 * @param storage the storage
 	 * @param source source to be combined with the overall signature source. 
-	 * @throws InvalidInputException if data type is not a fixed length or storage is improperly sized
+	 * @throws InvalidInputException if data type is not a fixed length or storage is improperly 
+	 *         sized
 	 */
 	public void setReturn(DataType type, VariableStorage storage, SourceType source)
 			throws InvalidInputException;
@@ -216,21 +222,22 @@ public interface Function extends Namespace {
 
 	/**
 	 * Get the function's signature.
-	 * <br><br>WARNING! It is important to note that the calling convention may not be properly retained 
-	 * by the returned signature object if a non-generic calling convention is used by this function as 
-	 * defined by the program's compiler specification.
+	 * <br><br>WARNING! It is important to note that the calling convention may not be properly 
+	 * retained by the returned signature object if a non-generic calling convention is used by 
+	 * this function as defined by the program's compiler specification.
+	 * 
 	 * @param formalSignature if true only original raw types will be retained and 
 	 * auto-params discarded (e.g., this, __return_storage_ptr__, etc.) within the returned 
 	 * signature.  If false, the effective signature will be returned where forced indirect 
 	 * and auto-params are reflected in the signature.  This option has no affect if the specified 
 	 * function has custom storage enabled.
-	 *
 	 * @return the function's signature
 	 */
 	public FunctionSignature getSignature(boolean formalSignature);
 
 	/**
 	 * Return a string representation of the function signature
+	 * 
 	 * @param formalSignature if true only original raw return/parameter types will be retained and 
 	 * auto-params discarded (e.g., this, __return_storage_ptr__, etc.) within the returned 
 	 * signature.  If false, the effective signature will be returned where forced indirect 
@@ -238,6 +245,7 @@ public interface Function extends Namespace {
 	 * function has custom storage enabled.
 	 * @param includeCallingConvention if true prototype will include call convention
 	 * declaration if known.
+	 * @return the prototype
 	 */
 	public String getPrototypeString(boolean formalSignature, boolean includeCallingConvention);
 
@@ -395,11 +403,13 @@ public interface Function extends Namespace {
 			Variable... params) throws DuplicateNameException, InvalidInputException;
 
 	/**
-	 * Replace all current parameters with the given list of parameters and optionally change the calling convention
-	 * and function return.
+	 * Replace all current parameters with the given list of parameters and optionally change the 
+	 * calling convention and function return.
 	 * The {@link VariableUtilities#checkVariableConflict(Function, Variable, VariableStorage, boolean)} 
 	 * method may be used to check and remove conflicting variables which already exist in the function.
-	 * @param callingConvention updated calling convention name or null if no change is required
+	 * @param callingConvention updated calling convention name or null if no change is required.
+	 * Only {@link DataTypeManager#getKnownCallingConventionNames() known calling convention names}
+	 * may be specified which will always include those defined by the associated {@link CompilerSpec}.
 	 * @param returnValue return variable or null if no change required
 	 * @param updateType function update type
 	 * @param force if true any conflicting local parameters will be removed
@@ -418,11 +428,13 @@ public interface Function extends Namespace {
 			throws DuplicateNameException, InvalidInputException;
 
 	/**
-	 * Replace all current parameters with the given list of parameters and optionally change the calling convention
-	 * and function return.
+	 * Replace all current parameters with the given list of parameters and optionally change the 
+	 * calling convention and function return.
 	 * The {@link VariableUtilities#checkVariableConflict(Function, Variable, VariableStorage, boolean)} 
 	 * method may be used to check and remove conflicting variables which already exist in the function.
-	 * @param callingConvention updated calling convention name or null if no change is required
+	 * @param callingConvention updated calling convention name or null if no change is required.
+	 * Only {@link DataTypeManager#getKnownCallingConventionNames() known calling convention names}
+	 * may be specified which will always include those defined by the associated {@link CompilerSpec}.
 	 * @param returnVar return variable or null if no change required
 	 * @param updateType function update type
 	 * @param force if true any conflicting local parameters will be removed
@@ -464,6 +476,7 @@ public interface Function extends Namespace {
 	 * @param fromOrdinal from ordinal position using the current numbering
 	 * @param toOrdinal the final position of the specified parameter
 	 * @return parameter which was moved
+	 * @throws InvalidInputException if either ordinal is invalid
 	 * @deprecated The use of this method is discouraged.  The function signature should generally be 
 	 * adjusted with a single call to {@link #updateFunction(String, Variable, List, FunctionUpdateType, boolean, SourceType)}
 	 */
@@ -520,7 +533,7 @@ public interface Function extends Namespace {
 
 	/**
 	 * Returns an array of all local and parameter variables
-	 * @return
+	 * @return the variables
 	 */
 	public Variable[] getAllVariables();
 
@@ -533,6 +546,7 @@ public interface Function extends Namespace {
 	 * @return the Variable added to the program.
 	 * @throws DuplicateNameException if another local variable or parameter already
 	 * has that name.
+	 * @throws InvalidInputException if there is an error or conflict when resolving the variable 
 	 */
 	public Variable addLocalVariable(Variable var, SourceType source)
 			throws DuplicateNameException, InvalidInputException;
@@ -553,14 +567,16 @@ public interface Function extends Namespace {
 	public void setBody(AddressSetView newBody) throws OverlappingFunctionException;
 
 	/**
-	 * Returns true if this function has a variable argument list (VarArgs).
+	 * Returns true if this function has a variable argument list (VarArgs)
+	 * @return true if this function has a variable argument list (VarArgs)
 	 */
 	public boolean hasVarArgs();
 
 	/**
-	 * Set whether parameters can be passed as a VarArg (variable argument list).
+	 * Set whether parameters can be passed as a VarArg (variable argument list)
 	 * 
-	 * @param hasVarArgs true if this function has a variable argument list (ie printf(fmt, ...)).
+	 * @param hasVarArgs true if this function has a variable argument list 
+	 *        (e.g.,  printf(fmt, ...)).
 	 */
 	public void setVarArgs(boolean hasVarArgs);
 
@@ -595,7 +611,7 @@ public interface Function extends Namespace {
 
 	/**
 	 * Set whether or not this function uses custom variable storage
-	 * @param hasCustomVariableStorage
+	 * @param hasCustomVariableStorage true if this function uses custom storage
 	 */
 	public void setCustomVariableStorage(boolean hasCustomVariableStorage);
 
@@ -605,6 +621,14 @@ public interface Function extends Namespace {
 	 * @return the prototype model of the function's current calling convention or null.
 	 */
 	public PrototypeModel getCallingConvention();
+
+	/**
+	 * Determine if this signature has an unknown or unrecognized calling convention name.
+	 * @return true if calling convention is unknown or unrecognized name, else false.
+	 */
+	public default boolean hasUnknownCallingConventionName() {
+		return getCallingConvention() == null;
+	}
 
 	/**
 	 * Gets the calling convention's name for this function.
@@ -618,22 +642,19 @@ public interface Function extends Namespace {
 	public String getCallingConventionName();
 
 	/**
-	 * Gets the name of the default calling convention.
-	 * <br>Note: The name in the PrototypeModel of the default calling convention may be null.
-	 * 
-	 * @return the name of the default calling convention.
-	 */
-	public String getDefaultCallingConventionName();
-
-	/**
-	 * Sets the calling convention for this function to the named calling convention.
-	 * @param name the name of the calling convention. "unknown" and "default" are reserved names
-	 * that can also be used here. 
-	 * <br>Null or Function.UNKNOWN_CALLING_CONVENTION_STRING sets this function to not have a 
-	 * calling convention (i.e. unknown).
-	 * <br>Function.DEFAULT_CALLING_CONVENTION_STRING sets this function to use the default calling 
-	 * convention. (i.e. default)
-	 * @throws InvalidInputException if the specified name is not a recognized calling convention name.
+	 * Sets the calling convention for this function to the named calling convention.  Only
+	 * {@link DataTypeManager#getKnownCallingConventionNames() known calling convention names}
+	 * may be specified which will always include those defined by the associated 
+	 * {@link CompilerSpec}.
+	 * @param name the name of the calling convention.  Only 
+	 * {@link DataTypeManager#getKnownCallingConventionNames() known calling convention names}
+	 * may be specified which will always include those defined by the associated 
+	 * {@link CompilerSpec}.  In addition the reserved names 
+	 * {@link Function#UNKNOWN_CALLING_CONVENTION_STRING "unknown"} and 
+	 * {@link Function#DEFAULT_CALLING_CONVENTION_STRING "default"} may also be
+	 * used here.
+	 * @throws InvalidInputException if the specified name is not a recognized calling 
+	 * convention name.
 	 */
 	public void setCallingConvention(String name) throws InvalidInputException;
 
@@ -653,10 +674,24 @@ public interface Function extends Namespace {
 	public Function getThunkedFunction(boolean recursive);
 
 	/**
-	 * If this function is "Thunked", an array of Thunk Function entry points is returned
+	 * If this function is "Thunked", an array of Thunk Function entry points is returned.
+	 * A non-recursive search is performed (i.e., first-hop only).
+	 * @return associated thunk function entry points or null if this is not a "Thunked" function.
+	 * @deprecated since many use cases will likely want a complete list of thunk functions
+	 * a recursive search is generally needed (see {@link #getFunctionThunkAddresses(boolean)}).
+	 * This method form may be removed in a future release.
+	 */
+	public default Address[] getFunctionThunkAddresses() {
+		return getFunctionThunkAddresses(false);
+	}
+
+	/**
+	 * If this function is "Thunked", an array of Thunk Function entry points is returned.
+	 * @param recursive if true a recursive search is performed returning all effective thunks
+	 * of this function, else if false only the first-hop (i.e., direct thunks) are returned. 
 	 * @return associated thunk function entry points or null if this is not a "Thunked" function.
 	 */
-	public Address[] getFunctionThunkAddresses();
+	public Address[] getFunctionThunkAddresses(boolean recursive);
 
 	/**
 	 * Set the currently Thunked Function or null to convert to a normal function
@@ -703,4 +738,11 @@ public interface Function extends Namespace {
 	 * symbol will be removed. 
 	 */
 	public void promoteLocalUserLabelsToGlobal();
+
+	/**
+	 * Determine if this function object has been deleted.  NOTE: the function could be
+	 * deleted at anytime due to asynchronous activity.  
+	 * @return true if function has been deleted, false if not.
+	 */
+	public boolean isDeleted();
 }

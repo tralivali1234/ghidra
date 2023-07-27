@@ -15,13 +15,13 @@
  */
 package ghidra.app.extension.datatype.finder;
 
-import java.util.Arrays;
 import java.util.List;
 
-import ghidra.app.decompiler.ClangLine;
-import ghidra.app.decompiler.ClangToken;
-import ghidra.app.plugin.core.navigation.locationreferences.ReferenceUtils;
+import ghidra.app.decompiler.*;
+import ghidra.app.plugin.core.navigation.locationreferences.LocationReferenceContext;
+import ghidra.app.plugin.core.navigation.locationreferences.LocationReferenceContextBuilder;
 import ghidra.app.services.DataTypeReference;
+import ghidra.app.services.FieldMatcher;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.*;
 import ghidra.program.model.listing.Function;
@@ -47,17 +47,17 @@ public abstract class DecompilerReference {
 	}
 
 	/**
-	 * Scan this reference for any data type matches. 
+	 * Scan this reference for any data type matches.
 	 * <p>
 	 * The <tt>fieldName</tt> is optional.  If not included, then only data type matches will
-	 * be sought.  If it is included, then a match is only included when it is a reference 
-	 * to the given data type where that type is being accessed by the given field name. 
-	 * 
+	 * be sought.  If it is included, then a match is only included when it is a reference
+	 * to the given data type where that type is being accessed by the given field name.
+	 *
 	 * @param dt the data type to find
-	 * @param fieldName the optional field name used to restrict matches.
+	 * @param fieldMatcher the optional field matcher used to restrict matches.
 	 * @param results the accumulator object into which will be placed any matches
 	 */
-	public abstract void accumulateMatches(DataType dt, String fieldName,
+	public abstract void accumulateMatches(DataType dt, FieldMatcher fieldMatcher,
 			List<DataTypeReference> results);
 
 	public DecompilerVariable getVariable() {
@@ -87,15 +87,25 @@ public abstract class DecompilerReference {
 		return line;
 	}
 
-	protected String getContext() {
-		String context = getContext(variable);
+	protected LocationReferenceContext getContext() {
+		LocationReferenceContext context = getContext(variable);
 		return context;
 	}
 
-	protected String getContext(DecompilerVariable var) {
-		String context = line.toDebugString(Arrays.asList(var.variable),
-			ReferenceUtils.CONTEXT_CALLOUT_START, ReferenceUtils.CONTEXT_CALLOUT_END);
-		return context;
+	protected LocationReferenceContext getContext(DecompilerVariable var) {
+
+		LocationReferenceContextBuilder builder = new LocationReferenceContextBuilder();
+		builder.append(line.getLineNumber() + ": ");
+		List<ClangToken> tokens = line.getAllTokens();
+		for (ClangToken token : tokens) {
+			if (token.equals(var.variable)) {
+				builder.appendMatch(token.getText());
+			}
+			else {
+				builder.append(token.getText());
+			}
+		}
+		return builder.build();
 	}
 
 	// Note: using isEquivalent() allows different data types to match.  I don't think we want
@@ -103,12 +113,26 @@ public abstract class DecompilerReference {
 	public static boolean isEquivalent(DataType dt1, DataType dt2) {
 		DataType base1 = getBaseType(dt1);
 		DataType base2 = getBaseType(dt2);
+
+		if (base1 == null || base2 == null) {
+			// this should not happen, but we have seen sometimes that ClangVariableDecl
+			// cannot find its HighSymbol from which to get a datatype
+			return false;
+		}
+
 		return base1.isEquivalent(base2);
 	}
 
 	public static boolean isEqual(DataType dt1, DataType dt2) {
 		DataType base1 = getBaseType(dt1);
 		DataType base2 = getBaseType(dt2);
+
+		if (base1 == null || base2 == null) {
+			// this should not happen, but we have seen sometimes that ClangVariableDecl
+			// cannot find its HighSymbol from which to get a datatype
+			return false;
+		}
+
 		return base1.equals(base2);
 	}
 
@@ -129,6 +153,23 @@ public abstract class DecompilerReference {
 		return dt;
 	}
 
+	public static DataType getFieldDataType(ClangFieldToken field) {
+		DataType fieldDt = field.getDataType();
+		fieldDt = DecompilerReference.getBaseType(fieldDt);
+		if (fieldDt instanceof Structure parent) {
+			int offset = field.getOffset();
+			int n = parent.getLength();
+			if (offset >= 0 && offset < n) {
+				DataTypeComponent dtc = parent.getComponentContaining(field.getOffset());
+				if (dtc != null) {
+					return dtc.getDataType();
+				}
+			}
+		}
+
+		return fieldDt;
+	}
+
 	@Override
 	public String toString() {
 
@@ -136,7 +177,7 @@ public abstract class DecompilerReference {
 		return "{\n" +
 			"\tvariable: " + StringUtilities.toStringWithIndent(variable) + ",\n" +
 			"\tdata type: " + getDataType() + ",\n"+
-			"\tline " + getContext() + ",\n" +
+			"\tline " + StringUtilities.toStringWithIndent(getContext().getPlainText()) + ",\n" +
 			"\tfunction: " + getFunction() + "\n" +
 		"}";
 		//@formatter:on

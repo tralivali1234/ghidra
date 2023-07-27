@@ -29,13 +29,15 @@ import org.jdesktop.animation.timing.TimingTargetAdapter;
 import docking.action.*;
 import docking.actions.KeyBindingUtils;
 import docking.event.mouse.GMouseListenerAdapter;
-import docking.help.HelpService;
 import docking.menu.DialogToolbarButton;
 import docking.util.AnimationUtils;
 import docking.widgets.label.GDHtmlLabel;
+import generic.theme.GColor;
+import generic.theme.GThemeDefaults.Colors.Messages;
 import ghidra.util.*;
 import ghidra.util.exception.AssertException;
 import ghidra.util.task.*;
+import help.HelpService;
 import utility.function.Callback;
 
 /**
@@ -45,28 +47,34 @@ import utility.function.Callback;
 public class DialogComponentProvider
 		implements ActionContextProvider, StatusListener, TaskListener {
 
-	private static final Color WARNING_COLOR = new Color(0xff9900);
+	private static final Color FG_COLOR_ALERT = new GColor("color.fg.dialog.status.alert");
+	private static final Color FG_COLOR_ERROR = new GColor("color.fg.dialog.status.error");
+	private static final Color FG_COLOR_WARNING = new GColor("color.fg.dialog.status.warning");
+	private static final Color FG_COLOR_NORMAL = new GColor("color.fg.dialog.status.normal");
 
 	private final static int DEFAULT_DELAY = 750;
 
 	private static final String PROGRESS = "Progress";
 	private static final String DEFAULT = "No Progress";
 
-	protected JPanel rootPanel;
+	private static int idCounter;
+
+	private int id = ++idCounter;
 
 	private boolean modal;
 	private String title;
 
+	protected JPanel rootPanel;
 	private JPanel mainPanel;
 	private JComponent workPanel;
-	private JPanel buttonPanel;
+	protected JPanel buttonPanel;
 	private JPanel statusPanel;
 	protected JButton okButton;
 	protected JButton applyButton;
 	protected JButton cancelButton;
 	protected JButton dismissButton;
 	private boolean isAlerting;
-	private JLabel statusLabel;
+	private GDHtmlLabel statusLabel;
 	private JPanel statusProgPanel; // contains status panel and progress panel
 	private Timer showTimer;
 	private TaskScheduler taskScheduler;
@@ -77,7 +85,7 @@ public class DialogComponentProvider
 	private CardLayout progressCardLayout;
 	private JButton defaultButton;
 
-	private DockingDialog dialog;
+	DockingDialog dialog;
 	private Component focusComponent;
 	private JPanel toolbar;
 
@@ -97,7 +105,7 @@ public class DialogComponentProvider
 	private Dimension defaultSize;
 
 	/**
-	 * Constructor for a GhidraDialogComponent that be modal and will include a status line and
+	 * Constructor for a DialogComponentProvider that will be modal and will include a status line and
 	 * a button panel. Its title will be the same as its name.
 	 * @param title the dialog title.
 	 */
@@ -106,8 +114,7 @@ public class DialogComponentProvider
 	}
 
 	/**
-	 * Constructor for a GhidraDialogComponent that will include a status line and
-	 * a button panel.
+	 * Constructor for a DialogComponentProvider that will include a status line and a button panel.
 	 * @param title the title for this dialog.
 	 * @param modal true if this dialog should be modal.
 	 */
@@ -116,7 +123,7 @@ public class DialogComponentProvider
 	}
 
 	/**
-	 * Constructs a new GhidraDialogComponent.
+	 * Constructs a new DialogComponentProvider.
 	 * @param title the title for this dialog.
 	 * @param modal true if this dialog should be modal.
 	 * @param includeStatus true if this dialog should include a status line.
@@ -187,6 +194,10 @@ public class DialogComponentProvider
 	/** a callback mechanism for children to do work */
 	protected void doInitialize() {
 		// may be overridden by subclasses
+	}
+
+	public int getId() {
+		return id;
 	}
 
 	public JComponent getComponent() {
@@ -361,8 +372,8 @@ public class DialogComponentProvider
 	 * </ul>
 	 * To change this behavior, call {@link #setDefaultButton(JButton)} with the desired
 	 * default button.
-	 * 
-	 * @param button the button 
+	 *
+	 * @param button the button
 	 */
 	protected void addButton(JButton button) {
 		if (defaultButton == null && buttonPanel.getComponentCount() == 0) {
@@ -601,7 +612,7 @@ public class DialogComponentProvider
 
 	/**
 	 * Sets the text in the dialog's status line using the default color
-	 * 
+	 *
 	 * @param text the text to display in the status line
 	 */
 	@Override
@@ -630,8 +641,8 @@ public class DialogComponentProvider
 
 	private void doSetStatusText(String text, MessageType type, boolean alert) {
 
-		SystemUtilities.assertThisIsTheSwingThread(
-			"Setting text must be performed on the Swing thread");
+		SystemUtilities
+			.assertThisIsTheSwingThread("Setting text must be performed on the Swing thread");
 
 		statusLabel.setText(text);
 		statusLabel.setForeground(getStatusColor(type));
@@ -665,8 +676,8 @@ public class DialogComponentProvider
 	private void doAlertMessage(Callback alertFinishedCallback) {
 
 		// must be on Swing; this allows us to synchronize the 'alerting' flag
-		SystemUtilities.assertThisIsTheSwingThread(
-			"Alerting must be performed on the Swing thread");
+		SystemUtilities
+			.assertThisIsTheSwingThread("Alerting must be performed on the Swing thread");
 
 		if (isAlerting) {
 			return;
@@ -674,7 +685,7 @@ public class DialogComponentProvider
 
 		isAlerting = true;
 
-		// Note: manually call validate() so the 'statusLabel' updates its bounds after 
+		// Note: manually call validate() so the 'statusLabel' updates its bounds after
 		//       the text has been setStatusText() (validation is buffered which means the
 		//       normal Swing mechanism may not have yet happened).
 		mainPanel.validate();
@@ -690,16 +701,16 @@ public class DialogComponentProvider
 		});
 	}
 
-	private Color getStatusColor(MessageType type) {
+	protected Color getStatusColor(MessageType type) {
 		switch (type) {
 			case ALERT:
-				return Color.orange;
+				return FG_COLOR_ALERT;
 			case WARNING:
-				return WARNING_COLOR;
+				return FG_COLOR_WARNING;
 			case ERROR:
-				return Color.red;
+				return FG_COLOR_ERROR;
 			default:
-				return Color.blue;
+				return FG_COLOR_NORMAL;
 		}
 	}
 
@@ -755,7 +766,7 @@ public class DialogComponentProvider
 	private void showProgressBar(String localTitle, boolean hasProgress, boolean canCancel) {
 
 		if (!isVisible()) {
-			// It doesn't make any sense to show the task monitor when the dialog is not 
+			// It doesn't make any sense to show the task monitor when the dialog is not
 			// visible, so show the dialog
 			DockingWindowManager.showDialog(getParent(), this);
 		}
@@ -807,7 +818,7 @@ public class DialogComponentProvider
 
 	/**
 	 * Returns the current status in the dialogs status line
-	 * 
+	 *
 	 * @return the status text
 	 */
 	public String getStatusText() {
@@ -870,9 +881,31 @@ public class DialogComponentProvider
 	}
 
 	public void close() {
-		if (dialog != null) {
+		closeDialog();
+		dispose();
+	}
+
+	protected void closeDialog() {
+		if (isShowing()) {
+			cancelCurrentTask();
 			dialog.close();
 		}
+	}
+
+	/**
+	 * Disposes this dialog.  Only call this when the dialog is no longer used.  Calling this method
+	 * will close the dialog if it is open.
+	 */
+	public void dispose() {
+
+		closeDialog();
+
+		popupManager.dispose();
+
+		dialogActions.forEach(DockingActionIf::dispose);
+
+		actionMap.clear();
+		dialogActions.clear();
 	}
 
 	/**
@@ -896,7 +929,7 @@ public class DialogComponentProvider
 		statusLabel = new GDHtmlLabel(" ");
 		statusLabel.setName("statusLabel");
 		statusLabel.setHorizontalAlignment(SwingConstants.CENTER);
-		statusLabel.setForeground(Color.blue);
+		statusLabel.setForeground(Messages.NORMAL);
 		statusLabel.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 5));
 		statusLabel.addComponentListener(new ComponentAdapter() {
 			@Override
@@ -993,7 +1026,7 @@ public class DialogComponentProvider
 	 * Returns the help location for this dialog
 	 * @return the help location
 	 */
-	public HelpLocation getHelpLocatdion() {
+	public HelpLocation getHelpLocation() {
 		HelpService helpService = DockingWindowManager.getHelpService();
 		return helpService.getHelpLocation(rootPanel);
 	}
@@ -1069,7 +1102,7 @@ public class DialogComponentProvider
 		return dialog;
 	}
 
-	private Component getParent() {
+	protected Component getParent() {
 		if (dialog == null) {
 			return null;
 		}
@@ -1111,7 +1144,7 @@ public class DialogComponentProvider
 	 * Returns the initial location for the dialog or null if none was set
 	 * @return the point
 	 */
-	public Point getIntialLocation() {
+	public Point getInitialLocation() {
 		return initialLocation;
 	}
 
@@ -1144,14 +1177,14 @@ public class DialogComponentProvider
 		}
 
 		if (event == null) {
-			return new ActionContext(null, c);
+			return new DefaultActionContext(null, c);
 		}
 
 		Component sourceComponent = event.getComponent();
 		if (sourceComponent != null) {
 			c = sourceComponent;
 		}
-		return new ActionContext(null, c).setSourceObject(event.getSource());
+		return new DefaultActionContext(null, c).setSourceObject(event.getSource());
 	}
 
 	/**
@@ -1161,7 +1194,7 @@ public class DialogComponentProvider
 	protected void notifyContextChanged() {
 		ActionContext context = getActionContext(null);
 		if (context == null) {
-			context = new ActionContext();
+			context = new DefaultActionContext();
 		}
 		Set<DockingActionIf> keySet = actionMap.keySet();
 		for (DockingActionIf action : keySet) {
@@ -1191,7 +1224,7 @@ public class DialogComponentProvider
 
 	/**
 	 * Add an action to this dialog.  Only actions with icons are added to the toolbar.
-	 * Note, if you add an action to this dialog, do not also add the action to 
+	 * Note, if you add an action to this dialog, do not also add the action to
 	 * the tool, as this dialog will do that for you.
 	 * @param action the action
 	 */
@@ -1204,7 +1237,7 @@ public class DialogComponentProvider
 
 	private void addKeyBindingAction(DockingActionIf action) {
 
-		// add the action to the tool in order get key event management (key bindings 
+		// add the action to the tool in order get key event management (key bindings
 		// options and key event processing)
 		DockingWindowManager dwm = DockingWindowManager.getActiveInstance();
 		if (dwm == null) {
@@ -1255,7 +1288,7 @@ public class DialogComponentProvider
 	 * Returns true if this dialog remembers its size from one invocation to the next.
 	 * @return true if this dialog remembers its size from one invocation to the next.
 	 */
-	public boolean getRemberSize() {
+	public boolean getRememberSize() {
 		return rememberSize;
 	}
 
@@ -1273,7 +1306,7 @@ public class DialogComponentProvider
 	 * size) no matter which window this dialog is launched from.  The default is not to use
 	 * shared location and size, which means that there is a remembered location and size for this
 	 * dialog for each window that has launched it (i.e. the window is the parent of the dialog).
-	 * 
+	 *
 	 * @param useSharedLocation true to share locations
 	 */
 	public void setUseSharedLocation(boolean useSharedLocation) {
@@ -1284,7 +1317,7 @@ public class DialogComponentProvider
 	 * Returns true if this dialog is intended to be shown and hidden relatively quickly.  This
 	 * is used to determine if this dialog should be allowed to parent other components.   The
 	 * default is false.
-	 * 
+	 *
 	 * @return true if this dialog is transient
 	 */
 	public boolean isTransient() {
@@ -1293,7 +1326,7 @@ public class DialogComponentProvider
 
 	/**
 	 * Sets this dialog to be transient (see {@link #isTransient()}
-	 * 
+	 *
 	 * @param isTransient true for transient; false is the default
 	 */
 	public void setTransient(boolean isTransient) {

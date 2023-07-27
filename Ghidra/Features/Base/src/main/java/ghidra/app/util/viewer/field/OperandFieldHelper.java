@@ -27,6 +27,7 @@ import docking.widgets.fieldpanel.support.FieldLocation;
 import docking.widgets.fieldpanel.support.RowColLocation;
 import ghidra.GhidraOptions;
 import ghidra.app.util.*;
+import ghidra.app.util.viewer.field.ListingColors.FunctionColors;
 import ghidra.app.util.viewer.format.FieldFormatModel;
 import ghidra.app.util.viewer.options.OptionsGui;
 import ghidra.app.util.viewer.proxy.ProxyObj;
@@ -34,6 +35,7 @@ import ghidra.framework.options.Options;
 import ghidra.framework.options.ToolOptions;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.*;
+import ghidra.program.model.data.Enum;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.scalar.Scalar;
@@ -56,7 +58,7 @@ abstract class OperandFieldHelper extends FieldFactory {
 	private final static String SPACE_AFTER_SEPARATOR_OPTION =
 		GhidraOptions.OPERAND_GROUP_TITLE + Options.DELIMITER + "Add Space After Separator";
 
-	public static enum UNDERLINE_CHOICE {
+	public enum UNDERLINE_CHOICE {
 		Hidden, All, None
 	}
 
@@ -94,7 +96,7 @@ abstract class OperandFieldHelper extends FieldFactory {
 	 * @param displayOptions the Options for display properties.
 	 * @param fieldOptions the Options for field specific properties.
 	 */
-	OperandFieldHelper(String name, FieldFormatModel model, HighlightProvider hlProvider,
+	OperandFieldHelper(String name, FieldFormatModel model, ListingHighlightProvider hlProvider,
 			ToolOptions displayOptions, ToolOptions fieldOptions) {
 		super(name, model, hlProvider, displayOptions, fieldOptions);
 
@@ -182,12 +184,6 @@ abstract class OperandFieldHelper extends FieldFactory {
 		return null;
 	}
 
-	/**
-	 * Returns the FactoryField for the given object at index index.
-	 *
-	 * @param obj           the object whose properties should be displayed.
-	 * @param varWidth      the amount of variable width spacing for any fields before this one.
-	 */
 	ListingField getField(Object obj, ProxyObj<?> proxy, int varWidth) {
 		if (!enabled) {
 			return null;
@@ -205,16 +201,26 @@ abstract class OperandFieldHelper extends FieldFactory {
 	public ProgramLocation getProgramLocation(int row, int col, ListingField lf) {
 		Object obj = lf.getProxy().getObject();
 
+		if (lf instanceof ImageFactoryField) {
+			Data data = (Data) obj;
+			if (data.getValue() instanceof DataImage) {
+				return new ResourceFieldLocation(data.getProgram(), data.getMinAddress(),
+					data.getComponentPath(), codeUnitFormat.getDataValueRepresentationString(data),
+					0, col, data);
+			}
+			// else might be a Playable
+		}
+
 		if (!(lf instanceof ListingTextField)) {
 			return null;
 		}
 
 		ListingTextField btf = (ListingTextField) lf;
 		FieldElement fieldElement = btf.getFieldElement(row, col);
-
 		if (!(fieldElement instanceof OperandFieldElement)) {
 			return null;
 		}
+
 		OperandFieldElement element = (OperandFieldElement) fieldElement;
 		int opIndex = element.getOperandIndex();
 		int subOpIndex = element.getOperandSubIndex();
@@ -265,9 +271,10 @@ abstract class OperandFieldHelper extends FieldFactory {
 		else if (obj instanceof Data) {
 			Data data = (Data) obj;
 			Address refAddr = null;
-			Reference primaryReference =
-				data.getProgram().getReferenceManager().getPrimaryReferenceFrom(
-					data.getMinAddress(), 0);
+			Program program = data.getProgram();
+			ReferenceManager referenceManager = program.getReferenceManager();
+			Address minAddress = data.getMinAddress();
+			Reference primaryReference = referenceManager.getPrimaryReferenceFrom(minAddress, 0);
 			Object value = data.getValue();
 			if (primaryReference != null) {
 				refAddr = primaryReference.getToAddress();
@@ -278,19 +285,18 @@ abstract class OperandFieldHelper extends FieldFactory {
 				}
 			}
 
-			Program program = data.getProgram();
 			if (value instanceof Scalar) {
 				Scalar scalar = (Scalar) value;
-				Equate equate = program.getEquateTable().getEquate(data.getMinAddress(), opIndex,
-					scalar.getValue());
+				EquateTable equateTable = program.getEquateTable();
+				Equate equate = equateTable.getEquate(minAddress, opIndex, scalar.getValue());
 				if (equate != null) {
-					return new EquateOperandFieldLocation(program, data.getMinAddress(), refAddr,
+					return new EquateOperandFieldLocation(program, minAddress, refAddr,
 						equate.getDisplayName(), equate, opIndex, subOpIndex,
 						translatedLocation.col());
 				}
 			}
-			return new OperandFieldLocation(program, data.getMinAddress(), data.getComponentPath(),
-				refAddr, codeUnitFormat.getDataValueRepresentationString(data), 0, col);
+			return new OperandFieldLocation(program, minAddress, data.getComponentPath(), refAddr,
+				codeUnitFormat.getDataValueRepresentationString(data), 0, col);
 		}
 		return null;
 	}
@@ -361,16 +367,40 @@ abstract class OperandFieldHelper extends FieldFactory {
 				: getAttributesForData(data, value);
 		AttributedString as =
 			new AttributedString(dataValueRepresentation.toString(), attributes.colorAttribute,
-				getMetrics(attributes.styleAttribute), underline, underlineColor);
+				getMetrics(attributes.styleAttribute), underline, ListingColors.UNDERLINE);
 		FieldElement field = new OperandFieldElement(as, 0, 0, 0);
 
-		if ((isWordWrap && (value instanceof String)) || dataValueRepresentation.hasError()) {
+		if (shouldWordWrap(data, dataValueRepresentation)) {
 			return ListingTextField.createWordWrappedTextField(this, proxy, field,
 				startX + varWidth, width, maxDisplayLines, hlProvider);
 		}
 
 		return ListingTextField.createSingleLineTextField(this, proxy, field, startX + varWidth,
 			width, hlProvider);
+	}
+
+	// a place to update data types that support word wrapping
+	private boolean shouldWordWrap(Data data, OperandRepresentationList dataValueRepresentation) {
+
+		if (dataValueRepresentation.hasError()) {
+			return true;
+		}
+
+		if (!isWordWrap) {
+			return false;
+		}
+
+		Object value = data.getValue();
+		if (value instanceof String) {
+			return true;
+		}
+
+		DataType dt = data.getDataType();
+		if (dt instanceof Enum) {
+			return true; // enums use String text for names and these may be ORed together
+		}
+
+		return false;
 	}
 
 	private ColorStyleAttributes getAttributesForData(Data data, Object value) {
@@ -421,7 +451,7 @@ abstract class OperandFieldHelper extends FieldFactory {
 			AttributedString as =
 				new AttributedString(opRepList != null ? opRepList.toString() : "<UNSUPPORTED>",
 					badRefAttributes.colorAttribute, getMetrics(badRefAttributes.styleAttribute),
-					false, underlineColor);
+					false, ListingColors.UNDERLINE);
 			elements.add(new OperandFieldElement(as, opIndex, subOpIndex, characterOffset));
 			characterOffset += as.length();
 		}
@@ -439,9 +469,9 @@ abstract class OperandFieldHelper extends FieldFactory {
 
 	private int addElements(Instruction inst, List<OperandFieldElement> elements, List<?> objList,
 			int opIndex, int subOpIndex, boolean underline, int characterOffset) {
-		for (int i = 0; i < objList.size(); i++) {
-			characterOffset = addElement(inst, elements, objList.get(i), underline, opIndex,
-				subOpIndex, characterOffset);
+		for (Object element : objList) {
+			characterOffset = addElement(inst, elements, element, underline, opIndex, subOpIndex,
+				characterOffset);
 		}
 		return characterOffset;
 	}
@@ -461,8 +491,9 @@ abstract class OperandFieldHelper extends FieldFactory {
 		}
 
 		ColorStyleAttributes attributes = getOpAttributes(opElem, inst, opIndex);
+
 		AttributedString as = new AttributedString(opElem.toString(), attributes.colorAttribute,
-			getMetrics(attributes.styleAttribute), underline, underlineColor);
+			getMetrics(attributes.styleAttribute), underline, ListingColors.UNDERLINE);
 		elements.add(new OperandFieldElement(as, opIndex, subOpIndex, characterOffset));
 		return characterOffset + as.length();
 	}
@@ -504,8 +535,8 @@ abstract class OperandFieldHelper extends FieldFactory {
 	}
 
 	private boolean containsNonPrimary(Reference[] refs) {
-		for (int i = 0; i < refs.length; i++) {
-			if (!refs[i].isPrimary()) {
+		for (Reference ref : refs) {
+			if (!ref.isPrimary()) {
 				return true;
 			}
 		}
@@ -641,34 +672,27 @@ abstract class OperandFieldHelper extends FieldFactory {
 	 * changes.  It looks up all the color settings and resets the its values.
 	 */
 	private void setOptions(Options options) {
-		separatorAttributes.colorAttribute = options.getColor(
-			OptionsGui.SEPARATOR.getColorOptionName(), OptionsGui.SEPARATOR.getDefaultColor());
+
+		separatorAttributes.colorAttribute = ListingColors.SEPARATOR;
+		scalarAttributes.colorAttribute = ListingColors.CONSTANT;
+		variableRefAttributes.colorAttribute = FunctionColors.VARIABLE;
+		addressAttributes.colorAttribute = ListingColors.ADDRESS;
+		externalRefAttributes.colorAttribute = ListingColors.EXT_REF_RESOLVED;
+		badRefAttributes.colorAttribute = ListingColors.REF_BAD;
+		registerAttributes.colorAttribute = ListingColors.REGISTER;
+
 		separatorAttributes.styleAttribute =
 			options.getInt(OptionsGui.SEPARATOR.getStyleOptionName(), -1);
-		scalarAttributes.colorAttribute = options.getColor(OptionsGui.CONSTANT.getColorOptionName(),
-			OptionsGui.CONSTANT.getDefaultColor());
 		scalarAttributes.styleAttribute =
 			options.getInt(OptionsGui.CONSTANT.getStyleOptionName(), -1);
-		variableRefAttributes.colorAttribute = options.getColor(
-			OptionsGui.VARIABLE.getColorOptionName(), OptionsGui.VARIABLE.getDefaultColor());
 		variableRefAttributes.styleAttribute =
 			options.getInt(OptionsGui.VARIABLE.getStyleOptionName(), -1);
-		addressAttributes.colorAttribute = options.getColor(OptionsGui.ADDRESS.getColorOptionName(),
-			OptionsGui.ADDRESS.getDefaultColor());
 		addressAttributes.styleAttribute =
 			options.getInt(OptionsGui.ADDRESS.getStyleOptionName(), -1);
-		externalRefAttributes.colorAttribute =
-			options.getColor(OptionsGui.EXT_REF_RESOLVED.getColorOptionName(),
-				OptionsGui.EXT_REF_RESOLVED.getDefaultColor());
 		externalRefAttributes.styleAttribute =
 			options.getInt(OptionsGui.EXT_REF_RESOLVED.getStyleOptionName(), -1);
-		badRefAttributes.colorAttribute =
-			options.getColor(OptionsGui.BAD_REF_ADDR.getColorOptionName(),
-				OptionsGui.BAD_REF_ADDR.getDefaultColor());
 		badRefAttributes.styleAttribute =
 			options.getInt(OptionsGui.BAD_REF_ADDR.getStyleOptionName(), -1);
-		registerAttributes.colorAttribute = options.getColor(
-			OptionsGui.REGISTERS.getColorOptionName(), OptionsGui.REGISTERS.getDefaultColor());
 		registerAttributes.styleAttribute =
 			options.getInt(OptionsGui.REGISTERS.getStyleOptionName(), -1);
 

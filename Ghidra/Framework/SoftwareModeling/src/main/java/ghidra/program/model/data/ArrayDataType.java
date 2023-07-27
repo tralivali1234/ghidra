@@ -26,7 +26,6 @@ import ghidra.util.exception.DuplicateNameException;
  * Basic implementation of the Array interface.
  */
 public class ArrayDataType extends DataTypeImpl implements Array {
-	private final static long serialVersionUID = 1;
 
 	private int numElements;
 	private DataType dataType;
@@ -35,9 +34,11 @@ public class ArrayDataType extends DataTypeImpl implements Array {
 
 	/**
 	 * Constructs a new Array dataType.
-	 * @param dataType the dataType of the elements in the array.
-	 * @param numElements the number of elements in the array.
-	 * @param elementLength the length of an individual element in the array.
+	 * @param dataType the dataType of the elements in the array (null is not permitted).
+	 * @param numElements the number of elements in the array (0 is permitted).
+	 * @param elementLength the length of an individual element in the array.  This value
+	 * is only used for {@link Dynamic} dataType where {@link Dynamic#canSpecifyLength()} 
+	 * returns true.
 	 */
 	public ArrayDataType(DataType dataType, int numElements, int elementLength) {
 		this(dataType, numElements, elementLength, null);
@@ -46,50 +47,76 @@ public class ArrayDataType extends DataTypeImpl implements Array {
 	/**
 	 * Constructs a new Array dataType.
 	 * @param dataType the dataType of the elements in the array.
-	 * @param numElements the number of elements in the array.
-	 * @param elementLength the length of an individual element in the array.
+	 * @param numElements the number of elements in the array (0 is permitted).
+	 * @param elementLength the length of an individual element in the array.  This value
+	 * is only used for {@link Dynamic} dataType where {@link Dynamic#canSpecifyLength()} 
+	 * returns true.
 	 * @param dtm datatype manager or null
 	 */
 	public ArrayDataType(DataType dataType, int numElements, int elementLength,
 			DataTypeManager dtm) {
 		super(dataType.getCategoryPath(), "array", dtm);
-		validate(dataType);
-		if (dataType.getDataTypeManager() != dtm) {
-			dataType = dataType.clone(dtm);
-		}
-		int dtLen = dataType.getLength();
-		if (dtLen < 0 && elementLength < 0) {
-			throw new IllegalArgumentException("Array DataType must be Fixed length");
-		}
-		if (numElements <= 0) {
+		if (dataType instanceof FactoryDataType) {
 			throw new IllegalArgumentException(
-				"number of array elements must be positive, not " + numElements);
+				"Factory data type not permitted");
+		}
+		if (numElements < 0) {
+			throw new IllegalArgumentException(
+				"Number of array elements may not be negative [" + numElements + "]");
+		}
+		DataType baseDt = dataType;
+		if (dataType instanceof TypeDef) {
+			baseDt = ((TypeDef) dataType).getBaseDataType();
+		}
+		validate(baseDt);
+		dataType = dataType.clone(dtm);
+		this.elementLength = -1;
+		if (baseDt instanceof Dynamic) {
+			if (elementLength < 0) {
+				throw new IllegalArgumentException(
+					"Must specify Array element-length for dynamic " +
+						dataType.getClass().getSimpleName());
+			}
+			this.elementLength = elementLength;
+		}
+		else {
+			this.elementLength = dataType.getAlignedLength();
 		}
 		this.dataType = dataType;
-		this.elementLength = dtLen < 0 ? elementLength : -1;
 		this.numElements = numElements;
 		name = DataTypeUtilities.getName(this, true);
 		dataType.addParent(this);
 	}
 
-	private void validate(DataType dt) {
-		if (dt instanceof BitFieldDataType) {
+	/**
+	 * Validate a array base datatype to ensure that it is allowed
+	 * @param baseDt intended base datatype for array (always pass in typedef's base type if applicable)
+	 * @throws IllegalArgumentException if dt is not a valid base datatype for an array
+	 */
+	private static void validate(DataType baseDt) throws IllegalArgumentException {
+		if (baseDt instanceof BitFieldDataType) {
 			throw new IllegalArgumentException(
-				"Array data-type may not be a bitfield: " + dt.getName());
+				"Array data-type may not be a bitfield: " + baseDt.getName());
 		}
-		if (dt instanceof FactoryDataType) {
+		if (baseDt instanceof FactoryDataType) {
 			throw new IllegalArgumentException(
-				"Array data-type may not be a Factory data-type: " + dt.getName());
+				"Array data-type may not be a Factory data-type: " + baseDt.getName());
 		}
-		if (dt instanceof Dynamic && !((Dynamic) dt).canSpecifyLength()) {
+		if (baseDt instanceof Dynamic) {
+			if (!((Dynamic) baseDt).canSpecifyLength()) {
+				throw new IllegalArgumentException(
+					"Array data-type may not be a non-sizable Dynamic data-type: " + baseDt.getName());
+			}
+		}
+		else if (baseDt.getLength() < 1) { // not Dynamic
 			throw new IllegalArgumentException(
-				"Array data-type may not be a non-sizable Dynamic data-type: " + dt.getName());
+				"Data type may not report a length less than 1: " + baseDt.getClass().getSimpleName());
 		}
 	}
 
 	@Override
-	public boolean isDynamicallySized() {
-		return dataType.isDynamicallySized();
+	public boolean hasLanguageDependantLength() {
+		return dataType.hasLanguageDependantLength();
 	}
 
 	@Override
@@ -97,6 +124,11 @@ public class ArrayDataType extends DataTypeImpl implements Array {
 		// NOTE: it may be necessary to allow array-specific settings at some
 		// point to facilitate appropriate char array string generation
 		return getDataType().getSettingsDefinitions();
+	}
+
+	@Override
+	public TypeDefSettingsDefinition[] getTypeDefSettingsDefinitions() {
+		return getDataType().getTypeDefSettingsDefinitions();
 	}
 
 	@Override
@@ -131,8 +163,21 @@ public class ArrayDataType extends DataTypeImpl implements Array {
 	}
 
 	@Override
+	public boolean isZeroLength() {
+		return numElements == 0;
+	}
+
+	@Override
 	public int getLength() {
+		if (numElements == 0) {
+			return 1; // 0-length datatype instance not supported
+		}
 		return numElements * getElementLength();
+	}
+
+	@Override
+	public int getAlignedLength() {
+		return getLength();
 	}
 
 	@Override
@@ -160,8 +205,16 @@ public class ArrayDataType extends DataTypeImpl implements Array {
 
 	@Override
 	public void dataTypeSizeChanged(DataType dt) {
-		if (dt.equals(dataType)) {
+		if (dt == dataType && dt.getLength() > 0) {
+			elementLength = dataType.getAlignedLength();
 			notifySizeChanged();
+		}
+	}
+
+	@Override
+	public void dataTypeAlignmentChanged(DataType dt) {
+		if (dt == dataType) {
+			notifyAlignmentChanged();
 		}
 	}
 
@@ -177,7 +230,7 @@ public class ArrayDataType extends DataTypeImpl implements Array {
 
 	@Override
 	public int getElementLength() {
-		return elementLength < 0 ? dataType.getLength() : elementLength;
+		return elementLength;
 	}
 
 	@Override
@@ -195,20 +248,28 @@ public class ArrayDataType extends DataTypeImpl implements Array {
 
 	@Override
 	public void dataTypeReplaced(DataType oldDt, DataType newDt) {
-		if (newDt.getLength() < 0) {
+		if (newDt == this || newDt.getLength() < 0) {
 			newDt = DataType.DEFAULT;
 		}
 		if (dataType == oldDt) {
 			String oldName = getName();
+			int oldLength = getLength();
+			int oldAlignment = getAlignment();
 			int oldElementLength = getElementLength();
 			dataType.removeParent(this);
 			dataType = newDt;
 			dataType.addParent(this);
-			elementLength = newDt.getLength() < 0 ? oldElementLength : -1;
-			notifyNameChanged(oldName);
-
-			if (oldElementLength != getElementLength()) {
+			if (dataType.getLength() >= 0) {
+				elementLength = dataType.getAlignedLength();
+			}
+			if (!getName().equals(oldName)) {
+				notifyNameChanged(oldName);
+			}
+			if (getLength() != oldLength || oldElementLength != getElementLength()) {
 				notifySizeChanged();
+			}
+			else if (getAlignment() != oldAlignment) {
+				notifyAlignmentChanged();
 			}
 		}
 	}

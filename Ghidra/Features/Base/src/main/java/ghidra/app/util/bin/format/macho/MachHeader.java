@@ -16,22 +16,19 @@
 package ghidra.app.util.bin.format.macho;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-import generic.continues.GenericFactory;
-import ghidra.app.util.bin.ByteProvider;
-import ghidra.app.util.bin.StructConverter;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
+import ghidra.app.util.bin.*;
 import ghidra.app.util.bin.format.macho.commands.*;
+import ghidra.app.util.opinion.DyldCacheUtils.SplitDyldCache;
 import ghidra.program.model.data.*;
 import ghidra.util.exception.DuplicateNameException;
 
 /**
  * Represents a mach_header structure.
  * 
- * @see <a href="https://opensource.apple.com/source/xnu/xnu-4570.71.2/EXTERNAL_HEADERS/mach-o/loader.h.auto.html">mach-o/loader.h</a> 
+ * @see <a href="https://github.com/apple-oss-distributions/xnu/blob/main/EXTERNAL_HEADERS/mach-o/loader.h">EXTERNAL_HEADERS/mach-o/loader.h</a> 
  */
 public class MachHeader implements StructConverter {
 	private int magic;
@@ -44,64 +41,72 @@ public class MachHeader implements StructConverter {
 	private int reserved;//only used in 64-bit
 
 	private boolean _is32bit;
-	private List<LoadCommand> _commands = new ArrayList<LoadCommand>();
+	private List<LoadCommand> _commands = new ArrayList<>();
 	private long _commandIndex;
-	private FactoryBundledWithBinaryReader _reader;
+	private BinaryReader _reader;
 	private long _machHeaderStartIndexInProvider;
+	private long _machHeaderStartIndex = 0;
 	private boolean _parsed = false;
 
 	/**
-	 * Assumes the MachHeader starts at index 0 in the ByteProvider.
+	 * Returns true if the specified ByteProvider starts with a Mach header magic signature.
+	 * 
+	 * @param provider {@link ByteProvider} to check
+	 * @return boolean true if byte provider starts with a MachHeader
+	 */
+	public static boolean isMachHeader(ByteProvider provider) {
+		try {
+			return provider.length() > Integer.BYTES &&
+				MachConstants.isMagic(readMagic(provider, 0));
+		}
+		catch (IOException e) {
+			// dont care
+		}
+		return false;
+	}
+	
+	/**
+	 * Creates a new {@link MachHeader}.  Assumes the MachHeader starts at index 0 in the 
+	 * ByteProvider.
+	 * 
 	 * @param provider the ByteProvider
 	 * @throws IOException if an I/O error occurs while reading from the ByteProvider
 	 * @throws MachException if an invalid MachHeader is detected
 	 */
-	public static MachHeader createMachHeader(GenericFactory factory, ByteProvider provider)
-			throws IOException, MachException {
-		return createMachHeader(factory, provider, 0);
+	public MachHeader(ByteProvider provider) throws IOException, MachException {
+		this(provider, 0);
 	}
 
 	/**
-	 * Assumes the MachHeader starts at index <i>machHeaderStartIndexInProvider</i> in the ByteProvider.
+	 * Creates a new {@link MachHeader}. Assumes the MachHeader starts at index 
+	 * <i>machHeaderStartIndexInProvider</i> in the ByteProvider.
+	 * 
 	 * @param provider the ByteProvider
-	 * @param machHeaderStartIndexInProvider the index into the ByteProvider where the MachHeader begins.
+	 * @param machHeaderStartIndexInProvider the index into the ByteProvider where the MachHeader 
+	 *   begins
 	 * @throws IOException if an I/O error occurs while reading from the ByteProvider
 	 * @throws MachException if an invalid MachHeader is detected
 	 */
-	public static MachHeader createMachHeader(GenericFactory factory, ByteProvider provider,
-			long machHeaderStartIndexInProvider) throws IOException, MachException {
-		MachHeader machHeader = (MachHeader) factory.create(MachHeader.class);
-		machHeader.initMachHeader(factory, provider, machHeaderStartIndexInProvider, true);
-		return machHeader;
+	public MachHeader(ByteProvider provider, long machHeaderStartIndexInProvider)
+			throws IOException, MachException {
+		this(provider, machHeaderStartIndexInProvider, true);
 	}
 
 	/**
-	 * Assumes the MachHeader starts at index <i>machHeaderStartIndexInProvider</i> in the ByteProvider.
+	 * Creatse a new {@link MachHeader}.  Assumes the MachHeader starts at index 
+	 * <i>machHeaderStartIndexInProvider</i> in the ByteProvider.
+	 * 
 	 * @param provider the ByteProvider
-	 * @param machHeaderStartIndexInProvider the index into the ByteProvider where the MachHeader begins.
-	 * @param isRemainingMachoRelativeToStartIndex TRUE if the rest of the macho uses relative indexing. This is common in UBI and kernel cache files.
-	 *                                             FALSE if the rest of the file uses absolute indexing from 0. This is common in DYLD cache files.
+	 * @param machHeaderStartIndexInProvider the index into the ByteProvider where the MachHeader 
+	 *   begins.
+	 * @param isRemainingMachoRelativeToStartIndex true if the rest of the macho uses relative 
+	 *   indexin (this is common in UBI and kernel cache files); otherwise, false if the rest of the
+	 *   file uses absolute indexing from 0 (this is common in DYLD cache files)
 	 * @throws IOException if an I/O error occurs while reading from the ByteProvider
 	 * @throws MachException if an invalid MachHeader is detected
 	 */
-	public static MachHeader createMachHeader(GenericFactory factory, ByteProvider provider,
-			long machHeaderStartIndexInProvider, boolean isRemainingMachoRelativeToStartIndex)
-			throws IOException, MachException {
-		MachHeader machHeader = (MachHeader) factory.create(MachHeader.class);
-		machHeader.initMachHeader(factory, provider, machHeaderStartIndexInProvider,
-			isRemainingMachoRelativeToStartIndex);
-		return machHeader;
-	}
-
-	/**
-	 * DO NOT USE THIS CONSTRUCTOR, USE create*(GenericFactory ...) FACTORY METHODS INSTEAD.
-	 */
-	public MachHeader() {
-	}
-
-	private void initMachHeader(GenericFactory factory, ByteProvider provider,
-			long machHeaderStartIndexInProvider, boolean isRemainingMachoRelativeToStartIndex)
-			throws IOException, MachException {
+	public MachHeader(ByteProvider provider, long machHeaderStartIndexInProvider,
+			boolean isRemainingMachoRelativeToStartIndex) throws IOException, MachException {
 		magic = readMagic(provider, machHeaderStartIndexInProvider);
 
 		if (!MachConstants.isMagic(magic)) {
@@ -109,10 +114,11 @@ public class MachHeader implements StructConverter {
 		}
 
 		if (isRemainingMachoRelativeToStartIndex) {
-			_machHeaderStartIndexInProvider = machHeaderStartIndexInProvider;
+			_machHeaderStartIndex = machHeaderStartIndexInProvider;
 		}
 
-		_reader = new FactoryBundledWithBinaryReader(factory, provider, isLittleEndian());
+		_machHeaderStartIndexInProvider = machHeaderStartIndexInProvider;
+		_reader = new BinaryReader(provider, isLittleEndian());
 		_reader.setPointerIndex(machHeaderStartIndexInProvider + 4);//skip magic number...
 
 		cpuType = _reader.readNextInt();
@@ -130,17 +136,57 @@ public class MachHeader implements StructConverter {
 		_commandIndex = _reader.getPointerIndex();
 	}
 
-	public void parse() throws IOException, MachException {
+	/**
+	 * Parses this {@link MachHeader}'s {@link LoadCommand load commands}
+	 * 
+	 * @return This {@link MachHeader}, for convenience
+	 * @throws IOException If there was an IO-related error
+	 * @throws MachException if the load command is invalid
+	 */
+	public MachHeader parse() throws IOException, MachException {
+		return parse(null);
+	}
+	
+	/**
+	 * Parses this {@link MachHeader}'s {@link LoadCommand load commands}
+	 * 
+	 * @param splitDyldCache The {@link SplitDyldCache} that this header resides in.  Could be null
+	 *   if a split DYLD cache is not being used.
+	 * @return This {@link MachHeader}, for convenience
+	 * @throws IOException If there was an IO-related error
+	 * @throws MachException if the load command is invalid
+	 */
+	public MachHeader parse(SplitDyldCache splitDyldCache) throws IOException, MachException {
 		if (_parsed) {
-			return;
+			return this;
 		}
+
+		// We must parse segment load commands first, so find and store their indexes separately
+		long currentIndex = _commandIndex;
+		List<Long> segmentIndexes = new ArrayList<>();
+		List<Long> nonSegmentIndexes = new ArrayList<>();
 		for (int i = 0; i < nCmds; ++i) {
-			_reader.setPointerIndex(_commandIndex);
-			LoadCommand lc = LoadCommandTypes.getLoadCommand(_reader, this);
+			_reader.setPointerIndex(currentIndex);
+			int type = _reader.readNextInt();
+			int size = _reader.readNextInt();
+			if (type == LoadCommandTypes.LC_SEGMENT || type == LoadCommandTypes.LC_SEGMENT_64) {
+				segmentIndexes.add(currentIndex);
+			}
+			else {
+				nonSegmentIndexes.add(currentIndex);
+			}
+			currentIndex += size;
+		}
+		List<Long> combinedIndexes = new ArrayList<>();
+		combinedIndexes.addAll(segmentIndexes);    // Parse segments first
+		combinedIndexes.addAll(nonSegmentIndexes); // Parse everything else second
+		for (Long index : combinedIndexes) {
+			_reader.setPointerIndex(index);
+			LoadCommand lc = LoadCommandFactory.getLoadCommand(_reader, this, splitDyldCache);
 			_commands.add(lc);
-			_commandIndex += lc.getCommandSize();
 		}
 		_parsed = true;
+		return this;
 	}
 
 	public int getMagic() {
@@ -198,7 +244,23 @@ public class MachHeader implements StructConverter {
 		struct.setCategoryPath(new CategoryPath(MachConstants.DATA_TYPE_CATEGORY));
 		return struct;
 	}
+	
+	/**
+	 * Returns the start index that should be used for calculating offsets.
+	 * This will be 0 for things such as the dyld shared cache where offsets are
+	 * based off the beginning of the file.
+	 * 
+	 * @return the start index that should be used for calculating offsets
+	 */
+	public long getStartIndex() {
+		return _machHeaderStartIndex;
+	}
 
+	/**
+	 * Returns the offset of the MachHeader in the ByteProvider
+	 * 
+	 * @return the offset of the MachHeader in the ByteProvider
+	 */
 	public long getStartIndexInProvider() {
 		return _machHeaderStartIndexInProvider;
 	}
@@ -233,7 +295,7 @@ public class MachHeader implements StructConverter {
 	}
 
 	public List<Section> getAllSections() {
-		List<Section> tmp = new ArrayList<Section>();
+		List<Section> tmp = new ArrayList<>();
 		for (SegmentCommand segment : getAllSegments()) {
 			tmp.addAll(segment.getSections());
 		}
@@ -245,7 +307,7 @@ public class MachHeader implements StructConverter {
 	}
 
 	public <T> List<T> getLoadCommands(Class<T> classType) {
-		List<T> tmp = new ArrayList<T>();
+		List<T> tmp = new ArrayList<>();
 		for (LoadCommand command : _commands) {
 			if (classType.isAssignableFrom(command.getClass())) {
 				tmp.add(classType.cast(command));
@@ -267,6 +329,15 @@ public class MachHeader implements StructConverter {
 		return magic == MachConstants.MH_CIGAM || magic == MachConstants.MH_CIGAM_64;
 	}
 
+	/**
+	 * Gets the size of this {@link MachHeader} in bytes
+	 * 
+	 * @return The size of this {@link MachHeader} in bytes
+	 */
+	public long getSize() {
+		return _commandIndex - _machHeaderStartIndexInProvider;
+	}
+
 	public String getDescription() {//TODO
 		StringBuffer buffer = new StringBuffer();
 		buffer.append("Magic: 0x" + Integer.toHexString(magic));
@@ -282,22 +353,14 @@ public class MachHeader implements StructConverter {
 		return buffer.toString();
 	}
 
-	public InputStream getDataStream() throws IOException {
-		return _reader.getByteProvider().getInputStream(0);
-	}
-
 	@Override
 	public String toString() {
 		return getDescription();
 	}
 
-	private int readMagic(ByteProvider provider, long machHeaderStartIndexInProvider)
+	private static int readMagic(ByteProvider provider, long machHeaderStartIndexInProvider)
 			throws IOException {
-		int value = 0;
-		value |= (provider.readByte(machHeaderStartIndexInProvider + 0) << 0x18) & 0xff000000;
-		value |= (provider.readByte(machHeaderStartIndexInProvider + 1) << 0x10) & 0x00ff0000;
-		value |= (provider.readByte(machHeaderStartIndexInProvider + 2) << 0x08) & 0x0000ff00;
-		value |= (provider.readByte(machHeaderStartIndexInProvider + 3) << 0x00) & 0x000000ff;
-		return value;
+		BinaryReader br = new BinaryReader(provider, false);
+		return br.readInt(machHeaderStartIndexInProvider);
 	}
 }

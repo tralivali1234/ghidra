@@ -17,6 +17,7 @@ package ghidra.framework.plugintool.mgr;
 
 import java.rmi.ConnectException;
 
+import db.NoTransactionException;
 import db.TerminatedTransactionException;
 import ghidra.framework.cmd.BackgroundCommand;
 import ghidra.framework.model.*;
@@ -35,7 +36,6 @@ class BackgroundCommandTask extends Task implements AbortedTransactionListener {
 	private BackgroundCommand cmd;
 	private ToolTaskManager taskMgr;
 	private UndoableDomainObject obj;
-	private TaskMonitor taskMonitor;
 
 	private boolean doneQueueProcessing;
 
@@ -56,6 +56,7 @@ class BackgroundCommandTask extends Task implements AbortedTransactionListener {
 
 	/**
 	 * Returns the Domain Object associated with this Task
+	 * @return the object
 	 */
 	public UndoableDomainObject getDomainObject() {
 		return obj;
@@ -96,13 +97,12 @@ class BackgroundCommandTask extends Task implements AbortedTransactionListener {
 		}
 
 		boolean success = false;
-		boolean error = true;
+		boolean commit = true;
 		try {
 			success = cmd.applyTo(obj, monitor);
 			if (success) {
 				taskMgr.taskCompleted(obj, this, monitor);
 			}
-			error = false;
 		}
 		catch (Throwable t) {
 			synchronized (taskMgr) {
@@ -114,26 +114,27 @@ class BackgroundCommandTask extends Task implements AbortedTransactionListener {
 				t = t.getCause();
 			}
 
-			if (ignoreException(t)) {
+			commit = shouldKeepData(t);
+
+			if (isUnrecoverableException(t)) {
 				monitor.cancel();
 				taskMgr.clearTasks(obj);
-				return;
 			}
 			else if (!(t instanceof RollbackException)) {
-				Msg.showError(this, null, "Command Failure",
-					"An unexpected error occurred while processing the command: " + cmd.getName(),
-					t);
+				String message =
+					"An unexpected error occurred while processing the command: " + cmd.getName();
+				Msg.showError(this, null, "Command Failure", message, t);
 			}
 		}
 		finally {
 			TaskUtilities.removeTrackedTask(this);
 			try {
-				obj.endTransaction(id, !error);
+				obj.endTransaction(id, commit);
 			}
 			catch (DomainObjectException e) {
 				Throwable cause = e.getCause();
-				if (!error && !(cause instanceof ClosedException)) {
-					Msg.showError(this, null, null, null, cause);
+				if (commit && !(cause instanceof ClosedException)) {
+					Msg.error(this, "Transaction error", cause);
 					success = false;
 				}
 			}
@@ -144,10 +145,17 @@ class BackgroundCommandTask extends Task implements AbortedTransactionListener {
 		}
 	}
 
-	private boolean ignoreException(Throwable t) {
+	private boolean shouldKeepData(Throwable t) {
+		// unrecoverable exceptions are really bad; rollback exceptions signal to abort
+		boolean reallyBad = isUnrecoverableException(t) || t instanceof RollbackException;
+		return !reallyBad;
+	}
+
+	private boolean isUnrecoverableException(Throwable t) {
 
 		//@formatter:off
 		return t instanceof ConnectException ||
+			   t instanceof NoTransactionException ||
 			   t instanceof TerminatedTransactionException ||
 			   t instanceof DomainObjectLockedException ||
 			   t instanceof ClosedException;
@@ -156,6 +164,7 @@ class BackgroundCommandTask extends Task implements AbortedTransactionListener {
 
 	@Override
 	public void transactionAborted(long transactionID) {
+		Msg.warn(this, "Forced abort of background task transaction");
 		taskMonitor.cancel();
 	}
 

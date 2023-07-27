@@ -18,11 +18,12 @@ package ghidra.program.database.data;
 import java.util.*;
 import java.util.regex.Pattern;
 
+import ghidra.app.util.NamespaceUtils;
+import ghidra.app.util.SymbolPathParser;
 import ghidra.docking.settings.Settings;
-import ghidra.program.model.address.GlobalNamespace;
 import ghidra.program.model.data.*;
 import ghidra.program.model.data.Enum;
-import ghidra.program.model.listing.Library;
+import ghidra.program.model.listing.*;
 import ghidra.program.model.symbol.Namespace;
 import ghidra.util.UniversalID;
 import ghidra.util.exception.AssertException;
@@ -141,11 +142,13 @@ public class DataTypeUtilities {
 
 	/**
 	 * Check to see if the second data type is the same as the first data type or is part of it.
-	 * <br>Note: pointers to the second data type are references and therefore are not considered
-	 * to be part of the first and won't cause true to be returned. If you pass a pointer to this
-	 * method for the first or second parameter, it will return false.
-	 * @param firstDataType the data type whose components or base type should be checked to see
-	 * if the second data type is part of it.
+	 * <br>
+	 * Note: pointers to the second data type are references and therefore are not considered to be
+	 * part of the first and won't cause true to be returned. If you pass a pointer to this method
+	 * for the first or second parameter, it will return false.
+	 * 
+	 * @param firstDataType the data type whose components or base type should be checked to see if
+	 *            the second data type is part of it.
 	 * @param secondDataType the data type to be checked for in the first data type.
 	 * @return true if the second data type is the first data type or is part of it.
 	 */
@@ -172,19 +175,14 @@ public class DataTypeUtilities {
 					return true;
 				}
 			}
-			if (firstDataType instanceof Structure) {
-				DataTypeComponent flexDtc = ((Structure) firstDataType).getFlexibleArrayComponent();
-				if (flexDtc != null && isSecondPartOfFirst(flexDtc.getDataType(), secondDataType)) {
-					return true;
-				}
-			}
 		}
 		return false;
 	}
 
 	/**
 	 * Returns true if the two dataTypes have the same sourceArchive and the same UniversalID
-	 * @param dataType1 first data type 
+	 * 
+	 * @param dataType1 first data type
 	 * @param dataType2 second data type
 	 * @return true if types correspond to the same type from a source archive
 	 */
@@ -207,13 +205,14 @@ public class DataTypeUtilities {
 	}
 
 	/**
-	 * Returns true if the two dataTypes have the same sourceArchive and the same UniversalID OR
-	 * are equivalent
-	 * @param dataType1 first data type (if invoked by DB object or manager, this argument
-	 * must correspond to the DataTypeDB). 
+	 * Returns true if two dataTypes have the same sourceArchive and the same UniversalID OR are
+	 * equivalent
+	 * 
+	 * @param dataType1 first data type (if invoked by DB object or manager, this argument must
+	 *            correspond to the DataTypeDB).
 	 * @param dataType2 second data type
-	 * @return true if types correspond to the same type from a source archive 
-	 * or they are equivelent, otherwise false
+	 * @return true if types correspond to the same type from a source archive or they are
+	 *         equivelent, otherwise false
 	 */
 	public static boolean isSameOrEquivalentDataType(DataType dataType1, DataType dataType2) {
 		// if they contain datatypes that have same ids, then they represent the same dataType
@@ -225,7 +224,81 @@ public class DataTypeUtilities {
 	}
 
 	/**
+	 * Determine if two dataTypes are the same kind of datatype without considering naming or
+	 * component makeup.  The use of Typedefs is ignored and stripped away for comparison.
+	 * This method also ignores details about most built-in types, pointers and arrays 
+	 * (e.g., number of elements or size).  Implementations of the following abstract classes
+	 * will be treated as the same kind as another datatype which extends the same abstract
+	 * class:
+	 * <ul>
+	 * <li>{@link AbstractIntegerDataType}</li> 
+	 * <li>{@link AbstractFloatDataType}</li>
+	 * <li>{@link AbstractStringDataType}</li>
+	 * </ul>
+	 *  Other uses of {@link BuiltInDataType} must match the specific implementation class. 
+	 * @param dataType1 first data type
+	 * @param dataType2 second data type
+	 * @return true if the two dataTypes are the same basic kind else false
+	 */
+	public static boolean isSameKindDataType(DataType dataType1, DataType dataType2) {
+
+		while (true) {
+			if (dataType1 == dataType2) {
+				return true;
+			}
+
+			// Ignore the use of typedefs - strip away
+			if (dataType1 instanceof TypeDef td1) {
+				dataType1 = td1.getBaseDataType();
+			}
+			if (dataType2 instanceof TypeDef td2) {
+				dataType2 = td2.getBaseDataType();
+			}
+
+			if (dataType1 instanceof Pointer p1 && dataType2 instanceof Pointer p2) {
+				dataType1 = p1.getDataType();
+				dataType2 = p2.getDataType();
+			}
+			else if (dataType2 instanceof Array a1 && dataType2 instanceof Array a2) {
+				dataType1 = a1.getDataType();
+				dataType2 = a2.getDataType();
+			}
+			else if (dataType1 instanceof Enum) {
+				return dataType2 instanceof Enum;
+			}
+			else if (dataType1 instanceof Structure) {
+				return dataType2 instanceof Structure;
+			}
+			else if (dataType1 instanceof Union) {
+				return dataType2 instanceof Union;
+			}
+			else if (dataType1 instanceof BuiltInDataType dt1) {
+				return isSameKindBuiltInDataType(dt1, dataType2);
+			}
+			else {
+				return false;
+			}
+		}
+	}
+
+	private static boolean isSameKindBuiltInDataType(BuiltInDataType dataType1,
+			DataType dataType2) {
+		if (dataType1 instanceof BuiltIn) {
+			// Same kind if both types share a common BuiltIn implementation
+			Class<?> baseClass = dataType1.getClass();
+			Class<?> superClass;
+			while ((superClass = baseClass.getSuperclass()) != BuiltIn.class) {
+				baseClass = superClass;
+			}
+			return baseClass.isAssignableFrom(dataType2.getClass());
+		}
+		// Ensure built-in implementation class is the same
+		return dataType1.getClass().equals(dataType2.getClass());
+	}
+
+	/**
 	 * Get the name of a data type with all conflict naming patterns removed.
+	 * 
 	 * @param dataType data type
 	 * @param includeCategoryPath if true the category path will be included with its
 	 * @return name with without conflict patterns
@@ -238,6 +311,7 @@ public class DataTypeUtilities {
 	/**
 	 * Compares two data type name strings to determine if they are equivalent names, ignoring
 	 * conflict patterns present.
+	 * 
 	 * @param name1 the first name
 	 * @param name2 the second name
 	 * @return true if the names are equivalent when conflict suffixes are ignored.
@@ -249,9 +323,8 @@ public class DataTypeUtilities {
 	}
 
 	/**
-	 * Get the base data type for the specified data type stripping
-	 * away pointers and arrays only.  A null will be returned for a
-	 * default pointer.
+	 * Get the base data type for the specified data type stripping away pointers and arrays only. A
+	 * null will be returned for a default pointer.
 	 *
 	 * @param dt the data type whose base data type is to be determined.
 	 * @return the base data type.
@@ -302,7 +375,7 @@ public class DataTypeUtilities {
 	}
 
 	public static String getName(Array arrayDt, boolean showBaseSizeForDynamics) {
-		StringBuffer buf = new StringBuffer();
+		StringBuilder buf = new StringBuilder();
 		buf.append(getArrayBaseDataType(arrayDt).getName());
 		if (showBaseSizeForDynamics) {
 			buf.append(getArrayElementLengthForDynamic(arrayDt));
@@ -312,7 +385,7 @@ public class DataTypeUtilities {
 	}
 
 	public static String getDisplayName(Array arrayDt, boolean showBaseSizeForDynamics) {
-		StringBuffer buf = new StringBuffer();
+		StringBuilder buf = new StringBuilder();
 		buf.append(getArrayBaseDataType(arrayDt).getDisplayName());
 		if (showBaseSizeForDynamics) {
 			buf.append(getArrayElementLengthForDynamic(arrayDt));
@@ -323,7 +396,7 @@ public class DataTypeUtilities {
 
 	public static String getMnemonic(Array arrayDt, boolean showBaseSizeForDynamics,
 			Settings settings) {
-		StringBuffer buf = new StringBuffer();
+		StringBuilder buf = new StringBuilder();
 		buf.append(getArrayBaseDataType(arrayDt).getMnemonic(settings));
 		if (showBaseSizeForDynamics) {
 			buf.append(getArrayElementLengthForDynamic(arrayDt));
@@ -333,76 +406,125 @@ public class DataTypeUtilities {
 	}
 
 	/**
-	 * Create a data type category path derived from the specified namespace and rooted from
-	 * the specified baseCategory
+	 * Create a data type category path derived from the specified namespace and rooted from the
+	 * specified baseCategory
+	 * 
 	 * @param baseCategory category path from which to root the namespace-base path
 	 * @param namespace the namespace
 	 * @return namespace derived category path
 	 */
 	public static CategoryPath getDataTypeCategoryPath(CategoryPath baseCategory,
 			Namespace namespace) {
-		Namespace ns = namespace;
-		String path = "";
-		while (!(ns instanceof GlobalNamespace) && !(ns instanceof Library)) {
-			if (path.length() != 0) {
-				path = "/" + path;
+		List<String> categoryPathParts = new ArrayList<>();
+		for (Namespace ns : NamespaceUtils.getNamespaceParts(namespace)) {
+			if (ns instanceof Library) {
+				break; // assume the Library is a root and no other categories are above it
 			}
-			path = ns.getName() + path;
-			ns = ns.getParentNamespace();
+			categoryPathParts.add(ns.getName());
 		}
-		if (path.length() == 0) {
-			return baseCategory;
-		}
-		String categoryPath = CategoryPath.DELIMITER_CHAR + path;
-		if (!baseCategory.equals(CategoryPath.ROOT)) {
-			categoryPath = baseCategory.getPath() + categoryPath;
-		}
-		return new CategoryPath(categoryPath);
+		return categoryPathParts.isEmpty()
+				? baseCategory
+				: new CategoryPath(baseCategory, categoryPathParts);
 	}
 
 	/**
-	 * Attempt to find the data type whose dtName and specified namespace match a
-	 * stored data type within the specified dataTypeManager.  The best match
-	 * will be returned.  The namespace will be used in checking data type parent categories,
-	 * however if no type corresponds to the namespace another type whose name
-	 * matches may be returned.
+	 * Find the structure data type which corresponds to the specified class namespace
+	 * within the specified data type manager.
+	 * The structure must utilize a namespace-based category path, however,
+	 * the match criteria can be fuzzy and relies primarily on the full class namespace.  
+	 * A properly named class structure must reside within a category whose trailing 
+	 * path either matches the class namespace or the class-parent's namespace.  
+	 * Preference is given to it residing within the class-parent's namespace.
+	 * @param dataTypeManager data type manager which should be searched.
+	 * @param classNamespace class namespace
+	 * @return existing structure which resides within matching category.
+	 */
+	public static Structure findExistingClassStruct(DataTypeManager dataTypeManager, GhidraClass classNamespace) {
+
+		Structure dt = findPreferredDataType(dataTypeManager, classNamespace,
+			classNamespace.getName(), Structure.class, true);
+		if (dt != null) {
+			return dt;
+		}
+
+		final String[] namespacePaths = getRelativeCategoryPaths(classNamespace);
+
+		return findDataType(dataTypeManager, classNamespace.getName(), Structure.class,
+			categoryPath -> getCategoryMatchType(categoryPath, namespacePaths, true));
+	}
+
+	/**
+	 * Attempt to find the data type whose dtName and specified namespace match a stored data type
+	 * within the specified dataTypeManager. The first match which satisfies the category path 
+	 * requirement will be returned.  If a non-root namespace is specified the datatype's trailing 
+	 * category path must match the specified namespace path.
+	 * 
 	 * @param dataTypeManager data type manager
 	 * @param namespace namespace associated with dtName (null indicates no namespace constraint)
 	 * @param dtName name of data type
 	 * @param classConstraint optional data type interface constraint (e.g., Structure), or null
 	 * @return best matching data type
 	 */
-	public static DataType findDataType(DataTypeManager dataTypeManager, Namespace namespace,
-			String dtName, Class<? extends DataType> classConstraint) {
+	public static <T extends DataType> T findDataType(DataTypeManager dataTypeManager,
+			Namespace namespace, String dtName, Class<T> classConstraint) {
+
+		T dt =
+			findPreferredDataType(dataTypeManager, namespace, dtName, classConstraint, false);
+		if (dt != null) {
+			return dt;
+		}
+
+		final String[] namespacePaths = getRelativeCategoryPaths(namespace);
+
 		return findDataType(dataTypeManager, dtName, classConstraint,
-			categoryPath -> hasPreferredNamespaceCategory(categoryPath, namespace));
+			categoryPath -> getCategoryMatchType(categoryPath, namespacePaths, false));
 	}
 
 	/**
-	 * Attempt to find the data type whose dtNameWithNamespace match a
-	 * stored data type within the specified dataTypeManager.  The best match
-	 * will be returned.  The namespace will be used in checking data type parent categories,
-	 * however if no type corresponds to the namespace another type whose name
-	 * matches may be returned.
-	 * NOTE: name parsing assumes :: delimiter and can be thrown off if name include template
-	 * information which could contain namespaces.
+	 * Attempt to find the data type whose dtNameWithNamespace match a stored data type within the
+	 * specified dataTypeManager. The namespace will be used in checking data type parent categories.  
+	 * NOTE: name parsing assumes :: namespace delimiter which can be thrown off if name includes 
+	 * template information which could contain namespaces (see {@link SymbolPathParser#parse(String)}).
+	 * 
 	 * @param dataTypeManager data type manager
-	 * @param dtNameWithNamespace name of data type qualified with namespace (e.g., ns1::ns2::dtname)
+	 * @param dtNameWithNamespace name of data type qualified with namespace (e.g.,
+	 *            ns1::ns2::dtname)
 	 * @param classConstraint optional data type interface constraint (e.g., Structure), or null
 	 * @return best matching data type
 	 */
-	public static DataType findNamespaceQualifiedDataType(DataTypeManager dataTypeManager,
-			String dtNameWithNamespace, Class<? extends DataType> classConstraint) {
+	public static <T extends DataType> T findNamespaceQualifiedDataType(
+			DataTypeManager dataTypeManager,
+			String dtNameWithNamespace, Class<T> classConstraint) {
 
-		String[] splitName = dtNameWithNamespace.split(Namespace.DELIMITER);
-		String dtName = splitName[splitName.length - 1];
+		List<String> pathList = SymbolPathParser.parse(dtNameWithNamespace);
+		int nameIndex = pathList.size() - 1;
+		String dtName = pathList.get(nameIndex);
+
+		CategoryPath rootPath = getPreferredRootNamespaceCategoryPath(dataTypeManager);
+		if (rootPath != null) {
+			List<String> namespacePath = pathList.subList(0, nameIndex);
+			T dt = getAssignableDataType(dataTypeManager, rootPath, namespacePath, dtName,
+				classConstraint);
+			if (dt != null) {
+				return dt;
+			}
+		}
+
+		// generate namespace path with / instead of :: separators
+		StringBuilder buf = new StringBuilder();
+		for (int i = 0; i < nameIndex; i++) {
+			buf.append(CategoryPath.DELIMITER_STRING);
+			buf.append(pathList.get(i));
+		}
+		final String namespacePath = buf.toString(); // root path will have empty string 
 
 		return findDataType(dataTypeManager, dtName, classConstraint,
-			dataType -> hasPreferredNamespaceCategory(dataType, splitName));
+			categoryPath -> getCategoryMatchType(categoryPath, namespacePath));
 	}
 
 	/**
 	 * Return the appropriate datatype for a given C primitive datatype name.
+	 * 
 	 * @param dataTypeName the datatype name (e.g. "unsigned int", "long long")
 	 * @return the appropriate datatype for a given C primitive datatype name.
 	 */
@@ -415,79 +537,263 @@ public class DataTypeUtilities {
 		return cPrimitiveNameMap.get(dataTypeName);
 	}
 
-	private static boolean hasPreferredNamespaceCategory(DataType dataType,
-			String[] splitDataTypeName) {
-		// last element of split array is data type name and is ignored here
-		if (splitDataTypeName.length == 1) {
-			return true;
+	private static final int NAMESPACE_PATH_INDEX = 0;
+	private static final int PARENT_NAMESPACE_PATH_INDEX = 1;
+
+	/**
+	 * Get relative/partial category paths which corresponds to a specified namespace.
+	 * Any {@link Library} namespace will be ignored and treated like the global namespace 
+	 * when generating a related category path. An empty string will be returned for the
+	 * global namespace.
+	 * @param namespace data type namespace
+	 * @return partial two-element array with category path for namespace [NAMESPACE_PATH_INDEX] 
+	 * and parent-namespace [PARENT_NAMESPACE_PATH_INDEX].
+	 * A null is returned if namespace is null or the root/global namespace.
+	 */
+	private static String[] getRelativeCategoryPaths(Namespace namespace) {
+		if (namespace == null || namespace.isGlobal() || namespace.isLibrary()) {
+			return null;
 		}
-		CategoryPath categoryPath = dataType.getCategoryPath();
-		int index = splitDataTypeName.length - 2;
-		while (index >= 0) {
-			if (categoryPath.equals(CategoryPath.ROOT) ||
-				!categoryPath.getName().equals(splitDataTypeName[index])) {
-				return false;
-			}
-			categoryPath = categoryPath.getParent();
-			--index;
+		String[] paths = new String[2];
+		StringBuilder buf = new StringBuilder();
+		for (String n : namespace.getParentNamespace().getPathList(true)) {
+			buf.append(CategoryPath.DELIMITER_STRING);
+			buf.append(CategoryPath.escapeString(n));
 		}
-		return true;
+		paths[PARENT_NAMESPACE_PATH_INDEX] = buf.toString();
+		buf.append(CategoryPath.DELIMITER_STRING);
+		buf.append(CategoryPath.escapeString(namespace.getName()));
+		paths[NAMESPACE_PATH_INDEX] = buf.toString();
+		return paths;
 	}
 
-	private static boolean hasPreferredNamespaceCategory(DataType dataType, Namespace namespace) {
-		if (namespace == null) {
-			return true;
-		}
-		CategoryPath categoryPath = dataType.getCategoryPath();
-		Namespace ns = namespace;
-		while (!(ns instanceof GlobalNamespace) && !(ns instanceof Library)) {
-			if (categoryPath.equals(CategoryPath.ROOT) ||
-				!categoryPath.getName().equals(ns.getName())) {
-				return false;
-			}
-			categoryPath = categoryPath.getParent();
-			ns = ns.getParentNamespace();
-		}
-		return true;
+	private enum CategoryMatchType {
+		NONE, SECONDARY, PREFERRED;
 	}
 
 	/**
-	 * <code>NamespaceMatcher</code> is used to check data type categoryPath
-	 * for match against preferred namespace.
+	 * Namespace category matcher.  Only those datatypes contained within a catgeory
+	 * whose trailing category path matches the specified namespacePath will be considered
+	 * a possible match.  If the namespacePath is empty array all category paths will 
+	 * be considered a match with preference given to the root category.
+	 * @param categoryPath datatype category path
+	 * @param namespacePath namespace path
+	 * @return {@link CategoryMatchType#PREFERRED} if namespace match found, {@link CategoryMatchType#SECONDARY}
+	 * if no namespace constraint specified else {@link CategoryMatchType#NONE} if namespace constraint not 
+	 * satisfied.
 	 */
-	private static interface NamespaceMatcher {
-		boolean isNamespaceCategoryMatch(DataType dataType);
+	private static CategoryMatchType getCategoryMatchType(CategoryPath categoryPath,
+			String namespacePath) {
+		if (namespacePath.length() == 0) {
+			// root or unspecified namespace - prefer root category
+			return categoryPath.isRoot() ? CategoryMatchType.PREFERRED : CategoryMatchType.SECONDARY;
+		}
+		String path = categoryPath.getPath();
+		return path.endsWith(namespacePath) ? CategoryMatchType.PREFERRED : CategoryMatchType.NONE;
 	}
 
-	private static DataType findDataType(DataTypeManager dataTypeManager, String dtName,
-			Class<? extends DataType> classConstraint, NamespaceMatcher preferredCategoryMatcher) {
+	/**
+	 * Namespace category matcher.  
+	 * @param categoryPath datatype category path
+	 * @param namespacePaths namespace paths constraint or null for no namespace.  This value should
+	 * be obtained from the {@link #getRelativeCategoryPaths(Namespace)} method.
+	 * @param parentNamespacePreferred if true matching on parent namespace is 
+	 * enabled and preferred over match on actual namespace.  This is used for
+	 * class structure searching.
+	 * @return {@link CategoryMatchType#PREFERRED} is returned if parentNamespacePreferred is true 
+	 * and category path matches on parent-namespace or parentNamespacePreferred is false
+	 * and category path matches on namespace.  {@link CategoryMatchType#SECONDARY} is returned
+	 * if parentNamespacePreferred is true and category path matches on namespace.  Otherwise
+	 * {@link CategoryMatchType#NONE} is returned.
+	 */
+	private static CategoryMatchType getCategoryMatchType(CategoryPath categoryPath,
+			String[] namespacePaths, boolean parentNamespacePreferred) {
+		if (namespacePaths == null) {
+			// root or unspecified namespace - prefer root category
+			return categoryPath.isRoot() ? CategoryMatchType.PREFERRED : CategoryMatchType.SECONDARY;
+		}
+
+		String path = categoryPath.getPath();
+		if (parentNamespacePreferred &&
+			path.endsWith(namespacePaths[PARENT_NAMESPACE_PATH_INDEX])) {
+			return CategoryMatchType.PREFERRED;
+		}
+		if (path.endsWith(namespacePaths[NAMESPACE_PATH_INDEX])) {
+			return parentNamespacePreferred ? CategoryMatchType.SECONDARY
+					: CategoryMatchType.PREFERRED;
+		}
+		return CategoryMatchType.NONE;
+	}
+
+	/**
+	 * <code>NamespaceMatcher</code> is used to check data type categoryPath for match against
+	 * preferred namespace.
+	 */
+	private static interface NamespaceMatcher {
+		/**
+		 * Score category path match.
+		 * @param path category path
+		 * @return path match type
+		 */
+		CategoryMatchType getMatchType(CategoryPath path);
+	}
+
+	private static CategoryPath getPreferredRootNamespaceCategoryPath(
+			DataTypeManager dataTypeManager) {
+		if (!(dataTypeManager instanceof ProgramBasedDataTypeManager)) {
+			return null;
+		}
+		ProgramBasedDataTypeManager pdtm = (ProgramBasedDataTypeManager) dataTypeManager;
+		Program p = pdtm.getProgram();
+		return p.getPreferredRootNamespaceCategoryPath();
+	}
+
+	/**
+	 * Get the specified datatype by full path and return only if its type corresponds to class
+	 * constraint if specified.
+	 * @param <T> A standard interface which extends {@link DataType} (e.g., {@link Structure}).
+	 * @param dataTypeManager datatype manager to query
+	 * @param rootPath root category path
+	 * @param namespacePath an optional namespace path to be checked under rootPath.  
+	 * If null or empty the rootPath will be checked for dtName.
+	 * @param dtName datatype name
+	 * @param classConstraint datatype class constraint (optional, may be null)
+	 * @return datatype which corresponds to specified path or null if not found
+	 */
+	private static <T extends DataType> T getAssignableDataType(DataTypeManager dataTypeManager,
+			CategoryPath rootPath, List<String> namespacePath, String dtName,
+			Class<? extends DataType> classConstraint) {
+
+		Category category = dataTypeManager.getCategory(rootPath);
+		if (category == null) {
+			return null;
+		}
+
+		if (namespacePath == null || namespacePath.isEmpty()) {
+			return getAssignableDataType(category, dtName, classConstraint);
+		}
+
+		CategoryPath categoryPath = new CategoryPath(rootPath, namespacePath);
+		category = dataTypeManager.getCategory(categoryPath);
+		if (category == null) {
+			return null;
+		}
+		return getAssignableDataType(category, dtName, classConstraint);
+	}
+
+	/**
+	 * Get the specified datatype by name and category and return only if its type 
+	 * corresponds to an class constraint if specified.
+	 * @param <T> A standard interface which extends {@link DataType} (e.g., {@link Structure}).
+	 * @param category datatype category to query
+	 * @param dtName datatype name
+	 * @param classConstraint datatype class constraint (optional, may be null)
+	 * @return datatype which corresponds to specified path or null if not found
+	 */
+	@SuppressWarnings("unchecked")
+	private static <T extends DataType> T getAssignableDataType(Category category, String dtName,
+			Class<? extends DataType> classConstraint) {
+		DataType dt = category.getDataType(dtName);
+		if (dt != null &&
+			(classConstraint == null || classConstraint.isAssignableFrom(dt.getClass()))) {
+			return (T) dt;
+		}
+		return null;
+	}
+
+	/**
+	 * Perform a preferred category namespace qualified datatype search using
+	 * category path supplied by {@link Program#getPreferredRootNamespaceCategoryPath()}.
+	 * Any {@link Library} namespace will be ignored and treated like the global namespace 
+	 * when generating a related category path.  This method only applies to 
+	 * {@link ProgramBasedDataTypeManager} and will always return null for other 
+	 * datatype managers.
+	 * @param dataTypeManager datatype manager
+	 * @param namespace namespace constraint or null for no namespace.
+	 * @param dtName datatype name
+	 * @param classConstraint type of datatype by its interface class (e.g., {@link Structure}).
+	 * @param parentNamespacePreferred if true matching on parent namespace is 
+	 * enabled and preferred over match on actual namespace.  This is relavent for
+	 * class structure searching.
+	 * @return preferred datatype match if found
+	 */
+	private static <T extends DataType> T findPreferredDataType(DataTypeManager dataTypeManager,
+			Namespace namespace, String dtName, Class<T> classConstraint,
+			boolean parentNamespacePreferred) {
+		CategoryPath rootPath = getPreferredRootNamespaceCategoryPath(dataTypeManager);
+		if (rootPath == null) {
+			return null;
+		}
+
+		if (namespace == null || namespace.isGlobal() || namespace.isLibrary()) {
+			return getAssignableDataType(dataTypeManager, rootPath, null, dtName, classConstraint);
+		}
+
+		if (parentNamespacePreferred) {
+			T dt = getAssignableDataType(dataTypeManager, rootPath,
+				namespace.getParentNamespace().getPathList(true), dtName, classConstraint);
+			if (dt != null) {
+				return dt;
+			}
+		}
+
+		return getAssignableDataType(dataTypeManager, rootPath, namespace.getPathList(true), dtName,
+			classConstraint);
+	}
+
+	/**
+	 * Compare datatype category path lengths for sorting shortest path first.
+	 * Tie-breaker based on path name sort.
+	 * Rationale is to provide some deterministic datatype selection behavior and
+	 * to allow duplicates within a hierarchical orgainzation to prefer the short
+	 * path to reduce bad namespace matches.
+	 */
+	private static final Comparator<DataType> DATATYPE_CATEGORY_PATH_LENGTH_COMPARATOR =
+		(DataType dt1, DataType dt2) -> {
+			String catPath1 = dt1.getCategoryPath().getPath();
+			String catPath2 = dt2.getCategoryPath().getPath();
+			int cmp = catPath1.length() - catPath2.length();
+			if (cmp == 0) {
+				cmp = catPath1.compareTo(catPath2);
+			}
+			return cmp;
+	};
+
+	/**
+	 * Perform a namespace qualified datatype search.  
+	 * @param dataTypeManager datatype manager
+	 * @param dtName datatype name
+	 * @param classConstraint type of datatype by its interface class (e.g., {@link Structure}).
+	 * @param categoryMatcher responsible for evaluating the category path
+	 * for a possible match with a namespace constraint.  
+	 * @return The first {@link CategoryMatchType#PREFERRED} match will be 
+	 * returned if found.  If none are {@link CategoryMatchType#PREFERRED}, the first 
+	 * {@link CategoryMatchType#SECONDARY} match will be returned.  Otherwise null is returned. 
+	 */
+	@SuppressWarnings("unchecked")
+	private static <T extends DataType> T findDataType(DataTypeManager dataTypeManager,
+			String dtName, Class<T> classConstraint, NamespaceMatcher categoryMatcher) {
+
 		ArrayList<DataType> list = new ArrayList<>();
 		dataTypeManager.findDataTypes(dtName, list);
+		Collections.sort(list, DATATYPE_CATEGORY_PATH_LENGTH_COMPARATOR);
 		if (!list.isEmpty()) {
-			//use the datatype that exists in the root category,
-			//otherwise just pick the first one...
-			DataType anyDt = null;
-			DataType preferredDataType = null;
+			T secondaryMatch = null;
 			for (DataType existingDT : list) {
 				if (classConstraint != null &&
 					!classConstraint.isAssignableFrom(existingDT.getClass())) {
 					continue;
 				}
-				if (preferredCategoryMatcher == null) {
-					if (existingDT.getCategoryPath().equals(CategoryPath.ROOT)) {
-						return existingDT;
-					}
+				CategoryMatchType matchType =
+					categoryMatcher.getMatchType(existingDT.getCategoryPath());
+				if (matchType == CategoryMatchType.PREFERRED) {
+					return (T) existingDT; // preferred match
 				}
-				if (preferredCategoryMatcher.isNamespaceCategoryMatch(existingDT)) {
-					preferredDataType = existingDT;
+				else if (secondaryMatch == null && matchType == CategoryMatchType.SECONDARY) {
+					secondaryMatch = (T) existingDT;
 				}
-				// If all else fails return any matching name for backward compatibility
-				anyDt = existingDT;
 			}
-			if (preferredDataType != null) {
-				return preferredDataType;
-			}
-			return anyDt;
+			return secondaryMatch;
 		}
 		return null;
 	}

@@ -15,7 +15,7 @@
  */
 package ghidra.app.plugin.assembler.sleigh;
 
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 
 import java.util.*;
 
@@ -29,13 +29,15 @@ import ghidra.app.plugin.assembler.sleigh.parse.*;
 import ghidra.app.plugin.assembler.sleigh.sem.*;
 import ghidra.app.plugin.assembler.sleigh.tree.AssemblyParseTreeNode;
 import ghidra.app.plugin.assembler.sleigh.util.DbgTimer;
-import ghidra.app.plugin.processors.sleigh.*;
+import ghidra.app.plugin.processors.sleigh.SleighInstructionPrototype;
+import ghidra.app.plugin.processors.sleigh.SleighLanguage;
 import ghidra.app.util.PseudoInstruction;
 import ghidra.generic.util.datastruct.TreeSetValuedTreeMap;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.lang.*;
 import ghidra.program.model.mem.*;
+import ghidra.program.util.DefaultLanguageService;
 import ghidra.util.Msg;
 import ghidra.util.NumericUtilities;
 
@@ -70,8 +72,7 @@ public abstract class AbstractAssemblyTest extends AbstractGenericTest {
 	public void setUp() throws Exception {
 		LanguageID langID = getLanguageID();
 		if (!setupLangID.equals(langID.toString())) {
-			SleighLanguageProvider provider = new SleighLanguageProvider();
-			lang = (SleighLanguage) provider.getLanguage(langID);
+			lang = getLanguage(langID);
 			context = new AssemblyDefaultContext(lang);
 			setupLangID = langID.toString();
 		}
@@ -81,6 +82,11 @@ public abstract class AbstractAssemblyTest extends AbstractGenericTest {
 	@After
 	public void tearDown() {
 		//dbg.resetOutputStream(oldOutput).close();
+	}
+
+	private static SleighLanguage getLanguage(LanguageID langID) throws LanguageNotFoundException {
+		LanguageService languageService = DefaultLanguageService.getLanguageService();
+		return (SleighLanguage) languageService.getLanguage(langID);
 	}
 
 	/**
@@ -164,13 +170,13 @@ public abstract class AbstractAssemblyTest extends AbstractGenericTest {
 		AssemblyPatternBlock ins = AssemblyPatternBlock.fromString(instr);
 		dbg.println("Checking against: " + ins);
 		Set<AssemblyResolvedError> errs = new TreeSet<>(); // Display in order, I guess
-		Set<AssemblyResolvedConstructor> misses = new TreeSet<>();
+		Set<AssemblyResolvedPatterns> misses = new TreeSet<>();
 		for (AssemblyResolution ar : rr) {
 			if (ar.isError()) {
 				errs.add((AssemblyResolvedError) ar);
 				continue;
 			}
-			AssemblyResolvedConstructor rescon = (AssemblyResolvedConstructor) ar;
+			AssemblyResolvedPatterns rescon = (AssemblyResolvedPatterns) ar;
 			if (ins.getVals().length == rescon.getInstructionLength() &&
 				ins.combine(rescon.getInstruction()) != null) {
 				return;
@@ -200,22 +206,22 @@ public abstract class AbstractAssemblyTest extends AbstractGenericTest {
 	 */
 	protected void checkAllExact(AssemblyResolutionResults rr, Collection<String> disassembly,
 			long addr, String ctxstr) {
-		final AssemblyPatternBlock ctx =
-			(ctxstr == null ? context.getDefault() : AssemblyPatternBlock.fromString(ctxstr))
-				.fillMask();
+		Address address = lang.getDefaultSpace().getAddress(addr);
+		final AssemblyPatternBlock ctx = (ctxstr == null ? context.getDefaultAt(address)
+				: AssemblyPatternBlock.fromString(ctxstr)).fillMask();
 		dbg.println("Checking each: " + disassembly + " ctx:" + ctx);
 		boolean gotOne = false;
 		boolean failedOne = false;
 		Set<AssemblyResolvedError> errs = new TreeSet<>(); // Display in order, I guess.
 		MultiValuedMap<String, String> misTxtToCons = new TreeSetValuedTreeMap<>();
-		MultiValuedMap<String, AssemblyResolvedConstructor> misTxtConsToRes =
+		MultiValuedMap<String, AssemblyResolvedPatterns> misTxtConsToRes =
 			new TreeSetValuedTreeMap<>();
 		for (AssemblyResolution ar : rr) {
 			if (ar.isError()) {
 				errs.add((AssemblyResolvedError) ar);
 				continue;
 			}
-			AssemblyResolvedConstructor rcon = (AssemblyResolvedConstructor) ar;
+			AssemblyResolvedPatterns rcon = (AssemblyResolvedPatterns) ar;
 			try {
 				dbg.println("  " + rcon.lineToString());
 				for (byte[] ins : rcon.possibleInsVals(ctx)) {
@@ -241,7 +247,7 @@ public abstract class AbstractAssemblyTest extends AbstractGenericTest {
 			for (String dis : misTxtToCons.keySet()) {
 				dbg.println("  " + dis);
 				for (String cons : misTxtToCons.get(dis)) {
-					for (AssemblyResolvedConstructor rc : misTxtConsToRes.get(dis + cons)) {
+					for (AssemblyResolvedPatterns rc : misTxtConsToRes.get(dis + cons)) {
 						dbg.println("    d:" + cons);
 						dbg.println("    a:" + rc.dumpConstructorTree());
 						dbg.println(rc.toString("      "));
@@ -303,7 +309,7 @@ public abstract class AbstractAssemblyTest extends AbstractGenericTest {
 	/**
 	 * Run a test with the given checks
 	 *
-	 * @param assembly the text to assembly
+	 * @param assembly the text to assemble
 	 * @param instr an instruction pattern that must appear in the results
 	 * @param disassembly a set of acceptable disassembly texts
 	 * @param addr the address for assembly and disassembly
@@ -317,6 +323,7 @@ public abstract class AbstractAssemblyTest extends AbstractGenericTest {
 	protected void runTest(String assembly, String instr, Collection<String> disassembly, long addr,
 			String ctxstr, boolean checkOneCompat, boolean checkAllExact,
 			boolean checkAllSyntaxErrs, boolean checkAllSemanticErrs) {
+		Address address = lang.getDefaultSpace().getAddress(addr);
 
 		// A sanity check, first
 		if (instr != null) {
@@ -324,9 +331,8 @@ public abstract class AbstractAssemblyTest extends AbstractGenericTest {
 			if (!ins.isFullMask()) {
 				throw new RuntimeException("Desired instruction bytes should be fully-defined");
 			}
-			final AssemblyPatternBlock ctx =
-				(ctxstr == null ? context.getDefault() : AssemblyPatternBlock.fromString(ctxstr))
-					.fillMask();
+			final AssemblyPatternBlock ctx = (ctxstr == null ? context.getDefaultAt(address)
+					: AssemblyPatternBlock.fromString(ctxstr)).fillMask();
 			try {
 				String disstr;
 				PseudoInstruction psins = disassemble(addr, ins.getVals(), ctx.getVals());
@@ -358,7 +364,7 @@ public abstract class AbstractAssemblyTest extends AbstractGenericTest {
 			}
 
 			@Override
-			public AssemblyResolvedConstructor select(AssemblyResolutionResults rr,
+			public AssemblyResolvedPatterns select(AssemblyResolutionResults rr,
 					AssemblyPatternBlock ctx) throws AssemblySemanticException {
 				if (checkOneCompat) {
 					checkOneCompat(instr, rr);
@@ -375,12 +381,11 @@ public abstract class AbstractAssemblyTest extends AbstractGenericTest {
 
 		try {
 			if (ctxstr == null) {
-				assembler.assembleLine(lang.getDefaultSpace().getAddress(addr), assembly);
+				assembler.assembleLine(address, assembly);
 			}
 			else {
 				SleighAssembler sas = (SleighAssembler) assembler;
-				sas.assembleLine(lang.getDefaultSpace().getAddress(addr), assembly,
-					AssemblyPatternBlock.fromString(ctxstr));
+				sas.assembleLine(address, assembly, AssemblyPatternBlock.fromString(ctxstr));
 			}
 		}
 		catch (AssemblySemanticException e) {
@@ -398,7 +403,7 @@ public abstract class AbstractAssemblyTest extends AbstractGenericTest {
 	/**
 	 * Run a test where one result must match a given instruction pattern, and all others must
 	 * disassemble exactly to the input
-	 *
+	 * 
 	 * @param assembly the input assembly
 	 * @param instr the instruction pattern
 	 * @see AssemblyPatternBlock#fromString(String)

@@ -17,7 +17,7 @@ package ghidra.app.util.bin.format.macho.commands;
 
 import java.io.IOException;
 
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.format.macho.MachConstants;
 import ghidra.app.util.bin.format.macho.MachHeader;
 import ghidra.app.util.importer.MessageLog;
@@ -29,9 +29,7 @@ import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.task.TaskMonitor;
 
 /**
- * Represents a dyld_info_command structure.
- * 
- * @see <a href="https://opensource.apple.com/source/xnu/xnu-4570.71.2/EXTERNAL_HEADERS/mach-o/loader.h.auto.html">mach-o/loader.h</a> 
+ * Represents a dyld_info_command structure
  */
 public class DyldInfoCommand extends LoadCommand {
 	private int rebase_off;
@@ -44,34 +42,41 @@ public class DyldInfoCommand extends LoadCommand {
 	private int lazy_bind_size;
 	private int export_off;
 	private int export_size;
-
-	static DyldInfoCommand createDyldInfoCommand(FactoryBundledWithBinaryReader reader)
-			throws IOException {
-		DyldInfoCommand command =
-			(DyldInfoCommand) reader.getFactory().create(DyldInfoCommand.class);
-		command.initDyldInfoCommand(reader);
-		return command;
-	}
+	
+	private ExportTrie exportTrie;
 
 	/**
-	 * DO NOT USE THIS CONSTRUCTOR, USE create*(GenericFactory ...) FACTORY METHODS INSTEAD.
+	 * Creates and parses a new {@link DyldInfoCommand}
+	 * 
+	 * @param loadCommandReader A {@link BinaryReader reader} that points to the start of the load
+	 *   command
+	 * @param dataReader A {@link BinaryReader reader} that can read the data that the load command
+	 *   references.  Note that this might be in a different underlying provider.
+	 * @param header The {@link MachHeader header} associated with this load command
+	 * @throws IOException if an IO-related error occurs while parsing
 	 */
-	public DyldInfoCommand() {
-	}
+	DyldInfoCommand(BinaryReader loadCommandReader, BinaryReader dataReader, MachHeader header)
+			throws IOException {
+		super(loadCommandReader);
 
-	private void initDyldInfoCommand(FactoryBundledWithBinaryReader reader) throws IOException {
-		initLoadCommand(reader);
-
-		rebase_off = reader.readNextInt();
-		rebase_size = reader.readNextInt();
-		bind_off = reader.readNextInt();
-		bind_size = reader.readNextInt();
-		weak_bind_off = reader.readNextInt();
-		weak_bind_size = reader.readNextInt();
-		lazy_bind_off = reader.readNextInt();
-		lazy_bind_size = reader.readNextInt();
-		export_off = reader.readNextInt();
-		export_size = reader.readNextInt();
+		rebase_off = loadCommandReader.readNextInt();
+		rebase_size = loadCommandReader.readNextInt();
+		bind_off = loadCommandReader.readNextInt();
+		bind_size = loadCommandReader.readNextInt();
+		weak_bind_off = loadCommandReader.readNextInt();
+		weak_bind_size = loadCommandReader.readNextInt();
+		lazy_bind_off = loadCommandReader.readNextInt();
+		lazy_bind_size = loadCommandReader.readNextInt();
+		export_off = loadCommandReader.readNextInt();
+		export_size = loadCommandReader.readNextInt();
+		
+		if (export_off > 0 && export_size > 0) {
+			dataReader.setPointerIndex(header.getStartIndex() + export_off);
+			exportTrie = new ExportTrie(dataReader);
+		}
+		else {
+			exportTrie = new ExportTrie();
+		}
 	}
 
 	@Override
@@ -80,39 +85,34 @@ public class DyldInfoCommand extends LoadCommand {
 	}
 
 	@Override
-	public void markup(MachHeader header, FlatProgramAPI api, Address baseAddress, boolean isBinary,
+	public void markupRawBinary(MachHeader header, FlatProgramAPI api, Address baseAddress,
 			ProgramModule parentModule, TaskMonitor monitor, MessageLog log) {
-		updateMonitor(monitor);
 		try {
-			if (isBinary) {
-				createFragment(api, baseAddress, parentModule);
-				Address address = baseAddress.getNewAddress(getStartIndex());
-				api.createData(address, toDataType());
+			super.markupRawBinary(header, api, baseAddress, parentModule, monitor, log);
 
-				if (rebase_size > 0) {
-					Address start = baseAddress.getNewAddress(rebase_off);
-					api.createFragment(parentModule, getCommandName() + "_REBASE", start,
-						rebase_size);
-				}
-				if (bind_size > 0) {
-					Address start = baseAddress.getNewAddress(bind_off);
-					api.createFragment(parentModule, getCommandName() + "_BIND", start, bind_size);
-				}
-				if (weak_bind_size > 0) {
-					Address start = baseAddress.getNewAddress(weak_bind_off);
-					api.createFragment(parentModule, getCommandName() + "_WEAK_BIND", start,
-						weak_bind_size);
-				}
-				if (lazy_bind_size > 0) {
-					Address start = baseAddress.getNewAddress(lazy_bind_off);
-					api.createFragment(parentModule, getCommandName() + "_LAZY_BIND", start,
-						lazy_bind_size);
-				}
-				if (export_size > 0) {
-					Address start = baseAddress.getNewAddress(export_off);
-					api.createFragment(parentModule, getCommandName() + "_EXPORT", start,
-						export_size);
-				}
+			if (rebase_size > 0) {
+				Address start = baseAddress.getNewAddress(rebase_off);
+				api.createFragment(parentModule, getCommandName() + "_REBASE", start,
+					rebase_size);
+			}
+			if (bind_size > 0) {
+				Address start = baseAddress.getNewAddress(bind_off);
+				api.createFragment(parentModule, getCommandName() + "_BIND", start, bind_size);
+			}
+			if (weak_bind_size > 0) {
+				Address start = baseAddress.getNewAddress(weak_bind_off);
+				api.createFragment(parentModule, getCommandName() + "_WEAK_BIND", start,
+					weak_bind_size);
+			}
+			if (lazy_bind_size > 0) {
+				Address start = baseAddress.getNewAddress(lazy_bind_off);
+				api.createFragment(parentModule, getCommandName() + "_LAZY_BIND", start,
+					lazy_bind_size);
+			}
+			if (export_size > 0) {
+				Address start = baseAddress.getNewAddress(export_off);
+				api.createFragment(parentModule, getCommandName() + "_EXPORT", start,
+					export_size);
 			}
 		}
 		catch (Exception e) {
@@ -217,5 +217,14 @@ public class DyldInfoCommand extends LoadCommand {
 	 */
 	public int getExportSize() {
 		return export_size;
+	}
+	
+	/**
+	 * Gets the {@link ExportTrie}
+	 * 
+	 * @return The {@link ExportTrie}
+	 */
+	public ExportTrie getExportTrie() {
+		return exportTrie;
 	}
 }

@@ -98,7 +98,7 @@ public class CreateDataInStructureBackgroundCmd extends BackgroundCommand {
 
 		DataType existingDT = startData.getDataType();
 		int startIndex = startData.getComponentIndex();
-		Data lastComp = parent.getComponentAt(
+		Data lastComp = parent.getComponentContaining(
 			(int) (startData.getMinAddress().subtract(parent.getMinAddress()) + length - 1));
 		int endIndex = lastComp.getComponentIndex();
 
@@ -133,7 +133,7 @@ public class CreateDataInStructureBackgroundCmd extends BackgroundCommand {
 //			        MemBuffer memBuf = new ProgramStructureProviderContext(program,addr, 
 //    	    	    					struct, struct.getComponent(index).getOffset());
 					DataTypeInstance dti =
-						DataTypeInstance.getDataTypeInstance(newDataType, length);
+						DataTypeInstance.getDataTypeInstance(newDataType, length, true);
 					if (dti == null || dti.getLength() > length) {
 						break;
 					}

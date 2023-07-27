@@ -78,7 +78,7 @@ public class CreateVfTableBackgroundCmd extends AbstractCreateDataBackgroundCmd<
 	@Override
 	protected boolean createAssociatedData() throws CancelledException {
 
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 		boolean createTerminatorSuccess;
 		try {
@@ -112,10 +112,10 @@ public class CreateVfTableBackgroundCmd extends AbstractCreateDataBackgroundCmd<
 				return false;
 			}
 			Data data = DataUtilities.createData(program, terminatorAddress,
-				PointerDataType.dataType, -1, false, getClearDataMode());
+				PointerDataType.dataType, -1, getClearDataMode());
 			TypeDescriptorModel rtti0Model = model.getRtti0Model();
 			if (rtti0Model != null) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 				String demangledTypeDescriptor = rtti0Model.getDemangledTypeDescriptor();
 				String prefixString = ((demangledTypeDescriptor != null)
 						? (demangledTypeDescriptor + Namespace.DELIMITER)
@@ -142,7 +142,7 @@ public class CreateVfTableBackgroundCmd extends AbstractCreateDataBackgroundCmd<
 		DataType metaPointer = new PointerDataType(program.getDataTypeManager());
 		try {
 			DataUtilities.createData(program, metaAddress, metaPointer, metaPointer.getLength(),
-				false, getClearDataMode());
+				getClearDataMode());
 			return true;
 		}
 		catch (CodeUnitInsertionException e) {
@@ -165,31 +165,34 @@ public class CreateVfTableBackgroundCmd extends AbstractCreateDataBackgroundCmd<
 		Address vfTableAddress = getDataAddress();
 		Program program = model.getProgram();
 
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 		TypeDescriptorModel rtti0Model = model.getRtti0Model();
 
-		if (rtti0Model != null) {
-
-			// Plate Comment
-			EHDataTypeUtilities.createPlateCommentIfNeeded(program, RttiUtil.CONST_PREFIX +
-				RttiUtil.getDescriptorTypeNamespace(rtti0Model) + Namespace.DELIMITER,
-				VF_TABLE_LABEL, null, vfTableAddress, applyOptions);
-
-			monitor.checkCanceled();
-
-			// Label
-			if (applyOptions.shouldCreateLabel()) {
-				RttiUtil.createSymbolFromDemangledType(program, vfTableAddress, rtti0Model,
+		if (rtti0Model == null) {
+			return true;
+		}
+		
+		// Label
+		boolean shouldCreateComment = true;
+		if (applyOptions.shouldCreateLabel()) {
+			shouldCreateComment = RttiUtil.createSymbolFromDemangledType(program, vfTableAddress, rtti0Model,
 					VF_TABLE_LABEL);
-			}
+		}
+
+		// Plate Comment
+		if (shouldCreateComment) {
+			// comment created if a label was created, or createLabel option off
+			EHDataTypeUtilities.createPlateCommentIfNeeded(program, RttiUtil.CONST_PREFIX +
+					RttiUtil.getDescriptorTypeNamespace(rtti0Model) + Namespace.DELIMITER,
+					VF_TABLE_LABEL, null, vfTableAddress, applyOptions);
 		}
 
 		// Create functions that are referred to by the vf table.
 		if (applyOptions.shouldCreateFunction()) {
-			int elementCount = model.getCount();
+			int elementCount = model.getElementCount();
 			for (int tableElementIndex = 0; tableElementIndex < elementCount; tableElementIndex++) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 				Address vfPointer = model.getVirtualFunctionPointer(tableElementIndex);
 				if (vfPointer != null) {
 					EHDataTypeUtilities.createFunctionIfNeeded(program, vfPointer);
@@ -205,25 +208,30 @@ public class CreateVfTableBackgroundCmd extends AbstractCreateDataBackgroundCmd<
 		Program program = model.getProgram();
 		Address metaAddress = getMetaAddress(program);
 
-		monitor.checkCanceled();
+		monitor.checkCancelled();
 
 		TypeDescriptorModel rtti0Model = model.getRtti0Model();
 
-		if (rtti0Model != null) {
+		if (rtti0Model == null) {
+			return true;
+		}
+		
+		monitor.checkCancelled();
 
-			// Plate Comment
-			EHDataTypeUtilities.createPlateCommentIfNeeded(
-				program, META_LABEL + " pointer for " +
-					RttiUtil.getDescriptorTypeNamespace(rtti0Model) + Namespace.DELIMITER,
-				VF_TABLE_LABEL, null, metaAddress, applyOptions);
-
-			monitor.checkCanceled();
-
-			// Label
-			if (applyOptions.shouldCreateLabel()) {
-				RttiUtil.createSymbolFromDemangledType(program, metaAddress, rtti0Model,
+		// Label
+		boolean shouldCreateComment = true;
+		if (applyOptions.shouldCreateLabel()) {
+			shouldCreateComment = RttiUtil.createSymbolFromDemangledType(program, metaAddress, rtti0Model,
 					VF_TABLE_LABEL + NAME_SEPARATOR + META_LABEL + "_ptr");
-			}
+		}
+
+		// Plate Comment
+		if (shouldCreateComment) {
+			// comment created if a label was created, or createLabel option off
+			EHDataTypeUtilities.createPlateCommentIfNeeded(
+					program, META_LABEL + " pointer for " +
+						RttiUtil.getDescriptorTypeNamespace(rtti0Model) + Namespace.DELIMITER,
+					VF_TABLE_LABEL, null, metaAddress, applyOptions);
 		}
 
 		return true;

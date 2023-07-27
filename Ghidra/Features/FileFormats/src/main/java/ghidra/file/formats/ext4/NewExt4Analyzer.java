@@ -15,24 +15,22 @@
  */
 package ghidra.file.formats.ext4;
 
-import java.io.IOException;
 import java.util.List;
+
+import java.io.IOException;
 
 import ghidra.app.cmd.comments.SetCommentCmd;
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.services.ProgramManager;
-import ghidra.app.util.bin.BinaryReader;
-import ghidra.app.util.bin.ByteProvider;
-import ghidra.app.util.bin.MemoryByteProvider;
+import ghidra.app.util.bin.*;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.file.analyzers.FileFormatAnalyzer;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.data.DataType;
-import ghidra.program.model.listing.CodeUnit;
-import ghidra.program.model.listing.Data;
-import ghidra.program.model.listing.Program;
+import ghidra.program.model.listing.*;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.task.TaskMonitor;
 
@@ -62,7 +60,8 @@ public class NewExt4Analyzer extends FileFormatAnalyzer {
 
 	@Override
 	public boolean canAnalyze( Program program ) {
-		ByteProvider provider = new MemoryByteProvider( program.getMemory( ), program.getAddressFactory( ).getDefaultAddressSpace( ) );
+		ByteProvider provider =
+			MemoryByteProvider.createDefaultAddressSpaceByteProvider(program, false);
 		BinaryReader reader = new BinaryReader( provider, true );
 		int start = getSuperBlockStart( reader );
 		if ( start == -1 ) {
@@ -139,7 +138,7 @@ public class NewExt4Analyzer extends FileFormatAnalyzer {
 			monitor.setMessage( "Creating group descriptors..." );
 			monitor.setMaximum( numGroups );
 			for ( int i = 0; i < numGroups; i++ ) {
-				monitor.checkCanceled( );
+				monitor.checkCancelled( );
 				groupDescriptors[ i ] = new Ext4GroupDescriptor( reader, is64Bit );
 				DataType groupDescDataType = groupDescriptors[ i ].toDataType( );
 				createData( program, groupDescAddress, groupDescDataType );
@@ -192,14 +191,14 @@ public class NewExt4Analyzer extends FileFormatAnalyzer {
 	}
 
 	@Override
-	protected Data createData( Program program, Address address, DataType datatype ) throws Exception {
+	protected Data createData( Program program, Address address, DataType datatype ) throws CodeUnitInsertionException {
 		if ( program.getMemory( ).contains( address ) ) {
 			return super.createData( program, address, datatype );
 		}
 		if ( program2 != null && program2.getMemory( ).contains( address ) ) {
 			return super.createData( program2, address, datatype );
 		}
-		throw new RuntimeException( "Cannot create data, neither program contains that address." );
+		throw new CodeUnitInsertionException( "Cannot create data, neither program contains that address." );
 	}
 
 	@Override
@@ -226,10 +225,10 @@ public class NewExt4Analyzer extends FileFormatAnalyzer {
 		int inodeIndex = 0;
 
 		for ( int i = 0; i < groupDescriptors.length; i++ ) {
-			monitor.checkCanceled( );
+			monitor.checkCancelled( );
 			long inodeTableBlockOffset = groupDescriptors[ i ].getBg_inode_table_lo( ) & 0xffffffffL;
 			if ( is64Bit ) {
-				inodeTableBlockOffset = ( groupDescriptors[ i ].getBg_inode_table_hi( ) << 32 ) | inodeTableBlockOffset;
+				inodeTableBlockOffset = ( ((long) groupDescriptors[ i ].getBg_inode_table_hi( )) << 32 ) | inodeTableBlockOffset;
 			}
 			long offset = inodeTableBlockOffset * blockSize;
 			reader.setPointerIndex( offset );
@@ -246,7 +245,7 @@ public class NewExt4Analyzer extends FileFormatAnalyzer {
 			monitor.setMaximum( inodesPerGroup );
 			monitor.setProgress( 0 );
 			for ( int j = 0; j < inodesPerGroup; j++ ) {
-				monitor.checkCanceled( );
+				monitor.checkCancelled( );
 
 				Ext4Inode inode = new Ext4Inode( reader );
 				DataType dataType = inode.toDataType( );
@@ -256,17 +255,14 @@ public class NewExt4Analyzer extends FileFormatAnalyzer {
 				comment += "Group Descriptor ID: 0x" + Integer.toHexString( i ) + "\n";
 				comment += "Inode Offset Into Group: 0x" + Integer.toHexString( j ) + "\n";
 
-				Ext4IBlock iBlock = inode.getI_block( );
-				if ( iBlock != null ) {
-					for ( Ext4Extent extent : iBlock.getExtentEntries( ) ) {
-						monitor.checkCanceled( );
-						long lo = extent.getEe_start_lo( ) & 0xffffffffL;
-						long hi = extent.getEe_start_hi( ) & 0xffffffffL;
-						long value = ( hi << 32 ) | lo;
-						long destination = value * blockSize;
-						comment += "Extent: 0x" + Long.toHexString( destination ) + "\n";
-					}
-				}
+//				Ext4IBlock iBlock = inode.getI_block( );
+//				if ( iBlock != null ) {
+//					for ( Ext4Extent extent : iBlock.getExtentEntries( ) ) {
+//						monitor.checkCanceled( );
+//						long destination = extent.getExtentStartBlockNumber() * blockSize;
+//						comment += "Extent: 0x" + Long.toHexString( destination ) + "\n";
+//					}
+//				}
 
 				setPlateComment( program, address, comment );
 				createLabel( program, address, "INODE_" + "0x" + Integer.toHexString( inodeIndex + 1 ) );
@@ -296,7 +292,7 @@ public class NewExt4Analyzer extends FileFormatAnalyzer {
 			Ext4SuperBlock superBlock, Ext4Inode[] inodes, TaskMonitor monitor) throws Exception {
 		//first 0xa inodes are reserved (0 doesn't exist)
 		for ( int i = 0x1; i < inodes.length; i++ ) {
-			monitor.checkCanceled( );
+			monitor.checkCancelled( );
 			Ext4Inode inode = inodes[ i ];
 			
 			short mode = inode.getI_mode();
@@ -329,8 +325,8 @@ public class NewExt4Analyzer extends FileFormatAnalyzer {
 		boolean isDirEntry2 = (superBlock.getS_feature_incompat() & Ext4Constants.INCOMPAT_FILETYPE) != 0;
 		// if uses extents
 		if ( (inode.getI_flags() & Ext4Constants.EXT4_EXTENTS_FL) != 0 ) {
-			Ext4IBlock i_block = inode.getI_block();
-			processIBlock( program, reader, isDirEntry2, i_block, monitor );
+//			Ext4IBlock i_block = inode.getI_block();
+//			processIBlock( program, reader, isDirEntry2, i_block, monitor );
 		}
 	}
 
@@ -346,15 +342,12 @@ public class NewExt4Analyzer extends FileFormatAnalyzer {
 			List<Ext4Extent> entries = i_block.getExtentEntries();
 			for ( int i = 0; i < numEntries; i++ ) {
 				Ext4Extent extent = entries.get( i );
-				long lo = extent.getEe_start_lo( ) & 0xffffffffL;
-				long hi = extent.getEe_start_hi( ) & 0xffffffffL;
-				long value = ( hi << 32 ) | lo;
-				long offset = value * blockSize;
+				long offset = extent.getExtentStartBlockNumber() * blockSize;
 				reader.setPointerIndex(offset);
 				Address address = toAddr( program, offset );
 				if ( isDirEntry2 ) {
 					while ( ( reader.getPointerIndex( ) - offset ) < ( extent.getEe_len( ) * blockSize ) ) {
-						Ext4DirEntry2 dirEnt2 = new Ext4DirEntry2( reader );
+						Ext4DirEntry2 dirEnt2 = Ext4DirEntry2.read(reader);
 						DataType dataType = dirEnt2.toDataType( );
 						createData( program, address, dataType );
 						String comment = "Name: " + dirEnt2.getName( ) + "\n";
@@ -380,7 +373,7 @@ public class NewExt4Analyzer extends FileFormatAnalyzer {
 			short numEntries = header.getEh_entries( );
 			List<Ext4ExtentIdx> entries = i_block.getIndexEntries();
 			for ( int i = 0; i < numEntries; i++ ) {
-				monitor.checkCanceled( );
+				monitor.checkCancelled( );
 
 				Ext4ExtentIdx extentIndex = entries.get( i );
 				long lo = extentIndex.getEi_leaf_lo();
@@ -420,7 +413,7 @@ public class NewExt4Analyzer extends FileFormatAnalyzer {
 		monitor.setMessage( "Creating super block and group descriptor copies..." );
 		monitor.setMaximum(numGroups);
 		for ( int i = 1; i < numGroups; i++ ) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			if( isSparseSuper && (!isXpowerOfY(i, 3) && !isXpowerOfY(i, 5) && !isXpowerOfY(i, 7)) ) {
 				continue;
 			}

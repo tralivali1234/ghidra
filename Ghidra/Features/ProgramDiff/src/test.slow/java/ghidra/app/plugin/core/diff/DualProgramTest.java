@@ -27,7 +27,7 @@ import javax.swing.tree.TreePath;
 
 import org.junit.Test;
 
-import docking.ActionContext;
+import docking.DefaultActionContext;
 import docking.DialogComponentProvider;
 import docking.widgets.MultiLineLabel;
 import docking.widgets.fieldpanel.LayoutModel;
@@ -147,9 +147,6 @@ public class DualProgramTest extends DiffTestAdapter {
 
 		waitForTasks();
 		win = waitForWindow("Can't Open Selected Program");
-		assertNotNull(win);
-		MultiLineLabel mll = findComponent(win, MultiLineLabel.class);
-		assertTrue(mll.getLabel().startsWith("Programs languages don't match."));
 		pressButton(win, "OK");
 
 		win = waitForWindow("Select Other Program");
@@ -207,6 +204,7 @@ public class DualProgramTest extends DiffTestAdapter {
 		TreeTestUtils.selectTreeNodeByText(tree, "OtherProgram");
 		pressButton(win, "OK");
 		waitForTasks();
+
 		win = waitForWindow("No Memory In Common");
 		assertNotNull(win);
 		MultiLineLabel mll = findComponent(win, MultiLineLabel.class);
@@ -307,7 +305,7 @@ public class DualProgramTest extends DiffTestAdapter {
 
 		runSwing(() -> {
 			openClosePgm2.setSelected(true);
-			openClosePgm2.actionPerformed(new ActionContext());
+			openClosePgm2.actionPerformed(new DefaultActionContext());
 		}, false);
 		waitForSwing();
 

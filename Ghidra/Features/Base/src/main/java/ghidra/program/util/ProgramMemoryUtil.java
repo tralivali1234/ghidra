@@ -30,6 +30,7 @@ import ghidra.util.datastruct.ListAccumulator;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 import ghidra.util.task.TaskMonitorAdapter;
+import utility.function.TerminatingConsumer; 
 
 /**
  * <CODE>ProgramMemoryUtil</CODE> contains some static methods for 
@@ -132,7 +133,7 @@ public class ProgramMemoryUtil {
 		// Copy each range.
 		AddressRangeIterator iter = addrSet.getAddressRanges();
 		while (iter.hasNext()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			AddressRange range = iter.next();
 			copyByteRange(toMem, fromMem, range);
 		}
@@ -277,7 +278,7 @@ public class ProgramMemoryUtil {
 			TaskMonitor monitor) throws CancelledException {
 
 		if (monitor == null) {
-			monitor = TaskMonitorAdapter.DUMMY_MONITOR;
+			monitor = TaskMonitor.DUMMY;
 		}
 
 		Memory memory = program.getMemory();
@@ -306,7 +307,7 @@ public class ProgramMemoryUtil {
 		monitor.initialize(memory.getNumAddresses());
 		int count = 0;
 		while (addrIt.hasNext()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			Address a = addrIt.next();
 			++count;
 			monitor.setProgress(count);
@@ -420,7 +421,7 @@ public class ProgramMemoryUtil {
 			CodeUnit codeUnit, TaskMonitor monitor) {
 
 		if (monitor == null) {
-			monitor = TaskMonitorAdapter.DUMMY_MONITOR;
+			monitor = TaskMonitor.DUMMY;
 		}
 
 		AddressSet toAddressSet =
@@ -489,7 +490,7 @@ public class ProgramMemoryUtil {
 			int alignment, Address toAddress, TaskMonitor monitor) throws CancelledException {
 
 		if (monitor == null) {
-			monitor = TaskMonitorAdapter.DUMMY_MONITOR;
+			monitor = TaskMonitor.DUMMY;
 		}
 
 		byte[] addressBytes = getDirectAddressBytes(program, toAddress);
@@ -633,7 +634,7 @@ public class ProgramMemoryUtil {
 			Address toAddress, TaskMonitor monitor) throws CancelledException {
 
 		if (monitor == null) {
-			monitor = TaskMonitorAdapter.DUMMY_MONITOR;
+			monitor = TaskMonitor.DUMMY;
 		}
 
 		Memory memory = program.getMemory();
@@ -676,7 +677,7 @@ public class ProgramMemoryUtil {
 			Address end = block.getEnd();
 			Address found = null;
 			while (true) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 
 				found = memory.findBytes(start, end, bytePattern, maskBytes, true, monitor);
 				if (found == null) {
@@ -711,7 +712,7 @@ public class ProgramMemoryUtil {
 			Address start = memBlock.getStart();
 			Address end = memBlock.getEnd();
 			while (true) {
-				monitor.checkCanceled();
+				monitor.checkCancelled();
 
 				Address found = memory.findBytes(start, end, bytePattern, maskBytes, true, monitor);
 				if (found == null) {
@@ -725,7 +726,7 @@ public class ProgramMemoryUtil {
 			}
 		}
 	}
-
+    
 	/**
 	 * Finds the string in memory indicated by the searchString limited to the indicated 
 	 * memory blocks and address set.
@@ -740,14 +741,41 @@ public class ProgramMemoryUtil {
 	public static List<Address> findString(String searchString, Program program,
 			List<MemoryBlock> blocks, AddressSetView set, TaskMonitor monitor)
 			throws CancelledException {
+	    
+	    List<Address> addresses = new ArrayList<>();
+	    
+	    // just add each found location to the list, no termination of search
+        TerminatingConsumer<Address> collector = (i) -> addresses.add(i);
+		
+		locateString(searchString, collector, program, blocks, set, monitor);
+		
+		return addresses;
+	}
+
+	/**
+	 * Finds the string in memory indicated by the searchString limited to the indicated 
+	 * memory blocks and address set.  Each found location calls the foundLocationConsumer.consume(addr)
+	 * method.  If the search should terminate, (ie. enough results found), then terminateRequested() should
+	 * return true.  Requesting termination is different than a cancellation from the task monitor.
+	 * 
+	 * @param searchString the string to find
+	 * @param foundLocationConsumer location consumer with consumer.accept(Address addr) routine defined
+	 * @param program the program to search
+	 * @param blocks the only blocks to search
+	 * @param set a set of the addresses to limit the results
+	 * @param monitor a task monitor to allow 
+	 * @throws CancelledException if the user cancels
+	 */
+	public static void locateString(String searchString, TerminatingConsumer<Address> foundLocationConsumer, Program program,
+			List<MemoryBlock> blocks, AddressSetView set, TaskMonitor monitor)
+			throws CancelledException {
 
 		monitor.setMessage("Finding \"" + searchString + "\".");
-		List<Address> addresses = new ArrayList<>();
 		int length = searchString.length();
 		byte[] bytes = searchString.getBytes();
 		Memory memory = program.getMemory();
 		for (MemoryBlock memoryBlock : blocks) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 			Address startAddress = memoryBlock.getStart();
 			Address endAddress = memoryBlock.getEnd();
 			Address foundAddress;
@@ -759,7 +787,10 @@ public class ProgramMemoryUtil {
 					break; // no more found in block.
 				}
 				if (set.contains(foundAddress)) {
-					addresses.add(foundAddress);
+					foundLocationConsumer.accept(foundAddress);
+					if (foundLocationConsumer.terminationRequested()) {
+						return; // termination of search requested
+					}
 				}
 				try {
 					startAddress = foundAddress.add(length);
@@ -770,7 +801,6 @@ public class ProgramMemoryUtil {
 			}
 			while (startAddress.compareTo(endAddress) <= 0);
 		}
-		return addresses;
 	}
 
 	/**
@@ -790,7 +820,7 @@ public class ProgramMemoryUtil {
 		Memory memory = program.getMemory();
 
 		for (MemoryBlock memoryBlock : memory.getBlocks()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 
 			AddressSet blockSet = new AddressSet(memoryBlock.getStart(), memoryBlock.getEnd());
 			AddressSet intersection = blockSet.intersect(set);

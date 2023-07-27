@@ -23,12 +23,13 @@ import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.MemoryByteProvider;
 import ghidra.app.util.bin.format.coff.*;
 import ghidra.app.util.importer.MessageLog;
+import ghidra.app.util.opinion.BinaryLoader;
 import ghidra.framework.cmd.BinaryAnalysisCommand;
+import ghidra.framework.options.Options;
 import ghidra.program.flatapi.FlatProgramAPI;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.*;
 import ghidra.program.model.listing.*;
-import ghidra.program.model.mem.Memory;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.NotEmptyException;
 import ghidra.util.task.TaskMonitor;
@@ -45,10 +46,15 @@ public class CoffBinaryAnalysisCommand extends FlatProgramAPI
 	@Override
 	public boolean canApply(Program program) {
 		try {
-			Memory memory = program.getMemory();
-			short magic =
-				memory.getShort(program.getAddressFactory().getDefaultAddressSpace().getAddress(0));
-			return CoffMachineType.isMachineTypeDefined(magic);
+			Options options = program.getOptions(Program.PROGRAM_INFO);
+			String format = options.getString("Executable Format", null);
+			if (!BinaryLoader.BINARY_NAME.equals(format)) {
+				return false;
+			}
+
+			ByteProvider provider =
+				MemoryByteProvider.createDefaultAddressSpaceByteProvider(program, false);
+			return CoffFileHeader.isValid(provider);
 		}
 		catch (Exception e) {
 			return false;
@@ -59,9 +65,8 @@ public class CoffBinaryAnalysisCommand extends FlatProgramAPI
 	public boolean analysisWorkerCallback(Program program, Object workerContext,
 			TaskMonitor monitor) throws Exception, CancelledException {
 
-		ByteProvider provider = new MemoryByteProvider(currentProgram.getMemory(),
-			currentProgram.getAddressFactory().getDefaultAddressSpace());
-
+		ByteProvider provider =
+			MemoryByteProvider.createDefaultAddressSpaceByteProvider(program, false);
 		CoffFileHeader header = new CoffFileHeader(provider);
 
 		if (!CoffMachineType.isMachineTypeDefined(header.getMagic())) {

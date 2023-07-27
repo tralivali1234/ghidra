@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import ghidra.app.plugin.core.searchtext.Searcher.TextSearchResult;
 import ghidra.program.model.address.*;
 import ghidra.program.model.listing.*;
 import ghidra.program.util.*;
@@ -52,7 +53,7 @@ public class CommentFieldSearcher extends ProgramDatabaseFieldSearcher {
 	}
 
 	@Override
-	protected Address advance(List<ProgramLocation> currentMatches) {
+	protected Address advance(List<TextSearchResult> currentMatches) {
 		Address nextAddress = iterator.next();
 		if (nextAddress != null) {
 			findMatchesForCurrentAddress(nextAddress, currentMatches);
@@ -60,7 +61,8 @@ public class CommentFieldSearcher extends ProgramDatabaseFieldSearcher {
 		return nextAddress;
 	}
 
-	private void findMatchesForCurrentAddress(Address address, List<ProgramLocation> currentMatches) {
+	private void findMatchesForCurrentAddress(Address address,
+			List<TextSearchResult> currentMatches) {
 		String comment = program.getListing().getComment(commentType, address);
 		if (comment == null) {
 			return;
@@ -69,14 +71,15 @@ public class CommentFieldSearcher extends ProgramDatabaseFieldSearcher {
 		Matcher matcher = pattern.matcher(cleanedUpComment);
 		while (matcher.find()) {
 			int index = matcher.start();
-			currentMatches.add(getCommentLocation(comment, index, address));
+			currentMatches
+					.add(new TextSearchResult(getCommentLocation(comment, index, address), index));
 		}
 	}
 
 	private ProgramLocation getCommentLocation(String commentStr, int index, Address address) {
 		String[] comments = StringUtilities.toLines(commentStr);
 		int rowIndex = findRowIndex(comments, index);
-		int charOffset = findCharOffset(index, rowIndex, comments);
+		int charOffset = getRelativeCharOffset(index, rowIndex, comments);
 		int[] dataPath = getDataComponentPath(address);
 		switch (commentType) {
 			case CodeUnit.EOL_COMMENT:
@@ -84,7 +87,7 @@ public class CommentFieldSearcher extends ProgramDatabaseFieldSearcher {
 					charOffset, rowIndex);
 			case CodeUnit.PLATE_COMMENT:
 				return new PlateFieldLocation(program, address, dataPath, rowIndex, charOffset,
-					comments, rowIndex - 1);
+					comments, rowIndex);
 			case CodeUnit.REPEATABLE_COMMENT:
 				return new RepeatableCommentFieldLocation(program, address, dataPath, comments,
 					rowIndex, charOffset, rowIndex); // TODO One of searchStrIndex parameters is wrong.
@@ -113,12 +116,12 @@ public class CommentFieldSearcher extends ProgramDatabaseFieldSearcher {
 		return null;
 	}
 
-	private int findCharOffset(int index, int rowIndex, String[] opStrings) {
-		int totalBeforeOpIndex = 0;
+	private int getRelativeCharOffset(int index, int rowIndex, String[] comments) {
+		int preceding = 0;
 		for (int i = 0; i < rowIndex; i++) {
-			totalBeforeOpIndex += opStrings[i].length();
+			preceding += comments[i].length();
 		}
-		return index - totalBeforeOpIndex;
+		return index - preceding;
 	}
 
 	private int findRowIndex(String[] commentStrings, int index) {

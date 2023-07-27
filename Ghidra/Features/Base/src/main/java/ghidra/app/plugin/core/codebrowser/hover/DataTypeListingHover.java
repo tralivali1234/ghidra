@@ -19,10 +19,10 @@ import javax.swing.JComponent;
 
 import docking.widgets.fieldpanel.field.Field;
 import docking.widgets.fieldpanel.support.FieldLocation;
+import generic.theme.GThemeDefaults.Colors.Messages;
 import ghidra.GhidraOptions;
-import ghidra.app.plugin.core.hover.AbstractDataTypeHover;
+import ghidra.app.plugin.core.hover.AbstractConfigurableHover;
 import ghidra.app.util.ToolTipUtils;
-import ghidra.framework.options.Options;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.*;
@@ -33,7 +33,7 @@ import ghidra.program.util.*;
 import ghidra.util.HTMLUtilities;
 import ghidra.util.UniversalID;
 
-public class DataTypeListingHover extends AbstractDataTypeHover implements ListingHoverService {
+public class DataTypeListingHover extends AbstractConfigurableHover implements ListingHoverService {
 
 	private static final String NAME = "Data Type Display";
 	private static final String DESCRIPTION =
@@ -41,23 +41,23 @@ public class DataTypeListingHover extends AbstractDataTypeHover implements Listi
 			"when the mouse hovers over a data type.";
 	private static final int PRIORITY = 20;
 
-	///////////////////////////////////////////////////////////
-
 	public DataTypeListingHover(PluginTool tool) {
 		super(tool, PRIORITY);
 	}
 
 	@Override
-	public void initializeOptions() {
-		options = tool.getOptions(GhidraOptions.CATEGORY_BROWSER_POPUPS);
-		options.registerOption(NAME, true, null, DESCRIPTION);
-		setOptions(options, NAME);
-		options.addOptionsChangeListener(this);
+	protected String getName() {
+		return NAME;
 	}
 
 	@Override
-	public void setOptions(Options options, String name) {
-		enabled = options.getBoolean(NAME, true);
+	protected String getDescription() {
+		return DESCRIPTION;
+	}
+
+	@Override
+	protected String getOptionsCategory() {
+		return GhidraOptions.CATEGORY_BROWSER_POPUPS;
 	}
 
 	@Override
@@ -111,8 +111,8 @@ public class DataTypeListingHover extends AbstractDataTypeHover implements Listi
 				warningMsg += "WARNING! Invalid Storage";
 			}
 			if (warningMsg.length() != 0) {
-				String errorText =
-					"<HTML><center><font color=\"red\">" + warningMsg + "!</font></center><BR>";
+				String errorText = "<HTML><center><font color=\"" + Messages.ERROR.toHexString() +
+					"\">" + warningMsg + "!</font></center><BR>";
 				toolTipText = toolTipText.replace("<HTML>", errorText);
 			}
 			return createTooltipComponent(toolTipText);
@@ -150,7 +150,8 @@ public class DataTypeListingHover extends AbstractDataTypeHover implements Listi
 				result += "<br>Missing NULL terminator.";
 			}
 			if (sdi.getStringLength() > dataInstance.getLength()) {
-				result += "<br><font color=\"red\">String exceeds data field.</font>";
+				result += "<br><font color=\"" + Messages.ERROR.toHexString() +
+					"\">String exceeds data field.</font>";
 			}
 		}
 		return result;

@@ -18,7 +18,7 @@ package ghidra.program.database.function;
 import java.io.IOException;
 import java.util.*;
 
-import db.Record;
+import db.DBRecord;
 import ghidra.program.database.*;
 import ghidra.program.database.data.DataTypeManagerDB;
 import ghidra.program.database.external.ExternalManagerDB;
@@ -48,7 +48,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 	private ProgramDB program;
 	private Address entryPoint;
 	private Symbol functionSymbol;
-	private Record rec;
+	private DBRecord rec;
 
 	private FunctionStackFrame frame;
 
@@ -86,13 +86,18 @@ public class FunctionDB extends DatabaseObject implements Function {
 	private boolean updateRefreshRequired = false;
 
 	FunctionDB(FunctionManagerDB manager, DBObjectCache<FunctionDB> cache, AddressMap addrMap,
-			Record rec) {
+			DBRecord rec) {
 		super(cache, rec.getKey());
 		this.manager = manager;
 		program = manager.getProgram();
 		this.rec = rec;
 		init();
 		frame = new FunctionStackFrame(this);
+	}
+
+	@Override
+	public boolean isDeleted() {
+		return isDeleted(manager.lock);
 	}
 
 	public void setValidationEnabled(boolean state) {
@@ -103,6 +108,12 @@ public class FunctionDB extends DatabaseObject implements Function {
 		thunkedFunction = manager.getThunkedFunction(this);
 		functionSymbol = program.getSymbolTable().getSymbol(key);
 		entryPoint = functionSymbol.getAddress();
+	}
+
+	@Override
+	protected void checkDeleted() {
+		// expose method to function package
+		super.checkDeleted();
 	}
 
 	@Override
@@ -154,23 +165,36 @@ public class FunctionDB extends DatabaseObject implements Function {
 		}
 	}
 
+	private List<Address> getFunctionThunkAddresses(long functionId, boolean recursive) {
+		List<Long> functionIds = manager.getThunkFunctionIds(functionId);
+		if (functionIds == null) {
+			return null;
+		}
+		SymbolTable symMgr = program.getSymbolTable();
+		List<Address> thunkAddrList = new ArrayList<>();
+		for (long id : functionIds) {
+			Symbol s = symMgr.getSymbol(id);
+			thunkAddrList.add(s.getAddress());
+			if (recursive) {
+				List<Address> thunkAddrs = getFunctionThunkAddresses(id, true);
+				if (thunkAddrs != null) {
+					thunkAddrList.addAll(thunkAddrs);
+				}
+			}
+		}
+		return thunkAddrList;
+	}
+
 	@Override
-	public Address[] getFunctionThunkAddresses() {
+	public Address[] getFunctionThunkAddresses(boolean recursive) {
 		manager.lock.acquire();
 		try {
 			checkIsValid();
-			List<Long> functionIds = manager.getThunkFunctionIds(key);
-			if (functionIds == null) {
+			List<Address> thunkAddrList = getFunctionThunkAddresses(key, recursive);
+			if (thunkAddrList == null) {
 				return null;
 			}
-			SymbolTable symMgr = program.getSymbolTable();
-			Address[] addresses = new Address[functionIds.size()];
-			int index = 0;
-			for (long functionId : functionIds) {
-				Symbol s = symMgr.getSymbol(functionId);
-				addresses[index++] = s.getAddress();
-			}
-			return addresses;
+			return thunkAddrList.toArray(new Address[thunkAddrList.size()]);
 		}
 		finally {
 			manager.lock.release();
@@ -185,7 +209,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 	@Override
 	public ExternalLocation getExternalLocation() {
 		if (isExternal()) {
-			ExternalManagerDB extMgr = (ExternalManagerDB) program.getExternalManager();
+			ExternalManagerDB extMgr = program.getExternalManager();
 			return extMgr.getExternalLocation(getSymbol());
 		}
 		return null;
@@ -205,11 +229,6 @@ public class FunctionDB extends DatabaseObject implements Function {
 		return super.hashCode();
 	}
 
-	/*
-	 * (non-Javadoc)
-	 *
-	 * @see java.lang.Object#toString()
-	 */
 	@Override
 	public String toString() {
 		return getName(true);
@@ -283,8 +302,8 @@ public class FunctionDB extends DatabaseObject implements Function {
 		manager.lock.acquire();
 		try {
 			checkIsValid();
-			return manager.getCodeManager().getComment(CodeUnit.REPEATABLE_COMMENT,
-				getEntryPoint());
+			return manager.getCodeManager()
+					.getComment(CodeUnit.REPEATABLE_COMMENT, getEntryPoint());
 		}
 		finally {
 			manager.lock.release();
@@ -301,8 +320,8 @@ public class FunctionDB extends DatabaseObject implements Function {
 		manager.lock.acquire();
 		try {
 			checkDeleted();
-			manager.getCodeManager().setComment(getEntryPoint(), CodeUnit.REPEATABLE_COMMENT,
-				comment);
+			manager.getCodeManager()
+					.setComment(getEntryPoint(), CodeUnit.REPEATABLE_COMMENT, comment);
 		}
 		finally {
 			manager.lock.release();
@@ -373,7 +392,10 @@ public class FunctionDB extends DatabaseObject implements Function {
 				return;
 			}
 			type = type.clone(program.getDataTypeManager());
-			if (storage.isValid() && (storage.size() != type.getLength())) {
+			if (VoidDataType.isVoidDataType(type)) {
+				storage = VariableStorage.VOID_STORAGE;
+			}
+			else if (storage.isValid() && (storage.size() != type.getLength())) {
 				try {
 					storage = VariableUtilities.resizeStorage(storage, type, true, this);
 				}
@@ -792,17 +814,13 @@ public class FunctionDB extends DatabaseObject implements Function {
 		}
 
 		dataTypes[0] = returnParam.getFormalDataType();
-		DataType baseType = dataTypes[0];
-		if (baseType instanceof TypeDef) {
-			baseType = ((TypeDef) baseType).getBaseDataType();
-		}
 		returnParam.setDynamicStorage(
-			(baseType instanceof VoidDataType) ? VariableStorage.VOID_STORAGE
-					: VariableStorage.UNASSIGNED_STORAGE);
+					VoidDataType.isVoidDataType(dataTypes[0]) ? VariableStorage.VOID_STORAGE
+							: VariableStorage.UNASSIGNED_STORAGE);
 
 		PrototypeModel callingConvention = getCallingConvention();
 		if (callingConvention == null) {
-			callingConvention = getDefaultCallingConvention();
+			callingConvention = manager.getDefaultCallingConvention();
 		}
 		if (callingConvention == null) {
 			return;
@@ -851,8 +869,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 
 	private void renumberParameterOrdinals() {
 		int ordinal = autoParams != null ? autoParams.size() : 0;
-		for (int i = 0; i < params.size(); i++) {
-			ParameterDB param = params.get(i);
+		for (ParameterDB param : params) {
 			param.setOrdinal(ordinal++);
 		}
 	}
@@ -885,8 +902,9 @@ public class FunctionDB extends DatabaseObject implements Function {
 				}
 			}
 		}
-		program.getBookmarkManager().setBookmark(getEntryPoint(), BookmarkType.ERROR,
-			"Bad Variables Removed", "Removed " + badSymbols.size() + " bad variables");
+		program.getBookmarkManager()
+				.setBookmark(getEntryPoint(), BookmarkType.ERROR, "Bad Variables Removed",
+					"Removed " + badSymbols.size() + " bad variables");
 		for (Symbol s : badSymbols) {
 			s.delete();
 		}
@@ -894,12 +912,8 @@ public class FunctionDB extends DatabaseObject implements Function {
 			ReturnParameterDB rtnParam = getReturn();
 			if (rtnParam.getVariableStorage().isBadStorage()) {
 				DataType dt = rtnParam.getDataType();
-				DataType baseType = dt;
-				if (baseType instanceof TypeDef) {
-					baseType = ((TypeDef) baseType).getBaseDataType();
-				}
 				VariableStorage storage =
-					(baseType instanceof VoidDataType) ? VariableStorage.VOID_STORAGE
+					VoidDataType.isVoidDataType(dt) ? VariableStorage.VOID_STORAGE
 							: VariableStorage.UNASSIGNED_STORAGE;
 				rtnParam.setStorageAndDataType(storage, dt);
 			}
@@ -969,7 +983,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 					v.setStorageAndDataType(storage, var.getDataType());
 				}
 				else {
-					SymbolManager symbolMgr = (SymbolManager) program.getSymbolTable();
+					SymbolManager symbolMgr = program.getSymbolTable();
 					VariableSymbolDB s = symbolMgr.createVariableSymbol(name, this,
 						SymbolType.LOCAL_VAR, firstUseOffset, storage, source);
 					s.setStorageAndDataType(storage, var.getDataType());
@@ -979,7 +993,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 					symbolMap.put(v.symbol, v);
 				}
 				if (var.getComment() != null) {
-					v.symbol.setSymbolData3(var.getComment());
+					v.symbol.setSymbolStringData(var.getComment());
 				}
 				manager.functionChanged(this, 0);
 				return v;
@@ -1093,21 +1107,18 @@ public class FunctionDB extends DatabaseObject implements Function {
 			loadVariables();
 			ArrayList<Variable> list = new ArrayList<>();
 			if (autoParams != null) {
-				for (int i = 0; i < autoParams.size(); i++) {
-					Parameter p = autoParams.get(i);
+				for (AutoParameterImpl p : autoParams) {
 					if (filter == null || filter.matches(p)) {
 						list.add(p);
 					}
 				}
 			}
-			for (int i = 0; i < params.size(); i++) {
-				Parameter p = params.get(i);
+			for (ParameterDB p : params) {
 				if (filter == null || filter.matches(p)) {
 					list.add(p);
 				}
 			}
-			for (int i = 0; i < locals.size(); i++) {
-				Variable var = locals.get(i);
+			for (VariableDB var : locals) {
 				if (filter == null || filter.matches(var)) {
 					list.add(var);
 				}
@@ -1137,15 +1148,13 @@ public class FunctionDB extends DatabaseObject implements Function {
 			loadVariables();
 			ArrayList<Parameter> list = new ArrayList<>();
 			if (autoParams != null) {
-				for (int i = 0; i < autoParams.size(); i++) {
-					Parameter p = autoParams.get(i);
+				for (AutoParameterImpl p : autoParams) {
 					if (filter == null || filter.matches(p)) {
 						list.add(p);
 					}
 				}
 			}
-			for (int i = 0; i < params.size(); i++) {
-				Parameter p = params.get(i);
+			for (ParameterDB p : params) {
 				if (filter == null || filter.matches(p)) {
 					list.add(p);
 				}
@@ -1173,8 +1182,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 			}
 			loadVariables();
 			ArrayList<Variable> list = new ArrayList<>();
-			for (int i = 0; i < locals.size(); i++) {
-				Variable var = locals.get(i);
+			for (VariableDB var : locals) {
 				if (filter == null || filter.matches(var)) {
 					list.add(var);
 				}
@@ -1234,6 +1242,10 @@ public class FunctionDB extends DatabaseObject implements Function {
 	/**
 	 * Resolve a variable's type and storage.
 	 * @param var variable to be resolved
+	 * @param voidOK if true the use of a 0-length {@link VoidDataType} for the specified
+	 * variable is allowed (i.e., {@link ReturnParameterDB}), else false should be specifed.
+	 * @param useUnassignedStorage if true storage should be set to {@link VariableStorage#UNASSIGNED_STORAGE}
+	 * else an attempt should be made to adjust the storage.
 	 * @return resolved variable
 	 * @throws InvalidInputException if unable to resize variable storage due to
 	 * resolved datatype size change
@@ -1287,6 +1299,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 		updateFunction(callingConvention, returnValue, Arrays.asList(newParams), updateType, force,
 			source);
 	}
+
 
 	/**
 	 * Increment updateInProgressCount indicating that an update operation is in progress and 
@@ -1438,7 +1451,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 			}
 
 			// Append new parameters if needed
-			SymbolManager symbolMgr = (SymbolManager) program.getSymbolTable();
+			SymbolManager symbolMgr = program.getSymbolTable();
 			for (int i = newParamIndex; i < newParams.size(); i++) {
 				Variable newParam = newParams.get(i);
 				DataType dt = (newParam instanceof Parameter && !useCustomStorage)
@@ -1654,15 +1667,14 @@ public class FunctionDB extends DatabaseObject implements Function {
 					}
 					if (ordinal != params.size()) {
 						// shift params to make room for inserted param
-						for (int i = 0; i < params.size(); i++) {
-							ParameterDB param = params.get(i);
+						for (ParameterDB param : params) {
 							int paramOrdinal = param.getOrdinal();
 							if (paramOrdinal >= ordinal) {
 								param.setOrdinal(paramOrdinal + 1);
 							}
 						}
 					}
-					SymbolManager symbolMgr = (SymbolManager) program.getSymbolTable();
+					SymbolManager symbolMgr = program.getSymbolTable();
 					VariableSymbolDB s = symbolMgr.createVariableSymbol(name, this,
 						SymbolType.PARAMETER, ordinal, storage, paramSource);
 					s.setStorageAndDataType(storage, var.getDataType());
@@ -1674,7 +1686,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 					manager.functionChanged(this, ChangeManager.FUNCTION_CHANGED_PARAMETERS);
 				}
 				if (var.getComment() != null) {
-					p.symbol.setSymbolData3(var.getComment());
+					p.symbol.setSymbolStringData(var.getComment());
 				}
 				updateSignatureSourceAfterVariableChange(source, p.getDataType());
 				return p;
@@ -1752,7 +1764,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 	}
 
 	@Override
-	protected boolean refresh(Record refreshRec) {
+	protected boolean refresh(DBRecord refreshRec) {
 		if (updateInProgressCount != 0) {
 			// update may have caused variable/data-type changes which may trigger a
 			// refresh of this function - must defer until update completed
@@ -1851,8 +1863,8 @@ public class FunctionDB extends DatabaseObject implements Function {
 	/**
 	 * Return the Variable for the given symbol.
 	 *
-	 * @param symbol
-	 *            variable symbol
+	 * @param symbol variable symbol
+	 * @return Variable which corresponds to specified symbol
 	 */
 	public Variable getVariable(VariableSymbolDB symbol) {
 		manager.lock.acquire();
@@ -1898,10 +1910,6 @@ public class FunctionDB extends DatabaseObject implements Function {
 		}
 	}
 
-	/**
-	 * @throws InvalidInputException
-	 * @see ghidra.program.model.listing.Function#moveParameter(int, int)
-	 */
 	@Override
 	public Parameter moveParameter(int fromOrdinal, int toOrdinal) throws InvalidInputException {
 		if (toOrdinal < 0) {
@@ -2216,8 +2224,8 @@ public class FunctionDB extends DatabaseObject implements Function {
 	 * Remove 'this' parameter if using __thiscall and first non-auto parameter is
 	 * a pointer and named 'this'.
 	 * @param params list of parameters to search and affect
-	 * @param callingConventionName
-	 * @return true if 'this' parameter removed
+	 * @param callingConventionName current function calling convention
+	 * @return true if 'this' parameter removed (applies to __thiscall callingConventionName only), else false
 	 */
 	private static boolean removeExplicitThisParameter(List<? extends Variable> params,
 			String callingConventionName) {
@@ -2500,11 +2508,6 @@ public class FunctionDB extends DatabaseObject implements Function {
 		}
 	}
 
-	/*
-	 * (non-Javadoc)
-	 *
-	 * @see ghidra.program.model.listing.Function#getCallingConvention()
-	 */
 	@Override
 	public PrototypeModel getCallingConvention() {
 		String name = getCallingConventionName();
@@ -2518,11 +2521,6 @@ public class FunctionDB extends DatabaseObject implements Function {
 		return functionMgr.getCallingConvention(name);
 	}
 
-	/*
-	 * (non-Javadoc)
-	 *
-	 * @see ghidra.program.model.listing.Function#getCallingConventionName()
-	 */
 	@Override
 	public String getCallingConventionName() {
 		manager.lock.acquire();
@@ -2534,14 +2532,13 @@ public class FunctionDB extends DatabaseObject implements Function {
 				return thunkedFunction.getCallingConventionName();
 			}
 			byte callingConventionID = rec.getByteValue(FunctionAdapter.CALLING_CONVENTION_ID_COL);
-			if (callingConventionID == CallingConventionDBAdapter.UNKNOWN_CALLING_CONVENTION_ID) {
+			if (callingConventionID == DataTypeManagerDB.UNKNOWN_CALLING_CONVENTION_ID) {
 				return Function.UNKNOWN_CALLING_CONVENTION_STRING;
 			}
-			if (callingConventionID == CallingConventionDBAdapter.DEFAULT_CALLING_CONVENTION_ID) {
+			if (callingConventionID == DataTypeManagerDB.DEFAULT_CALLING_CONVENTION_ID) {
 				return Function.DEFAULT_CALLING_CONVENTION_STRING;
 			}
-			String name = manager.getCallingConventionName(callingConventionID);
-			return name != null ? name : UNKNOWN_CALLING_CONVENTION_STRING;
+			return program.getDataTypeManager().getCallingConventionName(callingConventionID);
 		}
 		finally {
 			manager.lock.release();
@@ -2552,34 +2549,14 @@ public class FunctionDB extends DatabaseObject implements Function {
 		if (thunkedFunction != null) {
 			return thunkedFunction.getRealCallingConventionName();
 		}
-		String name = null;
 		byte callingConventionID = rec.getByteValue(FunctionAdapter.CALLING_CONVENTION_ID_COL);
-		if (callingConventionID != CallingConventionDBAdapter.UNKNOWN_CALLING_CONVENTION_ID &&
-			callingConventionID != CallingConventionDBAdapter.DEFAULT_CALLING_CONVENTION_ID) {
-			name = manager.getCallingConventionName(callingConventionID);
+		String name = program.getDataTypeManager().getCallingConventionName(callingConventionID);
+		if (UNKNOWN_CALLING_CONVENTION_STRING.equals(name) ||
+			DEFAULT_CALLING_CONVENTION_STRING.equals(name)) {
+			name = null;
 		}
 		// null returned for unknown or default calling convention
 		return name;
-	}
-
-	private PrototypeModel getDefaultCallingConvention() {
-		CompilerSpec compilerSpec = getProgram().getCompilerSpec();
-		if (compilerSpec != null) {
-			return compilerSpec.getDefaultCallingConvention();
-		}
-		return null;
-	}
-
-	@Override
-	public String getDefaultCallingConventionName() {
-		PrototypeModel defaultPrototype = getDefaultCallingConvention();
-		if (defaultPrototype != null) {
-			String defaultPrototypeName = defaultPrototype.getName();
-			if (defaultPrototypeName != null) {
-				return defaultPrototypeName;
-			}
-		}
-		return Function.DEFAULT_CALLING_CONVENTION_STRING;
 	}
 
 	@Override
@@ -2593,36 +2570,38 @@ public class FunctionDB extends DatabaseObject implements Function {
 				return;
 			}
 
-			byte newCallingConventionID = manager.getCallingConventionID(name);
+			byte newCallingConventionID =
+				program.getDataTypeManager().getCallingConventionID(name, true);
 			byte oldCallingConventionID =
 				rec.getByteValue(FunctionAdapter.CALLING_CONVENTION_ID_COL);
 
-			if (oldCallingConventionID != newCallingConventionID) {
+			if (oldCallingConventionID == newCallingConventionID) {
+				return; // no change
+			}
 
+			loadVariables();
+
+			rec.setByteValue(FunctionAdapter.CALLING_CONVENTION_ID_COL, newCallingConventionID);
+			manager.getFunctionAdapter().updateFunctionRecord(rec);
+
+			boolean hasCustomStorage = hasCustomVariableStorage();
+			if (!hasCustomStorage) {
+				// remove 'this' param if switching to __thiscall with dynamic storage
+				removeExplicitThisParameter();
+			}
+
+			frame.setInvalid();
+
+			if (!hasCustomStorage) {
+				createClassStructIfNeeded(); // TODO: How should thunks within Class namespace be handled?
 				loadVariables();
-
-				rec.setByteValue(FunctionAdapter.CALLING_CONVENTION_ID_COL, newCallingConventionID);
-				manager.getFunctionAdapter().updateFunctionRecord(rec);
-
-				boolean hasCustomStorage = hasCustomVariableStorage();
-				if (!hasCustomStorage) {
-					// remove 'this' param if switching to __thiscall with dynamic storage
-					removeExplicitThisParameter();
-				}
-
-				frame.setInvalid();
-
-				if (!hasCustomStorage) {
-					createClassStructIfNeeded(); // TODO: How should thunks within Class namespace be handled?
-					loadVariables();
-					removeExplicitThisParameter();
-					updateParametersAndReturn(); // assign dynamic storage
-					manager.functionChanged(this, ChangeManager.FUNCTION_CHANGED_PARAMETERS);
-					manager.functionChanged(this, ChangeManager.FUNCTION_CHANGED_RETURN);
-				}
-				else {
-					manager.functionChanged(this, 0); // change did not affect parameters
-				}
+				removeExplicitThisParameter();
+				updateParametersAndReturn(); // assign dynamic storage
+				manager.functionChanged(this, ChangeManager.FUNCTION_CHANGED_PARAMETERS);
+				manager.functionChanged(this, ChangeManager.FUNCTION_CHANGED_RETURN);
+			}
+			else {
+				manager.functionChanged(this, 0); // change did not affect parameters
 			}
 		}
 		catch (IOException e) {
@@ -2637,7 +2616,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 	void createClassStructIfNeeded() {
 		PrototypeModel callingConvention = getCallingConvention();
 		if (callingConvention == null ||
-			callingConvention.getGenericCallingConvention() != GenericCallingConvention.thiscall) {
+			!CompilerSpec.CALLING_CONVENTION_thiscall.equals(callingConvention.getName())) {
 			return;
 		}
 		Namespace parent = getParentNamespace();
@@ -2654,7 +2633,9 @@ public class FunctionDB extends DatabaseObject implements Function {
 			// relationship between a class namespace and its structure is needed
 			// so its name and category can track properly.
 			classStruct = VariableUtilities.findOrCreateClassStruct(this);
-			dataTypeManager.resolve(classStruct, null);
+			if (classStruct != null) {
+				dataTypeManager.resolve(classStruct, null);
+			}
 		}
 	}
 
@@ -2703,8 +2684,9 @@ public class FunctionDB extends DatabaseObject implements Function {
 				callFixupMap.remove(entryPoint);
 			}
 			else {
-				if (program.getCompilerSpec().getPcodeInjectLibrary().getPayload(
-					InjectPayload.CALLFIXUP_TYPE, name, null, null) == null) {
+				if (program.getCompilerSpec()
+						.getPcodeInjectLibrary()
+						.getPayload(InjectPayload.CALLFIXUP_TYPE, name) == null) {
 					Msg.warn(this, "Undefined CallFixup set at " + entryPoint + ": " + name);
 				}
 				callFixupMap.add(entryPoint, name);
@@ -2719,6 +2701,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 
 	@Override
 	public Set<Function> getCallingFunctions(TaskMonitor monitor) {
+		monitor = TaskMonitor.dummyIfNull(monitor);
 		Set<Function> set = new HashSet<>();
 		ReferenceIterator iter = program.getReferenceManager().getReferencesTo(getEntryPoint());
 		while (iter.hasNext()) {
@@ -2737,6 +2720,7 @@ public class FunctionDB extends DatabaseObject implements Function {
 
 	@Override
 	public Set<Function> getCalledFunctions(TaskMonitor monitor) {
+		monitor = TaskMonitor.dummyIfNull(monitor);
 		Set<Function> set = new HashSet<>();
 		Set<Reference> references = getReferencesFromBody(monitor);
 		for (Reference reference : references) {
@@ -2815,22 +2799,17 @@ public class FunctionDB extends DatabaseObject implements Function {
 				tag = tagManager.createFunctionTag(name, "");
 			}
 
-			FunctionTagMappingAdapter mappingAdapter = tagManager.getFunctionTagMappingAdapter();
-			if (mappingAdapter.getRecord(getID(), tag.getId()) == null) {
-				mappingAdapter.createFunctionTagRecord(getID(), tag.getId());
+			if (!tagManager.isTagApplied(getID(), tag.getId())) {
+				tagManager.applyFunctionTag(getID(), tag.getId());
 
 				Address addr = getEntryPoint();
-				program.setChanged(ChangeManager.DOCR_TAG_ADDED_TO_FUNCTION, addr, addr, null,
-					null);
+				program.setChanged(ChangeManager.DOCR_TAG_ADDED_TO_FUNCTION, addr, addr, tag, tag);
 			}
 
 			// Add to local cache
 			if (tags != null) {
 				tags.add(tag);
 			}
-		}
-		catch (IOException e) {
-			manager.dbError(e);
 		}
 		finally {
 			endUpdate();
@@ -2853,22 +2832,18 @@ public class FunctionDB extends DatabaseObject implements Function {
 
 			FunctionTagManagerDB tagManager =
 				(FunctionTagManagerDB) manager.getFunctionTagManager();
-			FunctionTagMappingAdapter mappingAdapter = tagManager.getFunctionTagMappingAdapter();
-			boolean removed = mappingAdapter.removeFunctionTagRecord(getID(), tag.getId());
+			boolean removed = tagManager.removeFunctionTag(getID(), tag.getId());
 
 			if (removed) {
 				Address addr = getEntryPoint();
-				program.setChanged(ChangeManager.DOCR_TAG_REMOVED_FROM_FUNCTION, addr, addr, null,
-					null);
+				program.setChanged(ChangeManager.DOCR_TAG_REMOVED_FROM_FUNCTION, addr, addr, tag,
+					tag);
 
 				// Remove from the local cache.
 				if (tags != null) {
 					tags.remove(tag);
 				}
 			}
-		}
-		catch (IOException e) {
-			manager.dbError(e);
 		}
 		finally {
 			endUpdate();

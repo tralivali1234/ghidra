@@ -15,11 +15,12 @@
  */
 package ghidra.util;
 
-import java.math.BigInteger;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import java.math.BigInteger;
 
 import org.apache.commons.collections4.IteratorUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -57,18 +58,25 @@ public final class NumericUtilities {
 	}
 
 	/**
-	 * parses the given string as a numeric value, detecting whether
-	 * or not it begins with a Hex prefix, and if not, parses as a
-	 * long int value.
+	 * Parses the given string as a numeric value, detecting whether or not it begins with a Hex
+	 * prefix, and if not, parses as a long int value.
+	 * 
+	 * @param numStr the number string
+	 * @return the long value or 0
+	 *
 	 */
 	public static long parseNumber(String numStr) {
-		long value = 0;
+		return parseNumber(numStr, Long.valueOf(0));
+	}
+
+	public static Long parseNumber(String numStr, Long defaultValue) {
 
 		numStr = (numStr == null ? "" : numStr.trim());
 		if (numStr.length() == 0) {
-			return value;
+			return defaultValue;
 		}
 
+		long value = 0;
 		try {
 			if (numStr.startsWith(HEX_PREFIX_x) || numStr.startsWith(HEX_PREFIX_X)) {
 				value = Integer.parseInt(numStr.substring(2), 16);
@@ -79,15 +87,15 @@ public final class NumericUtilities {
 		}
 		catch (NumberFormatException exc) {
 			// do nothing special; use default value
+			return defaultValue;
 		}
 
 		return value;
 	}
 
 	/**
-	 * parses the given string as a numeric value, detecting whether
-	 * or not it begins with a Hex prefix, and if not, parses as a
-	 * long int value.
+	 * parses the given string as a numeric value, detecting whether or not it begins with a Hex
+	 * prefix, and if not, parses as a long int value.
 	 */
 	public static long parseLong(String numStr) {
 		String origStr = numStr;
@@ -132,9 +140,8 @@ public final class NumericUtilities {
 	}
 
 	/**
-	 * parses the given string as a numeric value, detecting whether
-	 * or not it begins with a Hex prefix, and if not, parses as a
-	 * long int value.
+	 * parses the given string as a numeric value, detecting whether or not it begins with a Hex
+	 * prefix, and if not, parses as a long int value.
 	 */
 	public static long parseOctLong(String numStr) {
 
@@ -193,8 +200,9 @@ public final class NumericUtilities {
 	}
 
 	/**
-	 * returns the value of the specified long as hexadecimal, prefixing
-	 * with the HEX_PREFIX_x string.
+	 * returns the value of the specified long as hexadecimal, prefixing with the HEX_PREFIX_x
+	 * string.
+	 *
 	 * @param value the long value to convert
 	 */
 	public final static String toHexString(long value) {
@@ -202,21 +210,23 @@ public final class NumericUtilities {
 	}
 
 	/**
-	 * returns the value of the specified long as hexadecimal, prefixing
-	 * with the HEX_PREFIX_x string.
+	 * returns the value of the specified long as hexadecimal, prefixing with the HEX_PREFIX_x
+	 * string.
+	 *
 	 * @param value the long value to convert
 	 * @param size number of bytes to be represented
 	 */
 	public final static String toHexString(long value, int size) {
 		if (size > 0 && size < 8) {
-			value &= -1L >> (8 * (8 - size));
+			value &= -1L >>> (8 * (8 - size));
 		}
 		return HEX_PREFIX_x + Long.toHexString(value);
 	}
 
 	/**
-	 * returns the value of the specified long as signed hexadecimal, prefixing
-	 * with the HEX_PREFIX_x string.
+	 * returns the value of the specified long as signed hexadecimal, prefixing with the
+	 * HEX_PREFIX_x string.
+	 *
 	 * @param value the long value to convert
 	 */
 	public final static String toSignedHexString(long value) {
@@ -230,15 +240,15 @@ public final class NumericUtilities {
 	}
 
 	/**
-	 * Converts a <strong>unsigned</strong> long value, which is currently stored in a 
-	 * java <strong>signed</strong> long, into a {@link BigInteger}.
+	 * Converts a <strong>unsigned</strong> long value, which is currently stored in a java
+	 * <strong>signed</strong> long, into a {@link BigInteger}.
 	 * <p>
-	 * In other words, the full 64 bits of the primitive java <strong>signed</strong> 
-	 * long is being used to store an <strong>unsigned</strong> value.  This 
-	 * method converts this into a positive BigInteger value.
-	 *  
-	 * @param value java <strong>unsigned</strong> long value stuffed into a 
-	 * java <strong>signed</strong> long
+	 * In other words, the full 64 bits of the primitive java <strong>signed</strong> long is being
+	 * used to store an <strong>unsigned</strong> value. This method converts this into a positive
+	 * BigInteger value.
+	 *
+	 * @param value java <strong>unsigned</strong> long value stuffed into a java
+	 *            <strong>signed</strong> long
 	 * @return new {@link BigInteger} with the positive value of the unsigned long value
 	 */
 	public static BigInteger unsignedLongToBigInteger(long value) {
@@ -256,8 +266,23 @@ public final class NumericUtilities {
 	}
 
 	/**
-	 * Get an unsigned aligned value corresponding to the specified unsigned value
-	 * which will be greater than or equal the specified value.
+	 * Convert a long, treated as unsigned, to a double
+	 * 
+	 * @param val the long to treat as unsigned and convert
+	 * @return the double
+	 */
+	public static double unsignedLongToDouble(long val) {
+		double dVal = val & 0x7FFF_FFFF_FFFF_FFFFL;
+		if (val < 0) {
+			dVal += 0x1.0p63;
+		}
+		return dVal;
+	}
+
+	/**
+	 * Get an unsigned aligned value corresponding to the specified unsigned value which will be
+	 * greater than or equal the specified value.
+	 *
 	 * @param unsignedValue value to be aligned
 	 * @param alignment alignment
 	 * @return aligned value
@@ -280,19 +305,38 @@ public final class NumericUtilities {
 	/**
 	 * Convert a masked value into a hexadecimal-ish string.
 	 *
-	 * Converts the data to hexadecimal, placing an X where a nibble is unknown. Where a nibble
-	 * is partially defined, it is displayed as four bits in brackets []. Bits are displayed
-	 * as x, or the defined value.
+	 * Converts the data to hexadecimal, placing an X where a nibble is unknown. Where a nibble is
+	 * partially defined, it is displayed as four bits in brackets []. Bits are displayed as x, or
+	 * the defined value.
 	 *
-	 * For example, consider the mask 00001111:01011100, and the value 00001001:00011000. This
-	 * will display as {@code X8:[x0x1][10xx]}. To see the correlation, consider the table:
-	 * <table><caption></caption>
-	 *   <tr><th>Display</th><th>{@code X}</th>   <th>{@code 8}</th>   <th>{@code :}</th>
-	 *                           <th>{@code [x0x1]}</th><th>{@code [10xx]}</th></tr>
-	 *   <tr><th>Mask</th>   <td>{@code 0000}</td><td>{@code 1111}</td><td>{@code :}</td>
-	 *                           <td>{@code 0101}</td>  <td>{@code 1100}</td>  </tr>
-	 *   <tr><th>Value</th>  <td>{@code 0000}</td><td>{@code 1000}</td><td>{@code :}</td>
-	 *                           <td>{@code 0001}</td>  <td>{@code 1000}</td>  </tr>
+	 * For example, consider the mask 00001111:01011100, and the value 00001001:00011000. This will
+	 * display as {@code X8:[x0x1][10xx]}. To see the correlation, consider the table:
+	 * <table>
+	 * <caption></caption>
+	 * <tr>
+	 * <th>Display</th>
+	 * <th>{@code X}</th>
+	 * <th>{@code 8}</th>
+	 * <th>{@code :}</th>
+	 * <th>{@code [x0x1]}</th>
+	 * <th>{@code [10xx]}</th>
+	 * </tr>
+	 * <tr>
+	 * <th>Mask</th>
+	 * <td>{@code 0000}</td>
+	 * <td>{@code 1111}</td>
+	 * <td>{@code :}</td>
+	 * <td>{@code 0101}</td>
+	 * <td>{@code 1100}</td>
+	 * </tr>
+	 * <tr>
+	 * <th>Value</th>
+	 * <td>{@code 0000}</td>
+	 * <td>{@code 1000}</td>
+	 * <td>{@code :}</td>
+	 * <td>{@code 0001}</td>
+	 * <td>{@code 1000}</td>
+	 * </tr>
 	 * </table>
 	 *
 	 * @param msk the mask
@@ -364,6 +408,7 @@ public final class NumericUtilities {
 	 * Philosophically, it is hexadecimal, but the only valid digits are 0 and F. Any
 	 * partially-included nibble will be broken down into bracketed bits. Displaying masks in this
 	 * way is convenient when shown proximal to related masked values.
+	 *
 	 * @param msk the mask
 	 * @param n the number of nibbles, starting at the right
 	 * @param truncate true if leading Xs may be truncated
@@ -420,6 +465,7 @@ public final class NumericUtilities {
 
 	/**
 	 * The reverse of {@link #convertMaskedValueToHexString(long, long, int, boolean, int, String)}
+	 *
 	 * @param msk an object to receive the resulting mask
 	 * @param val an object to receive the resulting value
 	 * @param hex the input string to parse
@@ -509,7 +555,8 @@ public final class NumericUtilities {
 
 	/**
 	 * Render <code>number</code> in different bases using the default signedness mode.
-	 * <p>This invokes {@linkplain #formatNumber(long, int, SignednessFormatMode)} with a
+	 * <p>
+	 * This invokes {@linkplain #formatNumber(long, int, SignednessFormatMode)} with a
 	 * <code>mode</code> parameter of <code>{@linkplain SignednessFormatMode#DEFAULT}</code>.
 	 *
 	 * @param number The number to represent
@@ -524,30 +571,129 @@ public final class NumericUtilities {
 	/**
 	 * Provide renderings of <code>number</code> in different bases:
 	 * <ul>
-	 * <li> <code>0</code> - renders <code>number</code> as an escaped character sequence</li>
-	 * <li> <code>2</code> - renders <code>number</code> as a <code>base-2</code> integer</li>
-	 * <li> <code>8</code> - renders <code>number</code> as a <code>base-8</code> integer</li>
-	 * <li> <code>10</code> - renders <code>number</code> as a <code>base-10</code> integer</li>
-	 * <li> <code>16</code> (default) - renders <code>number</code> as a <code>base-16</code> integer</li>
+	 * <li><code>0</code> - renders <code>number</code> as an escaped character sequence</li>
+	 * <li><code>2</code> - renders <code>number</code> as a <code>base-2</code> integer</li>
+	 * <li><code>8</code> - renders <code>number</code> as a <code>base-8</code> integer</li>
+	 * <li><code>10</code> - renders <code>number</code> as a <code>base-10</code> integer</li>
+	 * <li><code>16</code> (default) - renders <code>number</code> as a <code>base-16</code>
+	 * integer</li>
 	 * </ul>
-	 * <table><caption></caption>
-	 * <tr><th>Number</th><th>Radix</th><th>DEFAULT Mode Alias</th><th style="text-align:center"><i>UNSIGNED</i> Mode Value</th><th><i>SIGNED</i> Mode Value</th></tr>
-	 * <tr><td>&nbsp;</td><td></td><td><i></i></td><td></td><td></td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>100</td><td>2</td><td><i>UNSIGNED</i></td><td>1100100b</td><td>1100100b</td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>100</td><td>8</td><td><i>UNSIGNED</i></td><td>144o</td><td>144o</td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>100</td><td>10</td><td><i>SIGNED</i></td><td>100</td><td>100</td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>100</td><td>16</td><td><i>UNSIGNED</i></td><td>64h</td><td>64h</td></tr>
-	 * <tr><td>&nbsp;</td><td></td><td><i></i></td><td></td><td></td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>-1</td><td>2</td><td><i>UNSIGNED</i></td><td>1111111111111111111111111111111111111111111111111111111111111111b</td><td>-1b</td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>-1</td><td>8</td><td><i>UNSIGNED</i></td><td>1777777777777777777777o</td><td>-1o</td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>-1</td><td>10</td><td><i>SIGNED</i></td><td>18446744073709551615</td><td>-1</td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>-1</td><td>16</td><td><i>UNSIGNED</i></td><td>ffffffffffffffffh</td><td>-1h</td></tr>
-	 *<tr><td>&nbsp;</td><td></td><td><i></i></td><td></td><td></td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>-100</td><td>2</td><td><i>UNSIGNED</i></td><td>1111111111111111111111111111111111111111111111111111111110011100b</td><td>-1100100b</td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>-100</td><td>8</td><td><i>UNSIGNED</i></td><td>1777777777777777777634o</td><td>-144o</td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>-100</td><td>10</td><td><i>SIGNED</i></td><td>18446744073709551516</td><td>-100</td></tr>
-	 * <tr style="text-align:right;font-family: monospace"><td>-100</td><td>16</td><td><i>UNSIGNED</i></td><td>ffffffffffffff9ch</td><td>-64h</td></tr>
+	 * <table>
+	 * <caption></caption>
+	 * <tr>
+	 * <th>Number</th>
+	 * <th>Radix</th>
+	 * <th>DEFAULT Mode Alias</th>
+	 * <th style="text-align:center"><i>UNSIGNED</i> Mode Value</th>
+	 * <th><i>SIGNED</i> Mode Value</th>
+	 * </tr>
+	 * <tr>
+	 * <td>&nbsp;</td>
+	 * <td></td>
+	 * <td><i></i></td>
+	 * <td></td>
+	 * <td></td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>100</td>
+	 * <td>2</td>
+	 * <td><i>UNSIGNED</i></td>
+	 * <td>1100100b</td>
+	 * <td>1100100b</td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>100</td>
+	 * <td>8</td>
+	 * <td><i>UNSIGNED</i></td>
+	 * <td>144o</td>
+	 * <td>144o</td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>100</td>
+	 * <td>10</td>
+	 * <td><i>SIGNED</i></td>
+	 * <td>100</td>
+	 * <td>100</td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>100</td>
+	 * <td>16</td>
+	 * <td><i>UNSIGNED</i></td>
+	 * <td>64h</td>
+	 * <td>64h</td>
+	 * </tr>
+	 * <tr>
+	 * <td>&nbsp;</td>
+	 * <td></td>
+	 * <td><i></i></td>
+	 * <td></td>
+	 * <td></td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>-1</td>
+	 * <td>2</td>
+	 * <td><i>UNSIGNED</i></td>
+	 * <td>1111111111111111111111111111111111111111111111111111111111111111b</td>
+	 * <td>-1b</td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>-1</td>
+	 * <td>8</td>
+	 * <td><i>UNSIGNED</i></td>
+	 * <td>1777777777777777777777o</td>
+	 * <td>-1o</td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>-1</td>
+	 * <td>10</td>
+	 * <td><i>SIGNED</i></td>
+	 * <td>18446744073709551615</td>
+	 * <td>-1</td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>-1</td>
+	 * <td>16</td>
+	 * <td><i>UNSIGNED</i></td>
+	 * <td>ffffffffffffffffh</td>
+	 * <td>-1h</td>
+	 * </tr>
+	 * <tr>
+	 * <td>&nbsp;</td>
+	 * <td></td>
+	 * <td><i></i></td>
+	 * <td></td>
+	 * <td></td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>-100</td>
+	 * <td>2</td>
+	 * <td><i>UNSIGNED</i></td>
+	 * <td>1111111111111111111111111111111111111111111111111111111110011100b</td>
+	 * <td>-1100100b</td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>-100</td>
+	 * <td>8</td>
+	 * <td><i>UNSIGNED</i></td>
+	 * <td>1777777777777777777634o</td>
+	 * <td>-144o</td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>-100</td>
+	 * <td>10</td>
+	 * <td><i>SIGNED</i></td>
+	 * <td>18446744073709551516</td>
+	 * <td>-100</td>
+	 * </tr>
+	 * <tr style="text-align:right;font-family: monospace">
+	 * <td>-100</td>
+	 * <td>16</td>
+	 * <td><i>UNSIGNED</i></td>
+	 * <td>ffffffffffffff9ch</td>
+	 * <td>-64h</td>
+	 * </tr>
 	 * </table>
+	 *
 	 * @param number The number to represent
 	 * @param radix The base in which <code>number</code> is represented
 	 * @param mode Specifies how the number is formatted with respect to its signed-ness
@@ -637,8 +783,7 @@ public final class NumericUtilities {
 	}
 
 	/**
-	 * Convert the given byte into a two character String, padding with a leading 0 if
-	 * needed.
+	 * Convert the given byte into a two character String, padding with a leading 0 if needed.
 	 *
 	 * @param b the byte
 	 * @return the byte string
@@ -728,6 +873,7 @@ public final class NumericUtilities {
 
 	/**
 	 * Determine if the provided Number is an integer type -- Byte, Short, Integer, or Long.
+	 *
 	 * @param number the object to check for for integer-type
 	 * @return true if the provided number is an integer-type, false otherwise
 	 */
@@ -738,6 +884,7 @@ public final class NumericUtilities {
 
 	/**
 	 * Determine if the provided Number class is an integer type.
+	 *
 	 * @param numClass Class of an object
 	 * @return true if the class parameter is a integer type, false otherwise
 	 */
@@ -747,6 +894,7 @@ public final class NumericUtilities {
 
 	/**
 	 * Determine if the provided Number is a floating-point type -- Float or Double.
+	 *
 	 * @param number the object to check for for floating-point-type
 	 * @return true if the provided number is a floating-point-type, false otherwise
 	 */
@@ -757,6 +905,7 @@ public final class NumericUtilities {
 
 	/**
 	 * Determine if the provided Number class is a floating-point type.
+	 *
 	 * @param numClass Class of an object
 	 * @return true if the class parameter is a floating-point type, false otherwise
 	 */
@@ -765,12 +914,12 @@ public final class NumericUtilities {
 	}
 
 	/**
-	 * Provides the protocol for rendering integer-type numbers in different
-	 * signed-ness modes.
+	 * Provides the protocol for rendering integer-type numbers in different signed-ness modes.
 	 */
 	private static interface IntegerRadixRenderer {
 		/**
 		 * Format the given number in the provided radix base.
+		 *
 		 * @param number the number to render
 		 * @param radix the base in which to render
 		 * @return a string representing the provided number in the given base
@@ -836,8 +985,8 @@ public final class NumericUtilities {
 		/**
 		 * {@inheritDoc}
 		 * <p>
-		 * Values to be rendered in binary, octal, or hexadecimal bases are rendered
-		 * as unsigned, numbers rendered in decimal are rendered as signed.
+		 * Values to be rendered in binary, octal, or hexadecimal bases are rendered as unsigned,
+		 * numbers rendered in decimal are rendered as signed.
 		 */
 		@Override
 		public String toString(long number, int radix) {

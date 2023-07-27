@@ -102,9 +102,7 @@ public class DataTypeHelper {
 		if (newDt == null) {
 			throw new InvalidDataTypeException("valid data-type not specified");
 		}
-		DataTypeComponent element = editModel.getComponent(index);
-		editModel.checkIsAllowableDataType(newDt,
-			element == null || !element.isFlexibleArrayComponent());
+		editModel.checkIsAllowableDataType(newDt);
 		int mrl = editModel.getMaxReplaceLength(index);
 		if ((mrl != -1) && (newDt.getLength() > mrl)) {
 			throw new InvalidDataTypeException(newDt.getDisplayName() + " doesn't fit within " +
@@ -148,7 +146,7 @@ public class DataTypeHelper {
 			throw new InvalidDataTypeException(
 				"Data type " + dt.getDisplayName() + " has no size and is not allowed.");
 		}
-		return DataTypeInstance.getDataTypeInstance(dt, dtLen);
+		return DataTypeInstance.getDataTypeInstance(dt, dtLen, true);
 	}
 
 	public static int requestDtSize(CompositeEditorProvider provider, String dtName,
@@ -205,7 +203,7 @@ public class DataTypeHelper {
 			int maxBytes = model.getMaxReplaceLength(index);
 			return requestBytes(model, dt, maxBytes);
 		}
-		return DataTypeInstance.getDataTypeInstance(dt, length);
+		return DataTypeInstance.getDataTypeInstance(dt, length, true);
 	}
 
 	public static DataTypeInstance requestBytes(CompositeEditorModel model, DataType dt,
@@ -230,7 +228,7 @@ public class DataTypeHelper {
 
 		if (size >= 1) {
 			model.setLastNumBytes(size);
-			return DataTypeInstance.getDataTypeInstance(dt, size);
+			return DataTypeInstance.getDataTypeInstance(dt, size, true);
 		}
 		return null;
 	}

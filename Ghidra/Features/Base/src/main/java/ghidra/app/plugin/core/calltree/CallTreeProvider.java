@@ -17,23 +17,22 @@ package ghidra.app.plugin.core.calltree;
 
 import java.awt.*;
 import java.awt.event.*;
-import java.awt.geom.Rectangle2D;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.*;
 import javax.swing.tree.TreePath;
 
-import docking.ActionContext;
-import docking.WindowPosition;
+import docking.*;
 import docking.action.*;
-import docking.util.GraphicsUtils;
+import docking.resources.icons.NumberIcon;
 import docking.widgets.dialogs.NumberInputDialog;
 import docking.widgets.label.GLabel;
 import docking.widgets.tree.*;
 import docking.widgets.tree.support.GTreeSelectionEvent.EventOrigin;
 import docking.widgets.tree.support.GTreeSelectionListener;
 import docking.widgets.tree.tasks.GTreeExpandAllTask;
+import generic.theme.GIcon;
 import ghidra.app.events.ProgramLocationPluginEvent;
 import ghidra.app.events.ProgramSelectionPluginEvent;
 import ghidra.app.services.GoToService;
@@ -52,18 +51,18 @@ import ghidra.util.exception.CancelledException;
 import ghidra.util.task.SwingUpdateManager;
 import ghidra.util.task.TaskMonitor;
 import resources.Icons;
-import resources.ResourceManager;
 
 public class CallTreeProvider extends ComponentProviderAdapter implements DomainObjectListener {
 
 	static final String EXPAND_ACTION_NAME = "Fully Expand Selected Nodes";
 	static final String TITLE = "Function Call Trees";
-	private static final Icon EMPTY_ICON = ResourceManager.loadImage("images/EmptyIcon16.gif");
+	private static final Icon EMPTY_ICON = Icons.EMPTY_ICON;
 	private static final Icon EXPAND_ICON = Icons.EXPAND_ALL_ICON;
 	private static final Icon COLLAPSE_ICON = Icons.COLLAPSE_ALL_ICON;
 
-	private static ImageIcon REFRESH_ICON = Icons.REFRESH_ICON;
-	private static Icon REFRESH_NOT_NEEDED_ICON = ResourceManager.getDisabledIcon(REFRESH_ICON, 60);
+	private static Icon REFRESH_ICON = new GIcon("icon.plugin.calltree.refresh");
+	private static Icon REFRESH_NOT_NEEDED_ICON =
+		new GIcon("icon.plugin.calltree.refresh.not.needed");
 
 	private static final String RECURSE_DEPTH_PROPERTY_NAME = "call.tree.recurse.depth";
 	private static final String DEFAULT_RECURSE_DEPTH = "5";
@@ -283,7 +282,8 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 
 					for (TreePath path : selectionPaths) {
 						GTreeNode node = (GTreeNode) path.getLastPathComponent();
-						if (node instanceof GTreeNode) {
+						if (node instanceof OutgoingCallsRootNode ||
+							node instanceof IncomingCallsRootNode) {
 							return false;
 						}
 					}
@@ -350,8 +350,8 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 				return true;
 			}
 		};
-		goToSourceAction.setPopupMenuData(
-			new MenuData(new String[] { "Go To Call Source" }, goToMenu));
+		goToSourceAction
+			.setPopupMenuData(new MenuData(new String[] { "Go To Call Source" }, goToMenu));
 		goToSourceAction.setHelpLocation(
 			new HelpLocation(plugin.getName(), "Call_Tree_Context_Action_Goto_Source"));
 		tool.addLocalAction(this, goToSourceAction);
@@ -365,12 +365,12 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 				doUpdate();
 			}
 		};
-		filterDuplicates.setToolBarData(
-			new ToolBarData(ResourceManager.loadImage("images/application_double.png"),
+		filterDuplicates
+			.setToolBarData(new ToolBarData(new GIcon("icon.plugin.calltree.filter.duplicates"),
 				filterOptionsToolbarGroup, "1"));
 		filterDuplicates.setSelected(true);
-		filterDuplicates.setHelpLocation(
-			new HelpLocation(plugin.getName(), "Call_Tree_Action_Filter"));
+		filterDuplicates
+			.setHelpLocation(new HelpLocation(plugin.getName(), "Call_Tree_Action_Filter"));
 		tool.addLocalAction(this, filterDuplicates);
 
 		//
@@ -393,8 +393,8 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 			"<html>Recurse Depth<br><br>Limits the depth to " + "which recursing tree operations" +
 				"<br> will go.  Example operations include <b>Expand All</b> and filtering");
 		recurseIcon = new NumberIcon(recurseDepth.get());
-		recurseDepthAction.setToolBarData(
-			new ToolBarData(recurseIcon, filterOptionsToolbarGroup, "2"));
+		recurseDepthAction
+			.setToolBarData(new ToolBarData(recurseIcon, filterOptionsToolbarGroup, "2"));
 		recurseDepthAction.setHelpLocation(
 			new HelpLocation(plugin.getName(), "Call_Tree_Action_Recurse_Depth"));
 
@@ -414,8 +414,8 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 			"Listing to<br>the <b>source</b> location of the call");
 		navigationOutgoingAction.setToolBarData(new ToolBarData(
 			Icons.NAVIGATE_ON_OUTGOING_EVENT_ICON, navigationOptionsToolbarGroup, "1"));
-		navigationOutgoingAction.setHelpLocation(
-			new HelpLocation(plugin.getName(), "Call_Tree_Action_Navigation"));
+		navigationOutgoingAction
+			.setHelpLocation(new HelpLocation(plugin.getName(), "Call_Tree_Action_Navigation"));
 		tool.addLocalAction(this, navigationOutgoingAction);
 
 		//
@@ -503,7 +503,7 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 					return true;
 				}
 			};
-		ImageIcon icon = ResourceManager.loadImage("images/text_align_justify.png");
+		Icon icon = new GIcon("icon.plugin.calltree.filter.select.source");
 		selectSourceAction.setPopupMenuData(
 			new MenuData(new String[] { "Select Call Source" }, icon, selectionMenuGroup));
 		selectSourceAction.setHelpLocation(
@@ -581,8 +581,7 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 				return currentFunction != null;
 			}
 		};
-		homeAction.setToolBarData(
-			new ToolBarData(ResourceManager.loadImage("images/go-home.png"), homeToolbarGroup));
+		homeAction.setToolBarData(new ToolBarData(Icons.HOME_ICON, homeToolbarGroup));
 		homeAction.setHelpLocation(new HelpLocation(plugin.getName(), "Call_Tree_Action_Home"));
 		tool.addLocalAction(this, homeAction);
 
@@ -596,8 +595,8 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 		refreshAction.setEnabled(true);
 		refreshAction.setDescription("<html>Push at any time to refresh the current trees.<br>" +
 			"This is highlighted when the data <i>may</i> be stale.<br>");
-		refreshAction.setHelpLocation(
-			new HelpLocation(plugin.getName(), "Call_Tree_Action_Refresh"));
+		refreshAction
+			.setHelpLocation(new HelpLocation(plugin.getName(), "Call_Tree_Action_Refresh"));
 		tool.addLocalAction(this, refreshAction);
 
 		//
@@ -671,8 +670,8 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 			"Call_Tree_Context_Action_Show_Call_Tree_For_Function"));
 		newCallTree.setPopupMenuData(new MenuData(new String[] { "Show Call Tree For Function" },
 			CallTreePlugin.PROVIDER_ICON, newTreeMenu));
-		newCallTree.setDescription("Show the Function Call Tree window for the function " +
-			"selected in the call tree");
+		newCallTree.setDescription(
+			"Show the Function Call Tree window for the function " + "selected in the call tree");
 		tool.addLocalAction(this, newCallTree);
 	}
 
@@ -712,7 +711,7 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 	@Override
 	public ActionContext getActionContext(MouseEvent e) {
 		if (e == null) {
-			return new ActionContext(this, getActiveComponent());
+			return new DefaultActionContext(this, getActiveComponent());
 		}
 
 		Object source = e.getSource();
@@ -722,7 +721,7 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 			if (outgoingTree.isMyJTree(jTree)) {
 				gTree = outgoingTree;
 			}
-			return new ActionContext(this, gTree);
+			return new DefaultActionContext(this, gTree);
 		}
 
 		return null;
@@ -1090,11 +1089,16 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 	}
 
 	private boolean updateRootNodes(Function function) {
-		CallNode callNode = (CallNode) incomingTree.getModelRoot();
-		Function nodeFunction = callNode.getContainingFunction();
-		if (nodeFunction.equals(function)) {
-			reloadUpdateManager.update();
-			return true;
+		GTreeNode root = incomingTree.getModelRoot();
+		// root might be a "PendingRootNode"
+		//TODO do we need to use a PendingRootNode?
+		if (root instanceof CallNode) {
+			CallNode callNode = (CallNode) root;
+			Function nodeFunction = callNode.getRemoteFunction();
+			if (nodeFunction.equals(function)) {
+				reloadUpdateManager.update();
+				return true;
+			}
 		}
 
 		return false;
@@ -1126,7 +1130,7 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 
 			// first, if the given node represents the function we have, then we don't need to 
 			// go any further
-			if (function.equals(node.getContainingFunction())) {
+			if (function.equals(node.getRemoteFunction())) {
 				GTreeNode parent = node.getParent();
 				parent.removeNode(node);
 				parent.addNode(node.recreate());
@@ -1261,10 +1265,15 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 		}
 
 		@Override
-		protected void expandNode(GTreeNode node, TaskMonitor monitor) throws CancelledException {
+		protected void expandNode(GTreeNode node, boolean force, TaskMonitor monitor)
+				throws CancelledException {
 			TreePath treePath = node.getTreePath();
 			Object[] path = treePath.getPath();
 			if (path.length > maxDepth) {
+				return;
+			}
+
+			if (!force && !node.isAutoExpandPermitted()) {
 				return;
 			}
 
@@ -1273,98 +1282,7 @@ public class CallTreeProvider extends ComponentProviderAdapter implements Domain
 				return; // this path hit a function that is already in the path
 			}
 
-			super.expandNode(node, monitor);
-		}
-	}
-
-	private class NumberIcon implements Icon {
-		private String number;
-		private float bestFontSize = -1;
-
-		NumberIcon(int number) {
-			this.number = Integer.toString(number);
-		}
-
-		void setNumber(int number) {
-			this.number = Integer.toString(number);
-			bestFontSize = -1;
-		}
-
-		@Override
-		public void paintIcon(Component c, Graphics g, int x, int y) {
-			g.setColor(Color.WHITE);
-			g.fillRect(x, y, getIconWidth(), getIconHeight());
-			g.setColor(new Color(0xb5d5ff));
-			g.drawRect(x, y, getIconWidth(), getIconHeight());
-
-			float fontSize = getMaxFontSize(g, getIconWidth() - 1, getIconHeight());
-			Font originalFont = g.getFont();
-			Font textFont = originalFont.deriveFont(fontSize).deriveFont(Font.BOLD);
-			g.setFont(textFont);
-
-			FontMetrics fontMetrics = g.getFontMetrics(textFont);
-			Rectangle2D stringBounds = fontMetrics.getStringBounds(number, g);
-			int textHeight = (int) stringBounds.getHeight();
-			int iconHeight = getIconHeight();
-			int space = y + iconHeight - textHeight;
-			int halfSpace = space >> 1;
-			int baselineY = y + iconHeight - halfSpace;// - halfTextHeight;// + halfTextHeight;
-
-			int textWidth = (int) stringBounds.getWidth();
-			int iconWidth = getIconWidth();
-			int halfWidth = iconWidth >> 1;
-			int halfTextWidth = textWidth >> 1;
-			int baselineX = x + halfWidth - halfTextWidth;
-
-			g.setColor(Color.BLACK);
-			JComponent jc = null;
-			if (c instanceof JComponent) {
-				jc = (JComponent) c;
-			}
-			GraphicsUtils.drawString(jc, g, number, baselineX, baselineY);
-		}
-
-		private float getMaxFontSize(Graphics g, int width, int height) {
-			if (bestFontSize > 0) {
-				return bestFontSize;
-			}
-
-			float size = 12f;
-			Font font = g.getFont().deriveFont(size); // reasonable default
-			if (textFitsInFont(g, font, width, height)) {
-				bestFontSize = size;
-				return bestFontSize;
-			}
-
-			do {
-				size--;
-				font = g.getFont().deriveFont(size);
-			}
-			while (!textFitsInFont(g, font, width, height));
-
-			bestFontSize = Math.max(1f, size);
-			return bestFontSize;
-		}
-
-		private boolean textFitsInFont(Graphics g, Font font, int width, int height) {
-			FontMetrics fontMetrics = g.getFontMetrics(font);
-			int textWidth = fontMetrics.stringWidth(number);
-			if (textWidth > width) {
-				return false;
-			}
-
-			int textHeight = fontMetrics.getHeight();
-			return textHeight < height;
-		}
-
-		@Override
-		public int getIconHeight() {
-			return 16;
-		}
-
-		@Override
-		public int getIconWidth() {
-			return 16;
+			super.expandNode(node, false, monitor);
 		}
 	}
 

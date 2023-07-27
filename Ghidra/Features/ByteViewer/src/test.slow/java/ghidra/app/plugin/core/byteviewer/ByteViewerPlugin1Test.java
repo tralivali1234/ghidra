@@ -125,7 +125,7 @@ public class ByteViewerPlugin1Test extends AbstractGhidraHeadedIntegrationTest {
 
 	@Test
 	public void testOpenProgramNoMemory() throws Exception {
-		tool.removePlugins(new Plugin[] { cbPlugin });
+		tool.removePlugins(List.of(cbPlugin));
 
 		runSwing(() -> {
 			ProgramManager pm = tool.getService(ProgramManager.class);
@@ -819,7 +819,7 @@ public class ByteViewerPlugin1Test extends AbstractGhidraHeadedIntegrationTest {
 		final DockingActionIf action = getAction(plugin, "Byte Viewer Options");
 		assertTrue(action.isEnabled());
 
-		runSwing(() -> action.actionPerformed(new ActionContext()), false);
+		runSwing(() -> action.actionPerformed(new DefaultActionContext()), false);
 		waitForSwing();
 		ByteViewerOptionsDialog d = waitForDialogComponent(ByteViewerOptionsDialog.class);
 		return d;

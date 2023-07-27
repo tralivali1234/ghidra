@@ -17,8 +17,10 @@ package ghidra.program.database;
 
 import java.io.IOException;
 
+import db.*;
 import db.buffers.BufferFile;
 import generic.test.AbstractGenericTest;
+import generic.test.AbstractGuiTest;
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.framework.data.GhidraFolder;
 import ghidra.framework.model.DomainFile;
@@ -28,7 +30,8 @@ import ghidra.program.model.listing.ProgramChangeSet;
 import ghidra.test.TestEnv;
 import ghidra.util.InvalidNameException;
 import ghidra.util.exception.CancelledException;
-import ghidra.util.task.TaskMonitorAdapter;
+import ghidra.util.exception.VersionException;
+import ghidra.util.task.TaskMonitor;
 
 /**
  * This model is used by the {@link MergeTestFacilitator} to configure programs needed 
@@ -62,8 +65,8 @@ public abstract class AbstractMTFModel {
 	 * This represents the original checked-out version.
 	 * Program returned will be released by the MergeTestFacilitator 
 	 * when disposed or re-initialized.
+	 * @return the program
 	 */
-
 	public ProgramDB getOriginalProgram() {
 		return originalProgram;
 	}
@@ -73,8 +76,8 @@ public abstract class AbstractMTFModel {
 	 * This represents the current version.
 	 * Program returned will be released by the MergeTestFacilitator 
 	 * when disposed or re-initialized.
+	 * @return the program
 	 */
-
 	public ProgramDB getLatestProgram() {
 		return latestProgram;
 	}
@@ -84,8 +87,8 @@ public abstract class AbstractMTFModel {
 	 * This represents the local program to be checked-in.
 	 * Program returned will be released by the MergeTestFacilitator 
 	 * when disposed or re-initialized.
+	 * @return the program
 	 */
-
 	public ProgramDB getPrivateProgram() {
 		return privateProgram;
 	}
@@ -95,8 +98,8 @@ public abstract class AbstractMTFModel {
 	 * This represents the checkin program containing the merged data.
 	 * Program returned will be released by the MergeTestFacilitator 
 	 * when disposed or re-initialized.
+	 * @return the program
 	 */
-
 	public ProgramDB getResultProgram() {
 		return resultProgram;
 	}
@@ -105,7 +108,7 @@ public abstract class AbstractMTFModel {
 		return privateChangeSet;
 	}
 
-	public ProgramChangeSet getResultChangeSet() {
+	public ProgramChangeSet getLatestChangeSet() {
 		return latestChangeSet;
 	}
 
@@ -113,7 +116,7 @@ public abstract class AbstractMTFModel {
 		return env;
 	}
 
-	protected void disableAutoAnalysis(Program p) {
+	protected static void disableAutoAnalysis(Program p) {
 		// Disable all analysis
 		AutoAnalysisManager analysisMgr = AutoAnalysisManager.getAnalysisManager(p);
 		AbstractGenericTest.setInstanceField("isEnabled", analysisMgr, Boolean.FALSE);
@@ -129,7 +132,7 @@ public abstract class AbstractMTFModel {
 		BufferFile bufferFile = item.open();
 		try {
 			fileSystem.createDatabase(parent.getPathname(), newName, FileIDFactory.createFileID(),
-				bufferFile, null, item.getContentType(), false, TaskMonitorAdapter.DUMMY_MONITOR,
+				bufferFile, null, item.getContentType(), false, TaskMonitor.DUMMY,
 				null);
 		}
 		finally {
@@ -141,6 +144,7 @@ public abstract class AbstractMTFModel {
 	}
 
 	protected void cleanup() {
+
 		if (originalProgram != null) {
 			originalProgram.release(this);
 			originalProgram = null;
@@ -154,6 +158,8 @@ public abstract class AbstractMTFModel {
 			privateProgram = null;
 		}
 		if (resultProgram != null) {
+			resultProgram.flushEvents();
+			AbstractGuiTest.waitForSwing();
 			resultProgram.release(this);
 			resultProgram = null;
 		}
@@ -166,4 +172,25 @@ public abstract class AbstractMTFModel {
 			throws Exception;
 
 	public abstract void initialize(String programName, ProgramModifierListener l) throws Exception;
+
+	/**
+	 * Clone a program to a new instance.  The new instance will be assigned an empty change-set.
+	 * @param prog program to be cloned
+	 * @param consumer new program consumer
+	 * @return new program instance
+	 * @throws IOException if a file IO error occurs
+	 */
+	public static ProgramDB cloneProgram(ProgramDB prog, Object consumer) throws IOException {
+		try {
+			DBHandle newDbh = DBTestUtils.cloneDbHandle(prog.getDBHandle());
+			ProgramDB newProg =
+				new ProgramDB(newDbh, DBConstants.UPDATE, TaskMonitor.DUMMY, consumer);
+			newProg.setChangeSet(new ProgramDBChangeSet(newProg.getAddressMap(), 20));
+			disableAutoAnalysis(newProg);
+			return newProg;
+		}
+		catch (CancelledException | VersionException e) {
+			throw new RuntimeException(e); // unexpected
+		}
+	}
 }

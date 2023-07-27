@@ -50,8 +50,9 @@ public class DemanglerCmd extends BackgroundCommand {
 
 	@Override
 	public boolean applyTo(DomainObject obj, TaskMonitor monitor) {
-		Program prog = (Program) obj;
 
+		// search until we find a demangler that can handle the given mangled input
+		Program prog = (Program) obj;
 		for (Demangler demangler : getDemanglers()) {
 			if (!demangler.canDemangle(prog)) {
 				continue;
@@ -62,11 +63,11 @@ public class DemanglerCmd extends BackgroundCommand {
 			}
 
 			if (result != null) {
-				break; // successful; don't try a different demangler
+				return true; // successful; don't try a different demangler
 			}
 		}
 
-		return true;
+		return false;
 	}
 
 	private boolean doDemangle(Demangler demangler, Program program, TaskMonitor monitor) {
@@ -77,10 +78,12 @@ public class DemanglerCmd extends BackgroundCommand {
 		catch (DemangledException e) {
 			if (e.isInvalidMangledName()) {
 				//ignore invalid names, consider as not an error
+				setStatusMsg("Invalid mangled name");
 				return true; // no real error
 			}
 
-			setStatusMsg("Unable to demangle symbol: " + mangled + ".  Message: " + e.getMessage());
+			setStatusMsg("Unable to demangle symbol: " + mangled + " at " + addr + ".  Message: " +
+				e.getMessage());
 			return false; // error
 
 			// This produces too many messages for non-demangled symbols.  If we could
@@ -91,7 +94,8 @@ public class DemanglerCmd extends BackgroundCommand {
 		}
 		catch (Exception e) {
 			// Demangler IndexOutOfBoundsException that we're not sure how to fix 
-			setStatusMsg("Unable to demangle symbol: " + mangled + ". Message: " + e.getMessage());
+			setStatusMsg("Unable to demangle symbol: " + mangled + " at " + addr + ". Message: " +
+				e.getMessage());
 			return false;
 		}
 
@@ -111,7 +115,7 @@ public class DemanglerCmd extends BackgroundCommand {
 		}
 
 		setStatusMsg(
-			"Failed to apply mangled symbol at " + addr.toString() + "; name:  " + mangled + " (" +
+			"Failed to apply mangled symbol at " + addr + "; name:  " + mangled + " (" +
 				demangler.getClass().getName() + "/" + demangledObject.getClass().getName() + ")");
 		return false; // error
 	}
@@ -127,7 +131,7 @@ public class DemanglerCmd extends BackgroundCommand {
 				".  Message: " + message);
 		}
 
-		Msg.error(this, getStatusMsg());
+		Msg.error(this, getStatusMsg(), e);
 	}
 
 	public String getResult() {

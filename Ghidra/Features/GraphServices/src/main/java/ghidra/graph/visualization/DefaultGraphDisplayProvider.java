@@ -15,23 +15,28 @@
  */
 package ghidra.graph.visualization;
 
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.stream.Collectors;
 
 import ghidra.framework.options.Options;
+import ghidra.framework.options.PreferenceState;
 import ghidra.framework.plugintool.PluginTool;
-import ghidra.service.graph.GraphDisplay;
-import ghidra.service.graph.GraphDisplayProvider;
+import ghidra.service.graph.*;
 import ghidra.util.HelpLocation;
 import ghidra.util.Swing;
 import ghidra.util.task.TaskMonitor;
 
 public class DefaultGraphDisplayProvider implements GraphDisplayProvider {
 
-	private Set<DefaultGraphDisplay> displays = new HashSet<>();
+	private static final String PREFERENCES_KEY = "GRAPH_DISPLAY_SERVICE";
+	private static final String DEFAULT_SATELLITE_STATE = "DEFAULT_SATELLITE_STATE";
+	private final Set<DefaultGraphDisplayWrapper> displays = new CopyOnWriteArraySet<>();
 	private PluginTool pluginTool;
 	private Options options;
-	private int displayCounter;
+	private int displayCounter = 1;
+	private boolean defaultSatelliteState;
+	private PreferenceState preferences;
 
 	@Override
 	public String getName() {
@@ -47,35 +52,56 @@ public class DefaultGraphDisplayProvider implements GraphDisplayProvider {
 	}
 
 	@Override
-	public GraphDisplay getGraphDisplay(boolean reuseGraph,
-			TaskMonitor monitor) {
+	public GraphDisplay getGraphDisplay(boolean reuseGraph, TaskMonitor monitor) {
 
-		if (reuseGraph && !displays.isEmpty()) {
-			return getVisibleGraph();
+		return Swing.runNow(() -> {
+
+			if (reuseGraph && !displays.isEmpty()) {
+				DefaultGraphDisplayWrapper visibleGraph =
+					(DefaultGraphDisplayWrapper) getActiveGraphDisplay();
+
+				// set a temporary dummy graph; clients will set a real graph
+				visibleGraph.setGraph(new AttributedGraph("Empty", null),
+					new DefaultGraphDisplayOptions(), "", false, monitor);
+				visibleGraph.restoreDefaultState();
+				return visibleGraph;
+			}
+
+			DefaultGraphDisplayWrapper display =
+				new DefaultGraphDisplayWrapper(this, displayCounter++);
+			displays.add(display);
+			return display;
+		});
+	}
+
+	@Override
+	public GraphDisplay getActiveGraphDisplay() {
+		if (displays.isEmpty()) {
+			return null;
 		}
 
-		DefaultGraphDisplay display =
-			Swing.runNow(() -> new DefaultGraphDisplay(this, displayCounter++));
-		displays.add(display);
-		return display;
+		// get the sorted displays in order to pick the newest graph
+		return getAllGraphDisplays().get(0);
+	}
+
+	@Override
+	public List<GraphDisplay> getAllGraphDisplays() {
+		return displays.stream().sorted().collect(Collectors.toList());
 	}
 
 	@Override
 	public void initialize(PluginTool tool, Options graphOptions) {
 		this.pluginTool = tool;
 		this.options = graphOptions;
-	}
 
-	/**
-	 * Get a {@code GraphDisplay} that is 'showing', assuming that is the one the user
-	 * wishes to append to.
-	 * Called only when displays is not empty. If there are no 'showing' displays,
-	 * return one from the Set via its iterator
-	 * @return a display that is showing
-	 */
-	private GraphDisplay getVisibleGraph() {
-		return displays.stream().filter(d -> d.getComponent().isShowing())
-				.findAny().orElse(displays.iterator().next());
+		Swing.assertSwingThread("Graph preferences must be accessed on the Swing thread");
+		preferences = pluginTool.getWindowManager().getPreferenceState(PREFERENCES_KEY);
+		if (preferences == null) {
+			preferences = new PreferenceState();
+			pluginTool.getWindowManager().putPreferenceState(PREFERENCES_KEY, preferences);
+		}
+
+		defaultSatelliteState = preferences.getBoolean(DEFAULT_SATELLITE_STATE, false);
 	}
 
 	@Override
@@ -85,11 +111,12 @@ public class DefaultGraphDisplayProvider implements GraphDisplayProvider {
 
 	@Override
 	public void dispose() {
-		// first copy to new set to avoid concurrent modification exception
-		HashSet<DefaultGraphDisplay> set = new HashSet<>(displays);
-		for (DefaultGraphDisplay display : set) {
-			display.close();
-		}
+
+		// Calling close() will trigger the display to call back to this class's remove(). Avoid
+		// unnecessary copies in the 'copy on write' set by closing after clearing the set.
+		Set<GraphDisplay> set = new HashSet<>(displays);
+		displays.clear();
+		set.forEach(d -> d.close());
 	}
 
 	@Override
@@ -97,7 +124,17 @@ public class DefaultGraphDisplayProvider implements GraphDisplayProvider {
 		return new HelpLocation("GraphServices", "Default_Graph_Display");
 	}
 
-	public void remove(DefaultGraphDisplay defaultGraphDisplay) {
-		displays.remove(defaultGraphDisplay);
+	void remove(DefaultGraphDisplay defaultGraphDisplay) {
+		displays.removeIf(wrapper -> wrapper.isDelegate(defaultGraphDisplay));
+	}
+
+	boolean getDefaultSatelliteState() {
+		return defaultSatelliteState;
+	}
+
+	void setDefaultSatelliteState(boolean b) {
+		Swing.assertSwingThread("Graph preferences must be accessed on the Swing thread");
+		defaultSatelliteState = b;
+		preferences.putBoolean(DEFAULT_SATELLITE_STATE, b);
 	}
 }

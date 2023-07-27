@@ -28,11 +28,10 @@ import docking.action.MenuData;
 import docking.tool.ToolConstants;
 import docking.widgets.OptionDialog;
 import ghidra.app.util.FileOpenDropHandler;
-import ghidra.framework.main.FrontEndOnly;
 import ghidra.framework.model.Project;
 import ghidra.framework.model.ToolTemplate;
 import ghidra.framework.options.PreferenceState;
-import ghidra.framework.plugintool.Plugin;
+import ghidra.framework.plugintool.PluginConfigurationModel;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.framework.plugintool.dialog.*;
 import ghidra.framework.plugintool.util.*;
@@ -56,9 +55,6 @@ public class GhidraTool extends PluginTool {
 	public static boolean autoSave = true;
 
 	private FileOpenDropHandler fileOpenDropHandler;
-
-	private PluginClassManager pluginClassManager;
-
 	private DockingAction configureToolAction;
 
 	/**
@@ -100,11 +96,8 @@ public class GhidraTool extends PluginTool {
 	}
 
 	@Override
-	public PluginClassManager getPluginClassManager() {
-		if (pluginClassManager == null) {
-			pluginClassManager = new PluginClassManager(Plugin.class, FrontEndOnly.class);
-		}
-		return pluginClassManager;
+	protected PluginsConfiguration createPluginsConfigurations() {
+		return new GhidraPluginsConfiguration();
 	}
 
 	@Override
@@ -125,8 +118,8 @@ public class GhidraTool extends PluginTool {
 	}
 
 	@Override
-	public void restoreWindowingDataFromXml(Element windowData) {
-		winMgr.restoreWindowDataFromXml(windowData);
+	public void restoreWindowingDataFromXml(Element rootElement) {
+		winMgr.restoreWindowDataFromXml(rootElement);
 	}
 
 	@Override
@@ -167,12 +160,12 @@ public class GhidraTool extends PluginTool {
 	}
 
 	@Override
-	public void exit() {
+	public void dispose() {
 		if (fileOpenDropHandler != null) {
 			fileOpenDropHandler.dispose();
 			fileOpenDropHandler = null;
 		}
-		super.exit();
+		super.dispose();
 	}
 
 	private void addCloseAction() {
@@ -207,7 +200,7 @@ public class GhidraTool extends PluginTool {
 		};
 
 		configureToolAction.setMenuBarData(new MenuData(
-			new String[] { ToolConstants.MENU_FILE, "Configure..." }, null, "PrintPost_PreTool"));
+			new String[] { ToolConstants.MENU_FILE, "Configure" }, null, "PrintPost_PreTool"));
 
 		configureToolAction.setEnabled(true);
 		addAction(configureToolAction);
@@ -254,15 +247,51 @@ public class GhidraTool extends PluginTool {
 		int option = OptionDialog.showYesNoDialog(getActiveWindow(), "New Plugins Found!",
 			"New extension plugins detected. Would you like to configure them?");
 		if (option == OptionDialog.YES_OPTION) {
-			List<PluginDescription> pluginDescriptions =
-				PluginUtils.getPluginDescriptions(this, newPlugins);
-			PluginInstallerDialog pluginInstaller =
-				new PluginInstallerDialog("New Plugins Found!", this, pluginDescriptions);
+			List<PluginDescription> pluginDescriptions = getPluginDescriptions(this, newPlugins);
+			PluginInstallerDialog pluginInstaller = new PluginInstallerDialog("New Plugins Found!",
+				this, new PluginConfigurationModel(this), pluginDescriptions);
 			showDialog(pluginInstaller);
 		}
 
 		// 5. Update the preference file to reflect the new extensions now known to this tool.
 		addInstalledExtensions(newExtensions);
+	}
+
+	/**
+	 * Finds all {@link PluginDescription} objects that match a given set of plugin classes. This
+	 * effectively tells the caller which of the given plugins have been loaded by the class loader.
+	 * <p>
+	 * Note that this method does not take path/package information into account when finding
+	 * plugins; in the example above, if there is more than one plugin with the name "FooPlugin",
+	 * only one will be found (the one found is not guaranteed to be the first).
+	 *
+	 * @param tool the current tool
+	 * @param plugins the list of plugin classes to search for
+	 * @return list of plugin descriptions
+	 */
+	private List<PluginDescription> getPluginDescriptions(PluginTool tool, List<Class<?>> plugins) {
+
+		// First define the list of plugin descriptions to return
+		List<PluginDescription> retPlugins = new ArrayList<>();
+
+		// Get all plugins that have been loaded
+		PluginsConfiguration pluginClassManager = getPluginsConfiguration();
+		List<PluginDescription> allPluginDescriptions =
+			pluginClassManager.getManagedPluginDescriptions();
+
+		// see if an entry exists in the list of all loaded plugins
+		for (Class<?> plugin : plugins) {
+			String pluginName = plugin.getSimpleName();
+
+			Optional<PluginDescription> desc = allPluginDescriptions.stream()
+					.filter(d -> (pluginName.equals(d.getName())))
+					.findAny();
+			if (desc.isPresent()) {
+				retPlugins.add(desc.get());
+			}
+		}
+
+		return retPlugins;
 	}
 
 	/**

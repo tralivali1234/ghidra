@@ -15,8 +15,7 @@
  */
 package ghidra.app.plugin.core.datamgr.editor;
 
-import static ghidra.app.plugin.core.datamgr.editor.EnumTableModel.NAME_COL;
-import static ghidra.app.plugin.core.datamgr.editor.EnumTableModel.VALUE_COL;
+import static ghidra.app.plugin.core.datamgr.editor.EnumTableModel.*;
 import static org.junit.Assert.*;
 
 import java.awt.*;
@@ -30,7 +29,7 @@ import javax.swing.table.TableCellEditor;
 
 import org.junit.*;
 
-import docking.ActionContext;
+import docking.DefaultActionContext;
 import docking.action.DockingActionIf;
 import docking.widgets.OptionDialog;
 import generic.stl.Pair;
@@ -42,7 +41,7 @@ import ghidra.program.model.data.Enum;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.EquateTable;
 import ghidra.test.*;
-import ghidra.util.task.TaskMonitorAdapter;
+import ghidra.util.task.TaskMonitor;
 
 /**
  * Tests for editing an Enumerated data type.
@@ -53,10 +52,6 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 	private PluginTool tool;
 	private TestEnv env;
 	private DataTypeManagerPlugin plugin;
-
-	public EnumEditor1Test() {
-		super();
-	}
 
 	@Before
 	public void setUp() throws Exception {
@@ -80,8 +75,9 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 
 	@Test
 	public void testEnumFields() throws Exception {
-		Category c = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category c = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		Enum enumm = createEnum(c, "TestEnum", 1);
 		edit(enumm);
 
@@ -133,8 +129,9 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 
 	@Test
 	public void testEnumSize1() throws Exception {
-		Category category = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category category = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		Enum enumm = createEnum(category, "TestEnum", 1);
 		edit(enumm);
 
@@ -152,25 +149,25 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		EnumTableModel model = (EnumTableModel) table.getModel();
 
 		assertEquals("New_Name", model.getValueAt(0, NAME_COL));
-		assertEquals("0x0", model.getValueAt(0, VALUE_COL));
+		assertEquals(0L, model.getValueAt(0, VALUE_COL));
 
 		addEnumValue();
 
 		assertEquals("New_Name_(1)", model.getValueAt(1, NAME_COL));
-		assertEquals("0x1", model.getValueAt(1, VALUE_COL));
+		assertEquals(1L, model.getValueAt(1, VALUE_COL));
 
 		addEnumValue();
 
 		assertEquals("New_Name_(2)", model.getValueAt(2, NAME_COL));
-		assertEquals("0x2", model.getValueAt(2, VALUE_COL));
+		assertEquals(2L, model.getValueAt(2, VALUE_COL));
 
 		editValueInTable(1, "0x5");
 
 		// 5 gets moved to the end
-		assertEquals("0x5", model.getValueAt(2, VALUE_COL));
+		assertEquals(5L, model.getValueAt(2, VALUE_COL));
 
 		// apply the change
-		runSwing(() -> applyAction.actionPerformed(new ActionContext()));
+		runSwing(() -> applyAction.actionPerformed(new DefaultActionContext()));
 		program.flushEvents();
 		waitForSwing();
 
@@ -183,8 +180,9 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 	@Test
 	public void testEnumSize1BadInput() throws Exception {
 		// test entering too large a value
-		Category category = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category category = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		Enum enumm = createEnum(category, "TestEnum", 1);
 		edit(enumm);
 
@@ -202,31 +200,32 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		EnumTableModel model = (EnumTableModel) table.getModel();
 
 		assertEquals("New_Name", model.getValueAt(0, NAME_COL));
-		assertEquals("0x0", model.getValueAt(0, VALUE_COL));
+		assertEquals(0L, model.getValueAt(0, VALUE_COL));
 
 		addEnumValue();
 
 		String editName = "New_Name_(1)";
 		assertEquals(editName, model.getValueAt(1, NAME_COL));
-		assertEquals("0x1", model.getValueAt(1, VALUE_COL));
+		assertEquals(1L, model.getValueAt(1, VALUE_COL));
 
 		addEnumValue();
 
 		assertEquals("New_Name_(2)", model.getValueAt(2, NAME_COL));
-		assertEquals("0x2", model.getValueAt(2, VALUE_COL));
+		assertEquals(2L, model.getValueAt(2, VALUE_COL));
 
 		int row = getRowFor(editName);
 
 		editValueInTable(row, "0x777");
 
 		row = getRowFor(editName); // the row may have changed if we are sorted on the values col
-		assertEquals("0x77", model.getValueAt(row, VALUE_COL));
+		assertEquals(0x77L, model.getValueAt(row, VALUE_COL));
 	}
 
 	@Test
 	public void testEnumSize4BadInput() throws Exception {
-		Category category = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category category = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		Enum enumm = createEnum(category, "MyTestEnum", 4);
 		edit(enumm);
 
@@ -252,31 +251,32 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		final EnumTableModel model = (EnumTableModel) table.getModel();
 
 		assertEquals("New_Name", model.getValueAt(0, NAME_COL));
-		assertEquals("0x0", model.getValueAt(0, VALUE_COL));
+		assertEquals(0L, model.getValueAt(0, VALUE_COL));
 
 		addEnumValue();
 
 		String editName = "New_Name_(1)";
 		assertEquals(editName, model.getValueAt(1, NAME_COL));
-		assertEquals("0x1", model.getValueAt(1, VALUE_COL));
+		assertEquals(1L, model.getValueAt(1, VALUE_COL));
 
 		addEnumValue();
 
 		assertEquals("New_Name_(2)", model.getValueAt(2, NAME_COL));
-		assertEquals("0x2", model.getValueAt(2, VALUE_COL));
+		assertEquals(2L, model.getValueAt(2, VALUE_COL));
 
 		int row = getRowFor(editName);
 
 		editValueInTable(row, "0xfff777777");
 
 		row = getRowFor(editName); // the row may have changed if we are sorted on the values col
-		assertEquals("0xfff77777", model.getValueAt(row, VALUE_COL));
+		assertEquals(0xfff77777L, model.getValueAt(row, VALUE_COL));
 	}
 
 	@Test
 	public void testBadInputForValue() throws Exception {
-		Category cat = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category cat = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		Enum enumm = createEnum(cat, "TestEnum", 1);
 		edit(enumm);
 
@@ -297,14 +297,15 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		waitForSwing();
 
 		runSwing(() -> editor.stopCellEditing());
-		assertEquals("0x0", model.getValueAt(0, VALUE_COL));
+		assertEquals(0L, model.getValueAt(0, VALUE_COL));
 	}
 
 	@Test
 	public void testEditExistingEnum1() throws Exception {
 
-		Category cat = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category cat = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		final Enum enumm = new EnumDataType("Colors", 1);
 		enumm.add("Red", 0);
 		enumm.add("Green", 1);
@@ -366,8 +367,9 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 
 	@Test
 	public void testValueForNewEntry() throws Exception {
-		Category cat = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category cat = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		final Enum enumm = new EnumDataType("Colors", 1);
 		enumm.add("Red", 0x10);
 		enumm.add("Green", 0x20);
@@ -388,11 +390,11 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 			int lastRow = model.getRowCount() - 1;
 			table.addRowSelectionInterval(lastRow, lastRow);
 			DockingActionIf addAction = getAction(plugin, "Add Enum Value");
-			addAction.actionPerformed(new ActionContext());
+			addAction.actionPerformed(new DefaultActionContext());
 		});
 		waitForSwing();
 
-		assertEquals("0x31", model.getValueAt(3, VALUE_COL));
+		assertEquals(0x31L, model.getValueAt(3, VALUE_COL));
 	}
 
 	@Test
@@ -521,10 +523,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 
 		removeCategory(enummDt);
 
-		OptionDialog dialog =
-			waitForDialogComponent(null, OptionDialog.class, DEFAULT_WINDOW_TIMEOUT);
-		assertNotNull(dialog);
-		pressButtonByText(dialog.getComponent(), "OK");
+		close(waitForInfoDialog());
 	}
 
 	@Test
@@ -564,10 +563,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 
 		replaceDataType(enummDt, newEnummDt);
 
-		OptionDialog dialog =
-			waitForDialogComponent(null, OptionDialog.class, DEFAULT_WINDOW_TIMEOUT);
-		assertNotNull(dialog);
-		pressButtonByText(dialog.getComponent(), "OK");
+		close(waitForInfoDialog());
 	}
 
 	@Test
@@ -612,15 +608,12 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 
 		DataTypeManager dtm = program.getDataTypeManager();
 		int transactionID = program.startTransaction("Test");
-		dtm.remove(enummDt, TaskMonitorAdapter.DUMMY_MONITOR);
+		dtm.remove(enummDt, TaskMonitor.DUMMY);
 		program.endTransaction(transactionID, true);
 		program.flushEvents();
 		waitForSwing();
 
-		OptionDialog optionDialog =
-			waitForDialogComponent(null, OptionDialog.class, DEFAULT_WINDOW_TIMEOUT);
-		assertNotNull("Did not get informed of deleted enum", optionDialog);
-		pressButtonByText(optionDialog.getComponent(), "OK");
+		close(waitForInfoDialog());
 	}
 
 	@Test
@@ -656,7 +649,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		EnumEditorPanel panel = findEditorPanel(tool.getToolFrame());
 		JTable table = panel.getTable();
 
-		// 
+		//
 		// First, let's try forward then backward
 		//
 		int startRow = 1;
@@ -665,12 +658,18 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		Component c = getEditorComponent(editor);
 
 		triggerActionKey(c, 0, KeyEvent.VK_TAB);
+		editor = assertEditingCell(table, startRow, startCol + 1);
+		c = getEditorComponent(editor);
 
+		triggerActionKey(c, 0, KeyEvent.VK_TAB);
+		editor = assertEditingCell(table, startRow, startCol + 2);
+		c = getEditorComponent(editor);
+
+		triggerActionKey(c, InputEvent.SHIFT_DOWN_MASK, KeyEvent.VK_TAB);
 		editor = assertEditingCell(table, startRow, startCol + 1);
 		c = getEditorComponent(editor);
 
 		triggerActionKey(c, InputEvent.SHIFT_DOWN_MASK, KeyEvent.VK_TAB);
-
 		editor = assertEditingCell(table, startRow, startCol);
 		c = getEditorComponent(editor);
 
@@ -678,7 +677,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		// Now, let's try going around the world and back
 		//
 		int lastRow = 2;
-		int lastCol = 1;
+		int lastCol = 2;
 		editor = startEditTableCell(table, lastRow, lastCol);
 		c = getEditorComponent(editor);
 
@@ -703,7 +702,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 
 		JTable table = getEditTable();
 
-		// 
+		//
 		// First, let's try up and down
 		//
 		int startRow = 0;
@@ -739,7 +738,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 	@Test
 	public void testNewEnumFromAction() throws Exception {
 		//
-		// This test works differently that the others in that it uses the same path as the 
+		// This test works differently that the others in that it uses the same path as the
 		// GUI action to start the editing process.
 		//
 		DataTypeManager dtm = program.getListing().getDataTypeManager();
@@ -762,8 +761,9 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 	@Test
 	public void testChangeEnumSizeAndInStructure() throws Exception {
 
-		Category category = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category category = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		Enum enumm = createEnum(category, "EnumX", 2);
 
 		int transactionID = program.startTransaction("Test");
@@ -772,14 +772,14 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 			enumm.add("One", 1);
 
 			Structure structX = new StructureDataType("StructX", 0);
-			structX.setInternallyAligned(true);
+			structX.setPackingEnabled(true);
 			structX.add(new ByteDataType());
 			structX.add(enumm);
 			structX.add(new ByteDataType());
 			category.addDataType(structX, DataTypeConflictHandler.DEFAULT_HANDLER);
 
 			Structure structY = new StructureDataType("StructY", 0);
-			structY.setInternallyAligned(false);
+			structY.setPackingEnabled(false);
 			structY.add(new ByteDataType());
 			structY.add(enumm);
 			category.addDataType(structY, DataTypeConflictHandler.DEFAULT_HANDLER);
@@ -803,7 +803,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		assertEquals(intValue, 2);
 
 		runSwing(() -> {
-			sizeComboBox.setSelectedItem(new Integer(4));
+			sizeComboBox.setSelectedItem(4);
 		});
 		apply();
 
@@ -813,7 +813,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		assertEquals(intValue, 4);
 
 		Structure structX = (Structure) category.getDataType("StructX");
-		assertTrue(structX.isInternallyAligned());
+		assertTrue(structX.isPackingEnabled());
 		assertEquals(3, structX.getNumComponents());
 		assertEquals(1, structX.getComponent(0).getLength());
 		assertEquals(4, structX.getComponent(1).getLength());
@@ -821,7 +821,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		assertEquals(12, structX.getLength());
 
 		Structure structY = (Structure) category.getDataType("StructY");
-		assertFalse(structY.isInternallyAligned());
+		assertFalse(structY.isPackingEnabled());
 		assertEquals(2, structY.getNumComponents());
 		assertEquals(1, structY.getComponent(0).getLength());
 		assertEquals(4, structY.getComponent(1).getLength());
@@ -831,8 +831,9 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 	@Test
 	public void testChangeEnumDescriptionEtcAndInStructure() throws Exception {
 
-		Category category = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category category = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		Enum enumm = createEnum(category, "EnumX", 2);
 
 		int transactionID = program.startTransaction("Test");
@@ -842,14 +843,14 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 			enumm.setDescription("ABCD");
 
 			Structure structX = new StructureDataType("StructX", 0);
-			structX.setInternallyAligned(true);
+			structX.setPackingEnabled(true);
 			structX.add(new ByteDataType());
 			structX.add(enumm);
 			structX.add(new ByteDataType());
 			category.addDataType(structX, DataTypeConflictHandler.DEFAULT_HANDLER);
 
 			Structure structY = new StructureDataType("StructY", 0);
-			structY.setInternallyAligned(false);
+			structY.setPackingEnabled(false);
 			structY.add(new ByteDataType());
 			structY.add(enumm);
 			category.addDataType(structY, DataTypeConflictHandler.DEFAULT_HANDLER);
@@ -887,7 +888,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		runSwing(() -> {
 			nameField.setText("EnumY");
 			descField.setText("XYZ");
-			sizeComboBox.setSelectedItem(new Integer(4));
+			sizeComboBox.setSelectedItem(4);
 
 			table.editCellAt(1, NAME_COL);
 
@@ -922,7 +923,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		assertEquals(1, value1);
 
 		Structure structX = (Structure) category.getDataType("StructX");
-		assertTrue(structX.isInternallyAligned());
+		assertTrue(structX.isPackingEnabled());
 		assertEquals(3, structX.getNumComponents());
 		assertEquals(1, structX.getComponent(0).getLength());
 		assertEquals(4, structX.getComponent(1).getLength());
@@ -930,7 +931,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		assertEquals(12, structX.getLength());
 
 		Structure structY = (Structure) category.getDataType("StructY");
-		assertFalse(structY.isInternallyAligned());
+		assertFalse(structY.isPackingEnabled());
 		assertEquals(2, structY.getNumComponents());
 		assertEquals(1, structY.getComponent(0).getLength());
 		assertEquals(4, structY.getComponent(1).getLength());
@@ -1026,7 +1027,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			Category newCategory = dtm.createCategory(new CategoryPath("/Test/Category"));
 			category = dtm.getCategory(enummDt.getCategoryPath());
-			newCategory.moveCategory(category, TaskMonitorAdapter.DUMMY_MONITOR);
+			newCategory.moveCategory(category, TaskMonitor.DUMMY);
 		}
 		finally {
 			program.endTransaction(txID, true);
@@ -1045,8 +1046,8 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			Category category = dtm.getCategory(enummDt.getCategoryPath());
 			Category parentCategory = category.getParent();
-			assertTrue("Did not remove category", parentCategory.removeCategory(category.getName(),
-				TaskMonitorAdapter.DUMMY_MONITOR));
+			assertTrue("Did not remove category",
+				parentCategory.removeCategory(category.getName(), TaskMonitor.DUMMY));
 		}
 		finally {
 			program.endTransaction(txID, true);
@@ -1122,8 +1123,8 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 
 	private TableCellEditor assertEditingCell(final JTable table, final int row, final int col) {
 		Pair<Integer, Integer> rowCol = getEditingCell(table);
-		assertEquals(row, (int) rowCol.first);
-		assertEquals(col, (int) rowCol.second);
+		assertEquals("Not editing expected row", row, (int) rowCol.first);
+		assertEquals("Not editing expected column", col, (int) rowCol.second);
 		return runSwing(() -> table.getCellEditor());
 	}
 
@@ -1138,8 +1139,9 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 	}
 
 	private Enum createRedGreenBlueEnum() {
-		Category cat = program.getListing().getDataTypeManager().getCategory(
-			new CategoryPath(CategoryPath.ROOT, "Category1"));
+		Category cat = program.getListing()
+			.getDataTypeManager()
+			.getCategory(new CategoryPath(CategoryPath.ROOT, "Category1"));
 		final Enum enumm = new EnumDataType("Colors", 1);
 		enumm.add("Red", 0);
 		enumm.add("Green", 1);
@@ -1164,7 +1166,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 	private void apply() {
 		runSwing(() -> {
 			DockingActionIf applyAction = getAction(plugin, "Apply Enum Changes");
-			applyAction.actionPerformed(new ActionContext());
+			applyAction.actionPerformed(new DefaultActionContext());
 		}, false);
 		program.flushEvents();
 		waitForSwing();
@@ -1229,7 +1231,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		addEnumValue();
 		waitForSwing();
 		final int row = model.getRowCount() - 1;
-		// change entry 
+		// change entry
 		table.addRowSelectionInterval(row, row);
 		Rectangle rect = table.getCellRect(row, NAME_COL, true);
 		clickMouse(table, 1, rect.x, rect.y, 2, 0);
@@ -1274,7 +1276,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 		editValueInTable(0, "2");
 
 		// This IS the warning dialog
-		OptionDialog dialog = env.waitForDialogComponent(OptionDialog.class, 1000);
+		OptionDialog dialog = waitForDialogComponent(OptionDialog.class);
 		pressButtonByText(dialog, alsoRemove ? "Save and remove" : "Save");
 		waitForTasks();
 
@@ -1330,7 +1332,7 @@ public class EnumEditor1Test extends AbstractGhidraHeadedIntegrationTest {
 	private void addEnumValue() {
 		runSwing(() -> {
 			DockingActionIf addAction = getAction(plugin, "Add Enum Value");
-			addAction.actionPerformed(new ActionContext());
+			addAction.actionPerformed(new DefaultActionContext());
 		});
 	}
 

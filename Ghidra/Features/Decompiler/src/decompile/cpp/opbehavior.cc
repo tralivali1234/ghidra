@@ -16,6 +16,8 @@
 #include "opbehavior.hh"
 #include "translate.hh"
 
+namespace ghidra {
+
 /// This routine generates a vector of OpBehavior objects indexed by opcode
 /// \param inst is the vector of behaviors to be filled
 /// \param trans is the translator object needed by the floating point behaviors
@@ -102,6 +104,7 @@ void OpBehavior::registerInstructions(vector<OpBehavior *> &inst,const Translate
   inst[CPUI_INSERT] = new OpBehavior(CPUI_INSERT,false);
   inst[CPUI_EXTRACT] = new OpBehavior(CPUI_EXTRACT,false);
   inst[CPUI_POPCOUNT] = new OpBehaviorPopcount();
+  inst[CPUI_LZCOUNT] = new OpBehaviorLzcount();
 }
 
 /// \param sizeout is the size of the output in bytes
@@ -350,10 +353,24 @@ uintb OpBehaviorInt2Comp::evaluateUnary(int4 sizeout,int4 sizein,uintb in1) cons
   return res;
 }
 
+uintb OpBehaviorInt2Comp::recoverInputUnary(int4 sizeout,uintb out,int4 sizein) const
+
+{
+  uintb res = uintb_negate(out-1,sizein);
+  return res;
+}
+
 uintb OpBehaviorIntNegate::evaluateUnary(int4 sizeout,int4 sizein,uintb in1) const
 
 {
   uintb res = uintb_negate(in1,sizein);
+  return res;
+}
+
+uintb OpBehaviorIntNegate::recoverInputUnary(int4 sizeout,uintb out,int4 sizein) const
+
+{
+  uintb res = uintb_negate(out,sizein);
   return res;
 }
 
@@ -381,16 +398,18 @@ uintb OpBehaviorIntOr::evaluateBinary(int4 sizeout,int4 sizein,uintb in1,uintb i
 uintb OpBehaviorIntLeft::evaluateBinary(int4 sizeout,int4 sizein,uintb in1,uintb in2) const
 
 {
-  uintb res = (in1 << in2) & calc_mask(sizeout);
-  return res;
+    if (in2 >= sizeout*8){
+    	return 0;
+    }
+	uintb res = (in1 << in2) & calc_mask(sizeout);
+    return res;
 }
 
 uintb OpBehaviorIntLeft::recoverInputBinary(int4 slot,int4 sizeout,uintb out,int4 sizein,uintb in) const
 
 {
-  if (slot!=0)
+  if ((slot!=0) || (in >= sizeout*8))
     return OpBehavior::recoverInputBinary(slot,sizeout,out,sizein,in);
-  
   int4 sa = in;
   if (((out<<(8*sizeout-sa))&calc_mask(sizeout))!=0)
     throw EvaluationError("Output is not in range of left shift operation");
@@ -400,6 +419,9 @@ uintb OpBehaviorIntLeft::recoverInputBinary(int4 slot,int4 sizeout,uintb out,int
 uintb OpBehaviorIntRight::evaluateBinary(int4 sizeout,int4 sizein,uintb in1,uintb in2) const
 
 {
+  if (in2 >= sizeout*8){
+	 return 0;
+  }
   uintb res = (in1&calc_mask(sizeout)) >> in2;
   return res;
 }
@@ -407,7 +429,7 @@ uintb OpBehaviorIntRight::evaluateBinary(int4 sizeout,int4 sizein,uintb in1,uint
 uintb OpBehaviorIntRight::recoverInputBinary(int4 slot,int4 sizeout,uintb out,int4 sizein,uintb in) const
 
 {
-  if (slot!=0)
+  if ((slot!=0) || (in >= sizeout*8))
     return OpBehavior::recoverInputBinary(slot,sizeout,out,sizein,in);
   
   int4 sa = in;
@@ -419,6 +441,10 @@ uintb OpBehaviorIntRight::recoverInputBinary(int4 slot,int4 sizeout,uintb out,in
 uintb OpBehaviorIntSright::evaluateBinary(int4 sizeout,int4 sizein,uintb in1,uintb in2) const
 
 {
+  if (in2 >= 8*sizeout){
+	  return signbit_negative(in1,sizein) ? calc_mask(sizeout) : 0;
+  }
+
   uintb res;
   if (signbit_negative(in1,sizein)) {
     res = in1 >> in2;
@@ -435,7 +461,7 @@ uintb OpBehaviorIntSright::evaluateBinary(int4 sizeout,int4 sizein,uintb in1,uin
 uintb OpBehaviorIntSright::recoverInputBinary(int4 slot,int4 sizeout,uintb out,int4 sizein,uintb in) const
 
 {
-  if (slot!=0)
+  if ((slot!=0) || (in >= sizeout*8))
     return OpBehavior::recoverInputBinary(slot,sizeout,out,sizein,in);
   
   int4 sa = in;
@@ -470,12 +496,10 @@ uintb OpBehaviorIntSdiv::evaluateBinary(int4 sizeout,int4 sizein,uintb in1,uintb
 {
   if (in2 == 0)
     throw EvaluationError("Divide by 0");
-  intb num = in1;		// Convert to signed
-  intb denom = in2;
-  sign_extend(num,8*sizein-1);
-  sign_extend(denom,8*sizein-1);
+  intb num = sign_extend(in1,8*sizein-1);		// Convert to signed
+  intb denom = sign_extend(in2,8*sizein-1);
   intb sres = num/denom;	// Do the signed division
-  zero_extend(sres,8*sizeout-1); // Cut to appropriate size
+  sres = zero_extend(sres,8*sizeout-1); // Cut to appropriate size
   return (uintb)sres;		// Recast as unsigned
 }
 
@@ -494,12 +518,10 @@ uintb OpBehaviorIntSrem::evaluateBinary(int4 sizeout,int4 sizein,uintb in1,uintb
 {
   if (in2 == 0)
     throw EvaluationError("Remainder by 0");
-  intb val = in1;
-  intb mod = in2;
-  sign_extend(val,8*sizein-1);	// Convert inputs to signed values
-  sign_extend(mod,8*sizein-1);
-  intb sres = in1 % in2;	// Do the remainder
-  zero_extend(sres,8*sizeout-1); // Convert back to unsigned
+  intb val = sign_extend(in1,8*sizein-1);	// Convert inputs to signed values
+  intb mod = sign_extend(in2,8*sizein-1);
+  intb sres = val % mod;	// Do the remainder
+  sres = zero_extend(sres,8*sizeout-1); // Convert back to unsigned
   return (uintb)sres;
 }
 
@@ -734,3 +756,10 @@ uintb OpBehaviorPopcount::evaluateUnary(int4 sizeout,int4 sizein,uintb in1) cons
   return (uintb)popcount(in1);
 }
 
+uintb OpBehaviorLzcount::evaluateUnary(int4 sizeout,int4 sizein,uintb in1) const
+
+{
+  return (uintb)(count_leading_zeros(in1) - 8*(sizeof(uintb) - sizein));
+}
+
+} // End namespace ghidra

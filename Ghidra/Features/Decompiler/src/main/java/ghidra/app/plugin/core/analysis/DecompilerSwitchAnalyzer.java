@@ -15,21 +15,23 @@
  */
 package ghidra.app.plugin.core.analysis;
 
-import java.math.BigInteger;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import java.math.BigInteger;
 
 import generic.concurrent.*;
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.cmd.function.DecompilerSwitchAnalysisCmd;
 import ghidra.app.decompiler.DecompileResults;
-import ghidra.app.decompiler.parallel.*;
+import ghidra.app.decompiler.parallel.DecompilerCallback;
+import ghidra.app.decompiler.parallel.ParallelDecompiler;
 import ghidra.app.services.*;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.framework.options.Options;
 import ghidra.program.model.address.*;
-import ghidra.program.model.block.BasicBlockModel;
-import ghidra.program.model.block.CodeBlock;
+import ghidra.program.model.block.*;
+import ghidra.program.model.data.DataType;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.symbol.*;
@@ -102,18 +104,24 @@ public class DecompilerSwitchAnalyzer extends AbstractAnalyzer {
 				return true;
 			}
 
-			Set<Function> functions = findFunctions(program, locations, monitor);
+			List<Function> definedFunctions = new ArrayList<>();
+			List<Function> undefinedFunctions = new ArrayList<>();
+			findFunctions(program, locations, definedFunctions, undefinedFunctions, monitor);
 
 			if (hitNonReturningFunction) {
 				hitNonReturningFunction = false;
 				// if hit a non-returning function, code needs to be fixed up
 				//  before wasting time on analyzing potentially bad code
 				// This will also clean out locations that were thunks for the next go round.
-				restartRemainingLater(program, functions);
+				restartRemainingLater(program, definedFunctions, undefinedFunctions);
 				return true;
 			}
 
-			runDecompilerAnalysis(program, functions, monitor);
+			monitor.checkCancelled();
+			runDecompilerAnalysis(program, definedFunctions, monitor);
+			monitor.checkCancelled();
+			runDecompilerAnalysis(program, undefinedFunctions, monitor);
+			monitor.checkCancelled();
 		}
 		catch (CancelledException ce) {
 			throw ce;
@@ -130,13 +138,17 @@ public class DecompilerSwitchAnalyzer extends AbstractAnalyzer {
 		return true;
 	}
 
-	private void restartRemainingLater(Program program, Set<Function> functions) {
+	private void restartRemainingLater(Program program, Collection<Function> definedFunctions,
+			Collection<Function> undefinedFunctions) {
 		AddressSet funcSet = new AddressSet();
-		for (Function function : functions) {
+		for (Function function : definedFunctions) {
 			funcSet.add(function.getBody());
 		}
-		AutoAnalysisManager.getAnalysisManager(program).scheduleOneTimeAnalysis(
-			new DecompilerSwitchAnalyzer(), funcSet);
+		for (Function function : undefinedFunctions) {
+			funcSet.add(function.getBody());
+		}
+		AutoAnalysisManager.getAnalysisManager(program)
+				.scheduleOneTimeAnalysis(new DecompilerSwitchAnalyzer(), funcSet);
 		Msg.info(this, "hit non-returning function, restarting decompiler switch analyzer later");
 	}
 
@@ -144,7 +156,7 @@ public class DecompilerSwitchAnalyzer extends AbstractAnalyzer {
 // End Interface Methods
 //==================================================================================================
 
-	private void runDecompilerAnalysis(Program program, Set<Function> functions,
+	private void runDecompilerAnalysis(Program program, Collection<Function> functions,
 			TaskMonitor monitor) throws InterruptedException, Exception {
 
 		DecompilerCallback<Void> callback =
@@ -170,8 +182,9 @@ public class DecompilerSwitchAnalyzer extends AbstractAnalyzer {
 
 	}
 
-	private Set<Function> findFunctions(final Program program, ArrayList<Address> locations,
-			final TaskMonitor monitor) throws InterruptedException, Exception, CancelledException {
+	private void findFunctions(Program program, ArrayList<Address> locations,
+			Collection<Function> definedFunctions, Collection<Function> undefinedFunctions,
+			TaskMonitor monitor) throws InterruptedException, Exception, CancelledException {
 
 		GThreadPool pool = AutoAnalysisManager.getSharedAnalsysThreadPool();
 		FindFunctionCallback callback = new FindFunctionCallback(program);
@@ -190,7 +203,6 @@ public class DecompilerSwitchAnalyzer extends AbstractAnalyzer {
 
 		Collection<QResult<Address, Function>> results = queue.waitForResults();
 
-		Set<Function> functions = new HashSet<>();
 		for (QResult<Address, Function> result : results) {
 			Function function = result.getResult();
 			if (function == null) {
@@ -203,10 +215,13 @@ public class DecompilerSwitchAnalyzer extends AbstractAnalyzer {
 				}
 				continue;
 			}
-			functions.add(function);
+			if (function instanceof UndefinedFunction) {
+				undefinedFunctions.add(function);
+			}
+			else {
+				definedFunctions.add(function);
+			}
 		}
-
-		return functions;
 	}
 
 	private ArrayList<Address> findLocations(Program program, AddressSetView set,
@@ -220,7 +235,7 @@ public class DecompilerSwitchAnalyzer extends AbstractAnalyzer {
 		Listing list = program.getListing();
 		InstructionIterator iterator = list.getInstructions(set, true);
 		while (iterator.hasNext()) {
-			monitor.checkCanceled();
+			monitor.checkCancelled();
 
 			Instruction instruction = iterator.next();
 			FlowType flowType = instruction.getFlowType();
@@ -320,9 +335,9 @@ public class DecompilerSwitchAnalyzer extends AbstractAnalyzer {
 		 */
 		private boolean handleSimpleBlock(Address location, TaskMonitor monitor)
 				throws CancelledException {
-			BasicBlockModel basicBlockModel = new BasicBlockModel(program);
+			SimpleBlockModel blockModel = new SimpleBlockModel(program);
 
-			return resolveComputableFlow(location, monitor, basicBlockModel);
+			return resolveComputableFlow(location, monitor, blockModel);
 		}
 
 		/**
@@ -332,14 +347,13 @@ public class DecompilerSwitchAnalyzer extends AbstractAnalyzer {
 		 * @return true if the flow could be easily resolved.
 		 */
 		private boolean resolveComputableFlow(Address location, TaskMonitor monitor,
-				BasicBlockModel basicBlockModel) throws CancelledException {
+				CodeBlockModel blockModel) throws CancelledException {
 
 			// get the basic block
 			//
 			// NOTE: Assumption, the decompiler won't get the switch if there is no guard
 
-			final CodeBlock jumpBlockAt =
-				basicBlockModel.getFirstCodeBlockContaining(location, monitor);
+			final CodeBlock jumpBlockAt = blockModel.getFirstCodeBlockContaining(location, monitor);
 			// If the jump target can has a computable target with only the instructions in the basic block it is found in
 			//  then it isn't a switch statment
 			//
@@ -351,13 +365,15 @@ public class DecompilerSwitchAnalyzer extends AbstractAnalyzer {
 				new ContextEvaluatorAdapter() {
 					@Override
 					public boolean evaluateReference(VarnodeContext context, Instruction instr,
-							int pcodeop, Address address, int size, RefType refType) {
+							int pcodeop, Address address, int size, DataType dataType, RefType refType) {
 						// go ahead and place the reference, since it is a constant.
 						if (refType.isComputed() && refType.isFlow() &&
 							program.getMemory().contains(address)) {
-							propogateCodeMode(context, address);
 							foundCount.incrementAndGet();
-							return true;
+							// don't propagate low code mode, let something else do that
+							// propogateCodeMode(context, address);
+							// don't make references, let other analysis do this
+							//return true;
 						}
 						return false;
 					}
@@ -371,8 +387,8 @@ public class DecompilerSwitchAnalyzer extends AbstractAnalyzer {
 						BigInteger value = context.getValue(isaModeSwitchRegister, false);
 						if (value != null && program.getListing().getInstructionAt(addr) == null) {
 							try {
-								program.getProgramContext().setValue(isaModeRegister, addr, addr,
-									value);
+								program.getProgramContext()
+										.setValue(isaModeRegister, addr, addr, value);
 							}
 							catch (ContextChangeException e) {
 								// ignore

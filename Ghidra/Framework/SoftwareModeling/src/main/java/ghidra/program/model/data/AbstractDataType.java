@@ -16,6 +16,7 @@
 package ghidra.program.model.data;
 
 import java.net.URL;
+import java.util.Collection;
 
 import ghidra.docking.settings.Settings;
 import ghidra.program.model.mem.MemBuffer;
@@ -28,10 +29,13 @@ import ghidra.util.exception.DuplicateNameException;
  * classes can be created without implementing too many methods.
  */
 public abstract class AbstractDataType implements DataType {
+
+	private final static TypeDefSettingsDefinition[] EMPTY_TYPEDEF_DEFINITIONS =
+		new TypeDefSettingsDefinition[0];
+
 	protected String name;
 	protected CategoryPath categoryPath;
 	protected final DataTypeManager dataMgr;
-	private DataOrganization dataOrganization;
 
 	protected AbstractDataType(CategoryPath path, String name, DataTypeManager dataTypeManager) {
 		if (path == null) {
@@ -51,6 +55,11 @@ public abstract class AbstractDataType implements DataType {
 	}
 
 	@Override
+	public TypeDefSettingsDefinition[] getTypeDefSettingsDefinitions() {
+		return EMPTY_TYPEDEF_DEFINITIONS;
+	}
+
+	@Override
 	public CategoryPath getCategoryPath() {
 		return categoryPath;
 	}
@@ -65,9 +74,20 @@ public abstract class AbstractDataType implements DataType {
 
 	@Override
 	public final DataOrganization getDataOrganization() {
-		if (dataOrganization != null) {
-			return dataOrganization;
-		}
+		return dataMgr != null ? dataMgr.getDataOrganization()
+				: DataOrganizationImpl.getDefaultOrganization();
+	}
+
+	/**
+	 * Get the {@link DataOrganization} which should be used by a {@link AbstractDataType} when 
+	 * associated with a specified {@link DataTypeManager dataMgr}.  If a null 
+	 * {@code dataMgr} is specified the default {@link DataOrganization} will be returned.
+	 * @param dataMgr datatype manager
+	 * @return the {@link DataOrganization} which should be used by a {@link AbstractDataType}
+	 * instance.
+	 */
+	protected static DataOrganization getDataOrganization(DataTypeManager dataMgr) {
+		DataOrganization dataOrganization = null;
 		if (dataMgr != null) {
 			dataOrganization = dataMgr.getDataOrganization();
 		}
@@ -79,7 +99,8 @@ public abstract class AbstractDataType implements DataType {
 
 	@Override
 	public DataTypePath getDataTypePath() {
-		return new DataTypePath(categoryPath, name);
+		// use methods instead of fields since they mey be overriden
+		return new DataTypePath(getCategoryPath(), getName());
 	}
 
 	@Override
@@ -113,12 +134,18 @@ public abstract class AbstractDataType implements DataType {
 	}
 
 	@Override
+	public boolean isZeroLength() {
+		return false;
+	}
+
+	@Override
 	public String toString() {
 		return getDisplayName();
 	}
 
 	@Override
 	public boolean isDeleted() {
+		// NOTE: Support for this concept outside of DataTypeDB should not be relied upon
 		return false;
 	}
 
@@ -135,6 +162,11 @@ public abstract class AbstractDataType implements DataType {
 
 	@Override
 	public void dataTypeSizeChanged(DataType dt) {
+		// do nothing
+	}
+
+	@Override
+	public void dataTypeAlignmentChanged(DataType dt) {
 		// do nothing
 	}
 
@@ -159,7 +191,7 @@ public abstract class AbstractDataType implements DataType {
 	}
 
 	@Override
-	public DataType[] getParents() {
+	public Collection<DataType> getParents() {
 		// not-applicable
 		return null;
 	}
@@ -222,7 +254,7 @@ public abstract class AbstractDataType implements DataType {
 	}
 
 	@Override
-	public boolean isDynamicallySized() {
+	public boolean hasLanguageDependantLength() {
 		return false; // not applicable
 	}
 
@@ -252,5 +284,22 @@ public abstract class AbstractDataType implements DataType {
 			DataTypeDisplayOptions options, int offcutLength) {
 		// By default we will do nothing different for offcut values
 		return getDefaultLabelPrefix(buf, settings, len, options);
+	}
+
+	@Override
+	public boolean isEncodable() {
+		return false;
+	}
+
+	@Override
+	public byte[] encodeValue(Object value, MemBuffer buf, Settings settings, int length)
+			throws DataTypeEncodeException {
+		throw new DataTypeEncodeException("Encoding not supported", value, this);
+	}
+
+	@Override
+	public byte[] encodeRepresentation(String repr, MemBuffer buf, Settings settings, int length)
+			throws DataTypeEncodeException {
+		throw new DataTypeEncodeException("Encoding not supported", repr, this);
 	}
 }

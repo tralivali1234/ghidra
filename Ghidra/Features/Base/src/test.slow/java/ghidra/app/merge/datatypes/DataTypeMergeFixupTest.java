@@ -22,7 +22,7 @@ import org.junit.Test;
 import ghidra.program.database.OriginalProgramModifierListener;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.model.data.*;
-import ghidra.util.task.TaskMonitorAdapter;
+import ghidra.util.task.TaskMonitor;
 
 /**
  * Data type merge tests with fixup for data types added in My program.
@@ -53,69 +53,43 @@ public class DataTypeMergeFixupTest extends AbstractDataTypeMergeTest {
 
 			@Override
 			public void modifyOriginal(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
 				Structure inner = new StructureDataType("inner", 0);
 				inner.add(new ByteDataType());
 				inner.add(new WordDataType());
-				inner.setInternallyAligned(true);
+				inner.setPackingEnabled(true);
 
-				try {
-					Category rootCategory = dtm.getCategory(rootPath);
-					rootCategory.addDataType(inner, null);
+				Category rootCategory = dtm.getCategory(rootPath);
+				rootCategory.addDataType(inner, null);
 
-					inner = (Structure) dtm.getDataType(rootPath, "inner");
-					assertNotNull(inner);
-
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				inner = (Structure) dtm.getDataType(rootPath, "inner");
+				assertNotNull(inner);
 			}
 
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
 				Structure inner = (Structure) dtm.getDataType(rootPath, "inner");
 
-				int transactionID = program.startTransaction("delete inner struct");
-				try {
-					// Remove inner struct
-					dtm.remove(inner, TaskMonitorAdapter.DUMMY_MONITOR);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Remove inner struct
+				dtm.remove(inner, TaskMonitor.DUMMY);
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
 				Structure inner = (Structure) dtm.getDataType(rootPath, "inner");
 
 				Structure outer = new StructureDataType("outer", 0);
 				outer.add(new ByteDataType());
 				outer.add(inner);
-				outer.setInternallyAligned(true);
+				outer.setPackingEnabled(true);
 
-				int transactionID = program.startTransaction("create outer struct, modify inner");
-				try {
-					// Add outer struct
-					dtm.addDataType(outer, DataTypeConflictHandler.DEFAULT_HANDLER);
-					// Modify inner struct
-					inner.replace(0, new CharDataType(), 1);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Add outer struct
+				dtm.addDataType(outer, DataTypeConflictHandler.DEFAULT_HANDLER);
+				// Modify inner struct
+				inner.replace(0, new CharDataType(), 1);
 			}
 		});
 	}
@@ -134,14 +108,14 @@ public class DataTypeMergeFixupTest extends AbstractDataTypeMergeTest {
 		waitForCompletion();
 
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
-		Structure inner = (Structure) dtm.getDataType(rootPath, "inner");
+		StructureInternal inner = (StructureInternal) dtm.getDataType(rootPath, "inner");
 		assertNull(inner);
-		Structure outer = (Structure) dtm.getDataType(rootPath, "outer");
+		StructureInternal outer = (StructureInternal) dtm.getDataType(rootPath, "outer");
 		assertNotNull(outer);
-		assertEquals(true, outer.isInternallyAligned());
+		assertEquals(true, outer.isPackingEnabled());
 		assertEquals(true, outer.isDefaultAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, outer.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, outer.getPackingValue());
+		assertEquals(CompositeInternal.DEFAULT_ALIGNMENT, outer.getStoredMinimumAlignment());
+		assertEquals(CompositeInternal.DEFAULT_PACKING, outer.getStoredPackingValue());
 		assertEquals(1, outer.getNumComponents());
 		assertTrue(new ByteDataType().isEquivalent(outer.getComponent(0).getDataType()));
 		assertEquals(1, outer.getLength());
@@ -162,24 +136,24 @@ public class DataTypeMergeFixupTest extends AbstractDataTypeMergeTest {
 		waitForCompletion();
 
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
-		Structure inner = (Structure) dtm.getDataType(rootPath, "inner");
+		StructureInternal inner = (StructureInternal) dtm.getDataType(rootPath, "inner");
 		assertNotNull(inner);
-		assertEquals(true, inner.isInternallyAligned());
+		assertEquals(true, inner.isPackingEnabled());
 		assertEquals(true, inner.isDefaultAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, inner.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, inner.getPackingValue());
+		assertEquals(CompositeInternal.DEFAULT_ALIGNMENT, inner.getStoredMinimumAlignment());
+		assertEquals(CompositeInternal.DEFAULT_PACKING, inner.getStoredPackingValue());
 		assertEquals(2, inner.getNumComponents());
 		assertTrue(new CharDataType().isEquivalent(inner.getComponent(0).getDataType()));
 		assertTrue(new WordDataType().isEquivalent(inner.getComponent(1).getDataType()));
 		assertEquals(4, inner.getLength());
 		assertEquals(2, inner.getAlignment());
 
-		Structure outer = (Structure) dtm.getDataType(rootPath, "outer");
+		StructureInternal outer = (StructureInternal) dtm.getDataType(rootPath, "outer");
 		assertNotNull(outer);
-		assertEquals(true, outer.isInternallyAligned());
+		assertEquals(true, outer.isPackingEnabled());
 		assertEquals(true, outer.isDefaultAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, outer.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, outer.getPackingValue());
+		assertEquals(CompositeInternal.DEFAULT_ALIGNMENT, outer.getStoredMinimumAlignment());
+		assertEquals(CompositeInternal.DEFAULT_PACKING, outer.getStoredPackingValue());
 		assertEquals(2, outer.getNumComponents());
 		assertTrue(new ByteDataType().isEquivalent(outer.getComponent(0).getDataType()));
 		assertEquals(inner, outer.getComponent(1).getDataType());
@@ -213,68 +187,41 @@ public class DataTypeMergeFixupTest extends AbstractDataTypeMergeTest {
 
 			@Override
 			public void modifyOriginal(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
 				Structure inner = new StructureDataType("inner", 0);
 				inner.add(new ByteDataType());
 				inner.add(new WordDataType());
-				inner.setInternallyAligned(true);
+				inner.setPackingEnabled(true);
 
-				try {
-					Category rootCategory = dtm.getCategory(rootPath);
-					rootCategory.addDataType(inner, null);
+				Category rootCategory = dtm.getCategory(rootPath);
+				rootCategory.addDataType(inner, null);
 
-					inner = (Structure) dtm.getDataType(rootPath, "inner");
-					assertNotNull(inner);
-
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				inner = (Structure) dtm.getDataType(rootPath, "inner");
+				assertNotNull(inner);
 			}
 
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
 				Structure inner = (Structure) dtm.getDataType(rootPath, "inner");
 
-				int transactionID = program.startTransaction("delete inner struct");
-				try {
-					// Remove inner struct
-					dtm.remove(inner, TaskMonitorAdapter.DUMMY_MONITOR);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Remove inner struct
+				dtm.remove(inner, TaskMonitor.DUMMY);
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
 				Structure inner = (Structure) dtm.getDataType(rootPath, "inner");
 
 				Structure outer = new StructureDataType("outer", 0);
 				outer.add(new ByteDataType());
 				outer.add(inner);
-				outer.setInternallyAligned(true);
+				outer.setPackingEnabled(true);
 
-				int transactionID =
-					program.startTransaction("create outer struct, don't modify inner");
-				try {
-					// Add outer struct
-					dtm.addDataType(outer, DataTypeConflictHandler.DEFAULT_HANDLER);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Add outer struct
+				dtm.addDataType(outer, DataTypeConflictHandler.DEFAULT_HANDLER);
 			}
 		});
 
@@ -283,14 +230,14 @@ public class DataTypeMergeFixupTest extends AbstractDataTypeMergeTest {
 		waitForCompletion();
 
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
-		Structure inner = (Structure) dtm.getDataType(rootPath, "inner");
+		StructureInternal inner = (StructureInternal) dtm.getDataType(rootPath, "inner");
 		assertNull(inner);
-		Structure outer = (Structure) dtm.getDataType(rootPath, "outer");
+		StructureInternal outer = (StructureInternal) dtm.getDataType(rootPath, "outer");
 		assertNotNull(outer);
-		assertEquals(true, outer.isInternallyAligned());
+		assertEquals(true, outer.isPackingEnabled());
 		assertEquals(true, outer.isDefaultAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, outer.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, outer.getPackingValue());
+		assertEquals(CompositeInternal.DEFAULT_ALIGNMENT, outer.getStoredMinimumAlignment());
+		assertEquals(CompositeInternal.DEFAULT_PACKING, outer.getStoredPackingValue());
 		assertEquals(1, outer.getNumComponents());
 		assertTrue(new ByteDataType().isEquivalent(outer.getComponent(0).getDataType()));
 		assertEquals(1, outer.getLength());
@@ -328,57 +275,38 @@ public class DataTypeMergeFixupTest extends AbstractDataTypeMergeTest {
 
 			@Override
 			public void modifyOriginal(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
-				int transactionID = program.startTransaction("test");
 
 				Structure inner = new StructureDataType("inner", 0);
 				inner.add(new ByteDataType());
 				inner.add(new WordDataType());
-				inner.setInternallyAligned(true);
+				inner.setPackingEnabled(true);
 
-				try {
-					Category rootCategory = dtm.getCategory(rootPath);
-					rootCategory.addDataType(inner, null);
+				Category rootCategory = dtm.getCategory(rootPath);
+				rootCategory.addDataType(inner, null);
 
-					inner = (Structure) dtm.getDataType(rootPath, "inner");
-					assertNotNull(inner);
-
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				inner = (Structure) dtm.getDataType(rootPath, "inner");
+				assertNotNull(inner);
 			}
 
 			@Override
 			public void modifyLatest(ProgramDB program) throws Exception {
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
 				Structure inner = (Structure) dtm.getDataType(rootPath, "inner");
-
-				int transactionID = program.startTransaction("delete inner struct");
-				try {
-					// Remove inner struct
-					dtm.remove(inner, TaskMonitorAdapter.DUMMY_MONITOR);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+			
+				// Remove inner struct
+				dtm.remove(inner, TaskMonitor.DUMMY);
 			}
 
 			@Override
 			public void modifyPrivate(ProgramDB program) throws Exception {
-
-				boolean commit = false;
 				DataTypeManager dtm = program.getDataTypeManager();
 				Structure inner = (Structure) dtm.getDataType(rootPath, "inner");
 
 				Structure other = new StructureDataType("other", 0);
 				other.add(new ByteDataType());
 				other.add(new PointerDataType(new VoidDataType()));
-				other.setInternallyAligned(true);
+				other.setPackingEnabled(true);
 
 				Structure outer = new StructureDataType("outer", 0);
 				outer.add(new ByteDataType());
@@ -386,18 +314,10 @@ public class DataTypeMergeFixupTest extends AbstractDataTypeMergeTest {
 				outer.add(new FloatDataType());
 				outer.add(other);
 				outer.add(new ByteDataType());
-				outer.setInternallyAligned(true);
+				outer.setPackingEnabled(true);
 
-				int transactionID = program.startTransaction(
-					"create outer struct with other structure after inner");
-				try {
-					// Add outer struct
-					dtm.addDataType(outer, DataTypeConflictHandler.DEFAULT_HANDLER);
-					commit = true;
-				}
-				finally {
-					program.endTransaction(transactionID, commit);
-				}
+				// Add outer struct
+				dtm.addDataType(outer, DataTypeConflictHandler.DEFAULT_HANDLER);
 			}
 		});
 
@@ -407,15 +327,15 @@ public class DataTypeMergeFixupTest extends AbstractDataTypeMergeTest {
 
 		DataTypeManager dtm = resultProgram.getDataTypeManager();
 
-		Structure inner = (Structure) dtm.getDataType(rootPath, "inner");
+		StructureInternal inner = (StructureInternal) dtm.getDataType(rootPath, "inner");
 		assertNull(inner);
 
-		Structure other = (Structure) dtm.getDataType(rootPath, "other");
+		StructureInternal other = (StructureInternal) dtm.getDataType(rootPath, "other");
 		assertNotNull(other);
-		assertEquals(true, other.isInternallyAligned());
+		assertEquals(true, other.isPackingEnabled());
 		assertEquals(true, other.isDefaultAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, other.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, other.getPackingValue());
+		assertEquals(CompositeInternal.DEFAULT_ALIGNMENT, other.getStoredMinimumAlignment());
+		assertEquals(CompositeInternal.DEFAULT_PACKING, other.getStoredPackingValue());
 		assertEquals(2, other.getNumComponents());
 		assertTrue(new ByteDataType().isEquivalent(other.getComponent(0).getDataType()));
 		assertTrue(new PointerDataType(new VoidDataType()).isEquivalent(
@@ -423,12 +343,12 @@ public class DataTypeMergeFixupTest extends AbstractDataTypeMergeTest {
 		assertEquals(8, other.getLength());
 		assertEquals(4, other.getAlignment());
 
-		Structure outer = (Structure) dtm.getDataType(rootPath, "outer");
+		StructureInternal outer = (StructureInternal) dtm.getDataType(rootPath, "outer");
 		assertNotNull(outer);
-		assertEquals(true, outer.isInternallyAligned());
+		assertEquals(true, outer.isPackingEnabled());
 		assertEquals(true, outer.isDefaultAligned());
-		assertEquals(Composite.DEFAULT_ALIGNMENT_VALUE, outer.getMinimumAlignment());
-		assertEquals(Composite.NOT_PACKING, outer.getPackingValue());
+		assertEquals(CompositeInternal.DEFAULT_ALIGNMENT, outer.getStoredMinimumAlignment());
+		assertEquals(CompositeInternal.DEFAULT_PACKING, outer.getStoredPackingValue());
 		assertEquals(4, outer.getNumComponents());
 		assertTrue(new ByteDataType().isEquivalent(outer.getComponent(0).getDataType()));
 		assertTrue(new FloatDataType().isEquivalent(outer.getComponent(1).getDataType()));

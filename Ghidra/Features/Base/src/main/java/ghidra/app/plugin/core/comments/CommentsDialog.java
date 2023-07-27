@@ -20,9 +20,12 @@ import java.awt.event.*;
 import java.util.*;
 
 import javax.swing.*;
-import javax.swing.event.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
+
+import org.apache.commons.lang3.StringUtils;
 
 import docking.*;
 import docking.widgets.OptionDialog;
@@ -37,7 +40,7 @@ import ghidra.util.HelpLocation;
 /**
  * Dialog for setting the comments for a CodeUnit.
  */
-public class CommentsDialog extends DialogComponentProvider implements KeyListener {
+public class CommentsDialog extends ReusableDialogComponentProvider implements KeyListener {
 
 	private JTextArea eolField;
 	private JTextArea preField;
@@ -62,22 +65,16 @@ public class CommentsDialog extends DialogComponentProvider implements KeyListen
 
 	private boolean enterMode = false;
 	private JCheckBox enterBox = new GCheckBox("Enter accepts comment", enterMode);
-	{
-		enterBox.addChangeListener(new ChangeListener() {
-			@Override
-			public void stateChanged(ChangeEvent e) {
-				enterMode = enterBox.isSelected();
-				plugin.updateOptions();
-			}
-		});
-	}
 	private JPopupMenu popup = new JPopupMenu();
 
-	/**
-	 * Constructor 
-	 */
 	CommentsDialog(CommentsPlugin plugin) {
 		super("Set Comments");
+
+		enterBox.addChangeListener(e -> {
+			enterMode = enterBox.isSelected();
+			plugin.updateOptions();
+		});
+
 		setHelpLocation(new HelpLocation(plugin.getName(), "Comments"));
 		addWorkPanel(createPanel());
 
@@ -156,13 +153,6 @@ public class CommentsDialog extends DialogComponentProvider implements KeyListen
 		}
 	}
 
-	/////////////////////////////////////////////
-	// *** GhidraDialog "callback" methods ***
-	/////////////////////////////////////////////
-
-	/**
-	 * Callback for the cancel button.
-	 */
 	@Override
 	protected void cancelCallback() {
 
@@ -203,9 +193,6 @@ public class CommentsDialog extends DialogComponentProvider implements KeyListen
 		close();
 	}
 
-	/**
-	 * Callback for the OK button.
-	 */
 	@Override
 	protected void okCallback() {
 		if (wasChanged) {
@@ -222,9 +209,6 @@ public class CommentsDialog extends DialogComponentProvider implements KeyListen
 		}
 	}
 
-	/**
-	 * Callback for the Apply button.
-	 */
 	@Override
 	protected void applyCallback() {
 		preComment = preField.getText();
@@ -240,22 +224,16 @@ public class CommentsDialog extends DialogComponentProvider implements KeyListen
 		setApplyEnabled(false);
 	}
 
-	////////////////////////////////////////////////////////////////////
-	// ** private methods **
-	////////////////////////////////////////////////////////////////////
-
 	private AnnotationAdapterWrapper[] getAnnotationAdapterWrappers() {
-		AnnotatedStringHandler[] annotations = Annotation.getAnnotatedStringHandlers();
-		AnnotationAdapterWrapper[] retVal = new AnnotationAdapterWrapper[annotations.length];
-		for (int i = 0; i < annotations.length; i++) {
-			retVal[i] = new AnnotationAdapterWrapper(annotations[i]);
+		List<AnnotatedStringHandler> annotations = Annotation.getAnnotatedStringHandlers();
+		int count = annotations.size();
+		AnnotationAdapterWrapper[] retVal = new AnnotationAdapterWrapper[count];
+		for (int i = 0; i < count; i++) {
+			retVal[i] = new AnnotationAdapterWrapper(annotations.get(i));
 		}
 		return retVal;
 	}
 
-	/**
-	 * Create the panel for the dialog.
-	 */
 	private JPanel createPanel() {
 
 		JPanel panel = new JPanel(new BorderLayout());
@@ -269,15 +247,16 @@ public class CommentsDialog extends DialogComponentProvider implements KeyListen
 		Arrays.sort(annotations);
 		GComboBox<AnnotationAdapterWrapper> annotationsComboBox = new GComboBox<>(annotations);
 		JButton addAnnotationButton = new JButton("Add Annotation");
-		addAnnotationButton.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				JTextArea currentTextArea = getSelectedTextArea();
-				AnnotationAdapterWrapper aaw =
-					(AnnotationAdapterWrapper) annotationsComboBox.getSelectedItem();
-				currentTextArea.insert(aaw.getPrototypeString(),
-					currentTextArea.getCaretPosition());
-				currentTextArea.setCaretPosition(currentTextArea.getCaretPosition() - 1);
+		addAnnotationButton.addActionListener(e -> {
+			JTextArea textArea = getSelectedTextArea();
+			AnnotationAdapterWrapper aaw =
+				(AnnotationAdapterWrapper) annotationsComboBox.getSelectedItem();
+			String selectedText = textArea.getSelectedText();
+			if (!StringUtils.isBlank(selectedText)) {
+				textArea.replaceSelection(aaw.getPrototypeString(selectedText));
+			}
+			else {
+				insertAnnotation(textArea, aaw);
 			}
 		});
 		JPanel annoPanel = new JPanel();
@@ -360,30 +339,20 @@ public class CommentsDialog extends DialogComponentProvider implements KeyListen
 		tab.addTab("  Plate Comment  ", new JScrollPane(plateField));
 		tab.addTab("  Repeatable Comment  ", new JScrollPane(repeatableField));
 
-		tab.addChangeListener(new ChangeListener() {
-			@Override
-			public void stateChanged(ChangeEvent ev) {
-				chooseFocus();
-			}
-		});
+		tab.addChangeListener(ev -> chooseFocus());
 
-		ActionListener addAnnotationAction = new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				JTextArea currentTextArea = getSelectedTextArea();
-				for (int i = 0; i < annotations.length; i++) {
-					if (annotations[i].toString().equals(e.getActionCommand())) {
-						currentTextArea.insert(annotations[i].getPrototypeString(),
-							currentTextArea.getCaretPosition());
-						currentTextArea.setCaretPosition(currentTextArea.getCaretPosition() - 1);
-					}
+		ActionListener addAnnotationAction = e -> {
+			JTextArea currentTextArea = getSelectedTextArea();
+			for (AnnotationAdapterWrapper annotation : annotations) {
+				if (annotation.toString().equals(e.getActionCommand())) {
+					insertAnnotation(currentTextArea, annotation);
 				}
 			}
 		};
 
 		JMenu insertMenu = new JMenu("Insert");
-		for (int i = 0; i < annotations.length; i++) {
-			JMenuItem menuItem = new JMenuItem(annotations[i].toString());
+		for (AnnotationAdapterWrapper annotation : annotations) {
+			JMenuItem menuItem = new JMenuItem(annotation.toString());
 			menuItem.addActionListener(addAnnotationAction);
 			insertMenu.add(menuItem);
 		}
@@ -396,6 +365,11 @@ public class CommentsDialog extends DialogComponentProvider implements KeyListen
 		repeatableField.addMouseListener(new PopupListener());
 
 		return panel;
+	}
+
+	private void insertAnnotation(JTextArea textArea, AnnotationAdapterWrapper annotation) {
+		textArea.insert(annotation.getPrototypeString(), textArea.getCaretPosition());
+		textArea.setCaretPosition(textArea.getCaretPosition() - 1);
 	}
 
 	private void installUndoRedo(JTextComponent textComponent) {
@@ -466,14 +440,26 @@ public class CommentsDialog extends DialogComponentProvider implements KeyListen
 	@Override
 	public void keyPressed(KeyEvent e) {
 		JTextArea textArea = (JTextArea) e.getSource();
+		if (e.getKeyCode() != KeyEvent.VK_ENTER) {
+			return;
+		}
 
-		if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-			if (e.isShiftDown() && enterMode) {
-				textArea.append("\n");
-			}
-			else if (e.isShiftDown() != enterMode) {
-				okCallback();
-			}
+		int modifiers = e.getModifiersEx();
+		if ((modifiers & InputEvent.SHIFT_DOWN_MASK) == InputEvent.SHIFT_DOWN_MASK) {
+			textArea.replaceSelection("\n");
+			e.consume();
+			return;
+		}
+
+		if ((modifiers & InputEvent.CTRL_DOWN_MASK) == InputEvent.CTRL_DOWN_MASK) {
+			okCallback(); // Control-Enter allows closes the dialog
+			e.consume();
+			return;
+		}
+
+		if (enterMode) {
+			e.consume();
+			okCallback();
 		}
 	}
 
@@ -528,6 +514,10 @@ public class CommentsDialog extends DialogComponentProvider implements KeyListen
 
 		public String getPrototypeString() {
 			return handler.getPrototypeString();
+		}
+
+		public String getPrototypeString(String contained) {
+			return handler.getPrototypeString(contained);
 		}
 	}
 }

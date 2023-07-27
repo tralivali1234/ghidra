@@ -95,9 +95,7 @@ public class CategoryNode extends DataTypeTreeNode {
 	public int hashCode() {
 		return name.hashCode();
 	}
-	/**
-	 * @see java.lang.Object#equals(java.lang.Object)
-	 */
+
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
@@ -106,8 +104,11 @@ public class CategoryNode extends DataTypeTreeNode {
 		if (getClass() != o.getClass()) {
 			return false;
 		}
+
 		CategoryNode otherNode = (CategoryNode) o;
-		if (!category.equals(otherNode.category)) {
+		CategoryPath otherPath = otherNode.getCategory().getCategoryPath();
+		CategoryPath path = getCategory().getCategoryPath();
+		if (!path.equals(otherPath)) {
 			return false;
 		}
 		return name.equals(otherNode.name);
@@ -283,11 +284,12 @@ public class CategoryNode extends DataTypeTreeNode {
 	}
 
 	/**
-	 * Signals to this node that it has been cut during a cut operation, for example, like during
-	 * a cut/paste operation.
+	 * Signals to this node that it has been cut during a cut operation, for example, like during a
+	 * cut/paste operation.
 	 * <p>
 	 * This implementation will throw a runtime exception if this method is called and
-	 * {@link #canCutNode()} returns false.
+	 * {@link #canCut()} returns false.
+	 * 
 	 * @param isCut true signals that the node has been cut; false that it is not cut.
 	 */
 	@Override
@@ -296,28 +298,19 @@ public class CategoryNode extends DataTypeTreeNode {
 			throw new AssertException("Cannot call isCut() on a node that cannot be cut.");
 		}
 		this.isCut = isCut;
-		fireNodeChanged(getParent(), this);
+		fireNodeChanged();
 	}
 
-	/**
-	 * @see ghidra.app.plugin.core.datamgr.tree.DataTypeTreeNode#canCut()
-	 */
 	@Override
 	public boolean canCut() {
 		return isModifiable();
 	}
 
-	/**
-	 * @see ghidra.app.plugin.core.datamgr.tree.DataTypeTreeNode#canPaste(java.util.List)
-	 */
 	@Override
 	public boolean canPaste(List<GTreeNode> pastedNodes) {
 		return isModifiable();
 	}
 
-	/**
-	 * @see ghidra.app.plugin.core.datamgr.tree.DataTypeTreeNode#isCut()
-	 */
 	@Override
 	public boolean isCut() {
 		return isCut;
@@ -343,9 +336,9 @@ public class CategoryNode extends DataTypeTreeNode {
 	}
 
 	/**
-	 * This method is handy to signal whether this node is can be used to perform actions.
-	 * Returning false from this method is essentially a way to disable the actions that can
-	 * be performed upon this node.
+	 * This method is handy to signal whether this node is can be used to perform actions. Returning
+	 * false from this method is essentially a way to disable the actions that can be performed upon
+	 * this node.
 	 *
 	 * @return true if this node is enabled.
 	 */

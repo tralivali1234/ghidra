@@ -20,8 +20,8 @@ import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import java.util.List;
 
+import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteArrayConverter;
-import ghidra.app.util.bin.format.FactoryBundledWithBinaryReader;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
@@ -40,23 +40,12 @@ public class SecurityDataDirectory extends DataDirectory implements ByteArrayCon
 
     private SecurityCertificate [] certificates;
 
-    static SecurityDataDirectory createSecurityDataDirectory(
-            NTHeader ntHeader, FactoryBundledWithBinaryReader reader)
-            throws IOException {
-        SecurityDataDirectory securityDataDirectory = (SecurityDataDirectory) reader.getFactory().create(SecurityDataDirectory.class);
-        securityDataDirectory.initSecurityDataDirectory(ntHeader, reader);
-        return securityDataDirectory;
-    }
-
-    /**
-     * DO NOT USE THIS CONSTRUCTOR, USE create*(GenericFactory ...) FACTORY METHODS INSTEAD.
-     */
-    public SecurityDataDirectory() {}
-
-	private void initSecurityDataDirectory(NTHeader ntHeader, FactoryBundledWithBinaryReader reader) throws IOException {
+	SecurityDataDirectory(NTHeader ntHeader, BinaryReader reader) throws IOException {
 		processDataDirectory(ntHeader, reader);
 
-        if (certificates == null) certificates = new SecurityCertificate[0];
+        if (certificates == null) {
+			certificates = new SecurityCertificate[0];
+		}
 	}
 
 	/**
@@ -74,8 +63,8 @@ public class SecurityDataDirectory extends DataDirectory implements ByteArrayCon
 
 	@Override
 	public void markup(Program program, boolean isBinary, TaskMonitor monitor, MessageLog log,
-			NTHeader ntHeader) throws DuplicateNameException, CodeUnitInsertionException,
-			DataTypeConflictException, IOException {
+			NTHeader ntHeader)
+			throws DuplicateNameException, CodeUnitInsertionException, IOException {
 
 		if (!isBinary) {//certificates are never mapped into running program...
 			return;
@@ -99,7 +88,7 @@ public class SecurityDataDirectory extends DataDirectory implements ByteArrayCon
 
 	@Override
 	public boolean parse() throws IOException {
-		List<SecurityCertificate> list = new ArrayList<SecurityCertificate>();
+		List<SecurityCertificate> list = new ArrayList<>();
 
         // Sanity check...
         // Sometimes the cert address is not valid
@@ -114,16 +103,21 @@ public class SecurityDataDirectory extends DataDirectory implements ByteArrayCon
 
         int certOffset = getVirtualAddress();
         int certSize   = getSize();
+		if (certOffset + certSize > reader.length()) {
+			Msg.warn(this, "Certificate length " + certSize + " exceeds EOF.");
+			return false;
+		}
 
         while (certSize > 0 && certSize < NTHeader.MAX_SANE_COUNT) {
-            SecurityCertificate cert = SecurityCertificate.createSecurityCertificate(reader, certOffset);
-            if (cert.getLength() < 0) {
+			SecurityCertificate cert = SecurityCertificate.read(reader, certOffset, certSize);
+			if (cert == null) {
             	return false;
             }
             list.add(cert);
 
-            certOffset += cert.getNumberOfBytesConsumed();
-            certSize   -= cert.getNumberOfBytesConsumed();
+			int certBytesUsed = cert.getNumberOfBytesConsumed();
+			certOffset += certBytesUsed;
+			certSize -= certBytesUsed;
         }
 
         certificates = new SecurityCertificate[list.size()];
@@ -147,6 +141,7 @@ public class SecurityDataDirectory extends DataDirectory implements ByteArrayCon
 	/**
 	 * @see ghidra.app.util.bin.ByteArrayConverter#toBytes(ghidra.util.DataConverter)
 	 */
+	@Override
 	public byte [] toBytes(DataConverter dc) {
 		try {
 			return reader.readByteArray( virtualAddress, size );

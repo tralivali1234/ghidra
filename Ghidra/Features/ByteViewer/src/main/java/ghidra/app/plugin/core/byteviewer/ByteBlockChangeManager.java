@@ -1,6 +1,5 @@
 /* ###
  * IP: GHIDRA
- * REVIEWED: YES
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +15,20 @@
  */
 package ghidra.app.plugin.core.byteviewer;
 
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.List;
+
 import ghidra.app.plugin.core.format.ByteBlock;
 import ghidra.app.plugin.core.format.ByteEditInfo;
 import ghidra.framework.options.SaveState;
 import ghidra.program.model.address.Address;
 
-import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Helper class to manage changes within byte blocks; determines what offsets
- * have changed so the changes can be rendered properly in the Byte Viewer.
+ * Helper class to manage changes within byte blocks; determines what offsets have changed so the
+ * changes can be rendered properly in the Byte Viewer.
  */
-class ByteBlockChangeManager {
+public class ByteBlockChangeManager {
 
 	private ProgramByteBlockSet blockSet;
 	private List<ByteEditInfo> changeList; // list of changes for this tool
@@ -43,23 +42,18 @@ class ByteBlockChangeManager {
 	/**
 	 * Construct new change manager.
 	 */
-	ByteBlockChangeManager(ProgramByteBlockSet blockSet) {
+	protected ByteBlockChangeManager(ProgramByteBlockSet blockSet, ByteBlockChangeManager bbcm) {
 		this.blockSet = blockSet;
-		changeList = new ArrayList<ByteEditInfo>(3);
-	}
-
-	ByteBlockChangeManager(ProgramByteBlockSet blockSet, ByteBlockChangeManager bbcm) {
-
-		this.blockSet = blockSet;
-		changeList = bbcm.changeList;
+		changeList = bbcm == null ? new ArrayList<>() : bbcm.changeList;
 	}
 
 	/**
 	 * Add a change to the change list.
+	 * 
 	 * @param edit edit object that has the old value and new value
 	 * 
 	 */
-	void add(ByteEditInfo edit) {
+	protected void add(ByteEditInfo edit) {
 		byte[] oldValue = edit.getOldValue();
 		byte[] newValue = edit.getNewValue();
 
@@ -116,16 +110,16 @@ class ByteBlockChangeManager {
 	}
 
 	/**
-	 * Return true if any offset in the range offset to offset+unitByteSize-1
-	 * is in either of the change lists.
+	 * Return true if any offset in the range offset to offset+unitByteSize-1 is in either of the
+	 * change lists.
+	 * 
 	 * @param block block in question
 	 * @param offset offset into the block
-	 * @param unitByteSize number of bytes in the unit (dictated by the
-	 * data format model)
+	 * @param unitByteSize number of bytes in the unit (dictated by the data format model)
 	 * 
 	 * @return boolean true if an offset in the range was found
 	 */
-	boolean isChanged(ByteBlock block, BigInteger offset, int unitByteSize) {
+	protected boolean isChanged(ByteBlock block, BigInteger offset, int unitByteSize) {
 		Address blockAddr = blockSet.getBlockStart(block);
 		for (int i = 0; i < unitByteSize; i++) {
 
@@ -139,6 +133,7 @@ class ByteBlockChangeManager {
 	//////////////////////////////////////////////////////////////////////
 	/**
 	 * Return true if the block and offset are in the list.
+	 * 
 	 * @param list either the local change list or the external change list
 	 * @param block block in question
 	 * @param offset offset into the block
@@ -146,7 +141,8 @@ class ByteBlockChangeManager {
 	private boolean contains(Address blockAddr, BigInteger offset) {
 		for (int i = 0; i < changeList.size(); i++) {
 			ByteEditInfo edit = changeList.get(i);
-			if (edit.getBlockAddress().compareTo(blockAddr) == 0 && edit.getOffset().equals(offset)) {
+			if (edit.getBlockAddress().compareTo(blockAddr) == 0 &&
+				edit.getOffset().equals(offset)) {
 				return true;
 			}
 		}

@@ -15,12 +15,13 @@
  */
 package ghidra.app.util.bin.format.elf.extend;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
+import ghidra.app.util.Option;
 import ghidra.app.util.bin.format.MemoryLoadable;
 import ghidra.app.util.bin.format.elf.*;
 import ghidra.program.model.address.Address;
@@ -127,6 +128,8 @@ public class ElfLoadAdapter {
 	/**
 	 * Get the preferred load address space for an allocated program segment.
 	 * The OTHER space is reserved and should not be returned by this method.
+	 * This method may only return a physical address space and not an overlay 
+	 * address space.
 	 * @param elfLoadHelper load helper object
 	 * @param elfProgramHeader elf program segment header
 	 * @return preferred load address space
@@ -143,7 +146,9 @@ public class ElfLoadAdapter {
 	}
 
 	/**
-	 * Get the preferred load address for a program segment
+	 * Get the preferred load address for a program segment.
+	 * This method may only return a physical address and not an overlay 
+	 * address.
 	 * @param elfLoadHelper load helper object
 	 * @param elfProgramHeader elf program segment header
 	 * @return preferred load address
@@ -182,6 +187,8 @@ public class ElfLoadAdapter {
 	/**
 	 * Get the preferred load address space for an allocated section.   The OTHER space
 	 * is reserved and should not be returned by this method.
+	 * This method may only return a physical address space and not an overlay 
+	 * address space.
 	 * @param elfLoadHelper load helper object
 	 * @param elfSectionHeader elf section header
 	 * @return preferred load address space
@@ -198,6 +205,8 @@ public class ElfLoadAdapter {
 
 	/**
 	 * Get the preferred load address for an allocated program section.  
+	 * This method may only return a physical address and not an overlay 
+	 * address.
 	 * @param elfLoadHelper load helper object
 	 * @param elfSectionHeader elf program section header
 	 * @return preferred load address
@@ -252,6 +261,22 @@ public class ElfLoadAdapter {
 	}
 
 	/**
+	 * Perform any required offset adjustment to account for differences between offset 
+	 * values contained within ELF headers and the language modeling of the 
+	 * associated address space.
+	 * <br>
+	 * WARNING: This is an experimental method and is not yet fully supported.
+	 * <br>
+	 * NOTE: This has currently been utilized for symbol address offset adjustment only.
+	 * @param elfOffset memory offset from ELF header
+	 * @param space associated address space
+	 * @return offset appropriate for use in space (does not account for image base alterations)
+	 */
+	public long getAdjustedMemoryOffset(long elfOffset, AddressSpace space) {
+		return elfOffset;
+	}
+
+	/**
 	 * Perform extension specific processing of Elf image during program load.
 	 * The following loading steps will have already been completed:
 	 * <pre>
@@ -297,11 +322,27 @@ public class ElfLoadAdapter {
 	}
 
 	/**
+	 * This method allows an extension to override the default address calculation for loading
+	 * a symbol.  This is generally only neccessary when symbol requires handling of processor-specific 
+	 * flags or section index.  This method should return null when default symbol processing 
+	 * is sufficient. {@link Address#NO_ADDRESS} should be returned if the symbol is external
+	 * and is not handled by default processing.
+	 * @param elfLoadHelper load helper object
+	 * @param elfSymbol elf symbol
+	 * @return symbol memory address or null to defer to default implementation
+	 * @throws NoValueException if error logged and address calculation failed
+	 */
+	public Address calculateSymbolAddress(ElfLoadHelper elfLoadHelper, ElfSymbol elfSymbol)
+			throws NoValueException {
+		return null;
+	}
+
+	/**
 	 * During symbol processing this method will be invoked to permit an extension to
 	 * adjust the address and/or apply context to the intended symbol location.
 	 * @param elfLoadHelper load helper object
 	 * @param elfSymbol elf symbol
-	 * @param address program memory address where symbol will be created
+	 * @param address program memory address where symbol will be created.
 	 * @param isExternal true if symbol treated as external to the program and has been
 	 * assigned a fake memory address in the EXTERNAL memory block.
 	 * @return adjusted symbol address or null if extension will handle applying the elfSymbol
@@ -423,13 +464,19 @@ public class ElfLoadAdapter {
 	}
 
 	/**
-	 * Return the memory section size in bytes for the specified section header.
-	 * The returned value will be consistent with any byte filtering which may be required.
+	 * Returns the memory section size in bytes for the specified section header.
+	 * <p>
+	 * The returned value will be consistent with any byte filtering and decompression which 
+	 * may be required.
+	 * <p>
+	 * The default implementation returns the section's 
+	 * {@link ElfSectionHeader#getLogicalSize() logical size}
+	 * 
 	 * @param section the section header
 	 * @return preferred memory block size in bytes which corresponds to the specified section header
 	 */
 	public long getAdjustedSize(ElfSectionHeader section) {
-		return section.getSize();
+		return section.getLogicalSize();
 	}
 
 	/**
@@ -442,9 +489,11 @@ public class ElfLoadAdapter {
 	 * @param dataLength the in-memory data length in bytes (actual bytes read from dataInput may be more)
 	 * @param dataInput the source input stream
 	 * @return filtered input stream or original input stream
+	 * @throws IOException if error initializing filtered stream
 	 */
 	public InputStream getFilteredLoadInputStream(ElfLoadHelper elfLoadHelper,
-			MemoryLoadable loadable, Address start, long dataLength, InputStream dataInput) {
+			MemoryLoadable loadable, Address start, long dataLength, InputStream dataInput)
+			throws IOException {
 		return dataInput;
 	}
 
@@ -471,4 +520,14 @@ public class ElfLoadAdapter {
 	public Class<? extends ElfRelocation> getRelocationClass(ElfHeader elfHeader) {
 		return null;
 	}
+
+	/**
+	 * Add extension-specific load options
+	 * @param elf ELF header
+	 * @param options list to which load options may be added 
+	 */
+	public void addLoadOptions(ElfHeader elf, List<Option> options) {
+		// no additional options
+	}
+
 }

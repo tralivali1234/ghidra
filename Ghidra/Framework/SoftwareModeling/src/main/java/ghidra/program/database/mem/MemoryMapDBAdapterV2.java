@@ -30,30 +30,31 @@ import ghidra.util.exception.VersionException;
  */
 class MemoryMapDBAdapterV2 extends MemoryMapDBAdapter {
 	private static final int V2_VERSION = 2;
-	static final String V2_TABLE_NAME = "Memory Blocks";
+	private static final String V2_TABLE_NAME = "Memory Blocks";
 
-	static final int V2_NAME_COL = 0;
-	static final int V2_COMMENTS_COL = 1;
-	static final int V2_SOURCE_COL = 2;
-	static final int V2_PERMISSIONS_COL = 3;
-	static final int V2_START_ADDR_COL = 4;
-	static final int V2_BLOCK_TYPE_COL = 5;
-	static final int V2_OVERLAY_ADDR_COL = 6;
-	static final int V2_LENGTH_COL = 7;
-	static final int V2_CHAIN_BUF_COL = 8;
-	static final int V2_SEGMENT_COL = 9;
+	private static final int V2_NAME_COL = 0;
+	private static final int V2_COMMENTS_COL = 1;
+	private static final int V2_SOURCE_COL = 2;
+	private static final int V2_PERMISSIONS_COL = 3;
+	private static final int V2_START_ADDR_COL = 4;
+	private static final int V2_BLOCK_TYPE_COL = 5;
+	private static final int V2_OVERLAY_ADDR_COL = 6;
+	private static final int V2_LENGTH_COL = 7;
+	private static final int V2_CHAIN_BUF_COL = 8;
+	private static final int V2_SEGMENT_COL = 9;
 
-	static final int INITIALIZED = 0;
-	static final int UNINITIALIZED = 1;
-	static final int BIT_MAPPED = 2;
-	static final int BYTE_MAPPED = 4;
+	// Enumerated block type values
+	private static final int INITIALIZED = 0;
+	private static final int UNINITIALIZED = 1;
+	private static final int BIT_MAPPED = 2;
+	private static final int BYTE_MAPPED = 4;
 
 	private DBHandle handle;
 	private MemoryMapDB memMap;
 
 	private List<MemoryBlockDB> blocks = new ArrayList<>();
 
-//  The following schema definition documents the schema used in version 2No  	
+//  The following schema definition documents the schema used in version 2  	
 //	
 //	static Schema BLOCK_SCHEMA = new Schema(CURRENT_VERSION, "Key",
 //		new Class[] { StringField.class, StringField.class, StringField.class, ByteField.class,
@@ -84,7 +85,7 @@ class MemoryMapDBAdapterV2 extends MemoryMapDBAdapter {
 
 		RecordIterator it = table.iterator();
 		while (it.hasNext()) {
-			Record rec = it.next();
+			DBRecord rec = it.next();
 			int permissions = rec.getByteValue(V2_PERMISSIONS_COL);
 
 			long startAddr = rec.getLongValue(V2_START_ADDR_COL);
@@ -92,8 +93,8 @@ class MemoryMapDBAdapterV2 extends MemoryMapDBAdapter {
 			int bufID = rec.getIntValue(V2_CHAIN_BUF_COL);
 			int segment = rec.getIntValue(V2_SEGMENT_COL);
 
-			Record blockRecord = BLOCK_SCHEMA.createRecord(key);
-			Record subBlockRecord = SUB_BLOCK_SCHEMA.createRecord(key);
+			DBRecord blockRecord = BLOCK_SCHEMA.createRecord(key);
+			DBRecord subBlockRecord = SUB_BLOCK_SCHEMA.createRecord(key);
 
 			blockRecord.setString(NAME_COL, rec.getString(V2_NAME_COL));
 			blockRecord.setString(COMMENTS_COL, rec.getString(V2_COMMENTS_COL));
@@ -119,23 +120,23 @@ class MemoryMapDBAdapterV2 extends MemoryMapDBAdapter {
 
 	}
 
-	private SubMemoryBlock getSubBlock(int bufID, Record record, int type, long overlayAddr)
+	private SubMemoryBlock getSubBlock(int bufID, DBRecord record, int type, long overlayAddr)
 			throws IOException {
 		switch (type) {
-			case MemoryMapDBAdapterV2.BIT_MAPPED:
+			case BIT_MAPPED:
 				record.setByteValue(SUB_TYPE_COL, SUB_TYPE_BIT_MAPPED);
 				record.setLongValue(MemoryMapDBAdapter.SUB_LONG_DATA2_COL, overlayAddr);
 				return new BitMappedSubMemoryBlock(this, record);
-			case MemoryMapDBAdapterV2.BYTE_MAPPED:
+			case BYTE_MAPPED:
 				record.setByteValue(SUB_TYPE_COL, SUB_TYPE_BYTE_MAPPED);
 				record.setLongValue(MemoryMapDBAdapter.SUB_LONG_DATA2_COL, overlayAddr);
 				return new ByteMappedSubMemoryBlock(this, record);
-			case MemoryMapDBAdapterV2.INITIALIZED:
+			case INITIALIZED:
 				record.setByteValue(SUB_TYPE_COL, SUB_TYPE_BUFFER);
 				record.setIntValue(SUB_INT_DATA1_COL, bufID);
 				return new BufferSubMemoryBlock(this, record);
-			case MemoryMapDBAdapterV2.UNINITIALIZED:
-				record.setByteValue(SUB_TYPE_COL, SUB_TYPE_UNITIALIZED);
+			case UNINITIALIZED:
+				record.setByteValue(SUB_TYPE_COL, SUB_TYPE_UNINITIALIZED);
 				return new UninitializedSubMemoryBlock(this, record);
 			default:
 				throw new IOException("Unknown memory block type: " + type);
@@ -168,7 +169,7 @@ class MemoryMapDBAdapterV2 extends MemoryMapDBAdapter {
 	}
 
 	@Override
-	void deleteMemoryBlock(long key) throws IOException {
+	void deleteMemoryBlock(MemoryBlockDB block) throws IOException {
 		throw new UnsupportedOperationException();
 	}
 
@@ -178,7 +179,7 @@ class MemoryMapDBAdapterV2 extends MemoryMapDBAdapter {
 	}
 
 	@Override
-	void updateBlockRecord(Record record) throws IOException {
+	void updateBlockRecord(DBRecord record) throws IOException {
 		throw new UnsupportedOperationException();
 	}
 
@@ -211,12 +212,12 @@ class MemoryMapDBAdapterV2 extends MemoryMapDBAdapter {
 	}
 
 	@Override
-	protected void updateSubBlockRecord(Record record) throws IOException {
+	protected void updateSubBlockRecord(DBRecord record) throws IOException {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	Record createSubBlockRecord(long memBlockId, long startingOffset, long length, byte subType,
+	DBRecord createSubBlockRecord(long memBlockId, long startingOffset, long length, byte subType,
 			int data1, long data2) throws IOException {
 		throw new UnsupportedOperationException();
 	}

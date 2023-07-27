@@ -34,17 +34,18 @@ import ghidra.util.exception.DuplicateNameException;
 public class DataTypeNode extends DataTypeTreeNode {
 	private final DataType dataType;
 	private final String name;
-	private String displayName;
+	private String displayText;
 
 	private boolean isCut;
 	private boolean useHighlight = false;
 
 	private String toolTipText;
+	private long toolTipTimestamp;
 
 	public DataTypeNode(DataType dataType) {
 		this.dataType = dataType;
 		this.name = dataType.getName();
-		this.displayName = getCurrentDisplayName();
+		this.displayText = getCurrentDisplayText();
 	}
 
 	@Override
@@ -68,8 +69,14 @@ public class DataTypeNode extends DataTypeTreeNode {
 		if (getClass() != o.getClass()) {
 			return false;
 		}
+
 		DataTypeNode otherNode = (DataTypeNode) o;
-		return dataType.equals(otherNode.dataType) && name.equals(otherNode.name);
+		CategoryPath otherPath = otherNode.getDataType().getCategoryPath();
+		CategoryPath path = dataType.getCategoryPath();
+		if (!path.equals(otherPath)) {
+			return false;
+		}
+		return name.equals(otherNode.name);
 	}
 
 	@Override
@@ -100,14 +107,18 @@ public class DataTypeNode extends DataTypeTreeNode {
 
 	@Override
 	public String getToolTip() {
-		if (toolTipText == null) {
-			// HACK: SCR 4122 - TypeDefs currently have no way of knowing when the underlying
-			//                  datatype changes and thus cannot update the tooltip cache
-			if (dataType instanceof TypeDef) {
-				return ToolTipUtils.getToolTipText(dataType);
-			}
-			toolTipText = ToolTipUtils.getToolTipText(dataType);
+
+		DataType baseType = DataTypeUtils.getBaseDataType(dataType);
+		long lastChangeTime = baseType.getLastChangeTime();
+		if (lastChangeTime > toolTipTimestamp) {
+			toolTipText = null;
 		}
+
+		if (toolTipText == null) {
+			toolTipText = ToolTipUtils.getToolTipText(dataType);
+			toolTipTimestamp = lastChangeTime;
+		}
+
 		return toolTipText;
 	}
 
@@ -157,6 +168,7 @@ public class DataTypeNode extends DataTypeTreeNode {
 	/**
 	 * Returns true if this dataType node uses and editor that is different than Java's default
 	 * editor.
+	 * 
 	 * @return true if this dataType node has a custom editor.
 	 */
 	public boolean hasCustomEditor() {
@@ -189,7 +201,7 @@ public class DataTypeNode extends DataTypeTreeNode {
 	@Override
 	public void setNodeCut(boolean isCut) {
 		this.isCut = isCut;
-		fireNodeChanged(getParent(), this);
+		fireNodeChanged();
 	}
 
 	@Override
@@ -199,11 +211,7 @@ public class DataTypeNode extends DataTypeTreeNode {
 
 	@Override
 	public boolean canPaste(List<GTreeNode> pastedNodes) {
-		if (pastedNodes.size() != 1) {
-			return false;
-		}
-		GTreeNode pastedNode = pastedNodes.get(0);
-		return pastedNode instanceof DataTypeNode;
+		return isModifiable();
 	}
 
 	@Override
@@ -233,41 +241,42 @@ public class DataTypeNode extends DataTypeTreeNode {
 	}
 
 	public void dataTypeStatusChanged() {
-		fireNodeChanged(getParent(), this);
+		fireNodeChanged();
 	}
 
 	public void dataTypeChanged() {
 		toolTipText = null;
-		fireNodeChanged(getParent(), this);
+		fireNodeChanged();
 		GTree tree = getTree();
 		if (tree != null) {
 			tree.repaint(); // need to repaint in case related datatypes changes mod status.
 		}
 	}
 
-	public String getDisplayName() {
-		// note: we have to check the name each time, as the optional underlying 
+	@Override
+	public String getDisplayText() {
+		// note: we have to check the name each time, as the optional underlying
 		//       source archive may have changed.
-		String currentDisplayName = getCurrentDisplayName();
-		if (!displayName.equals(currentDisplayName)) {
-			displayName = currentDisplayName;
-			fireNodeChanged(getParent(), this);
+		String currentDisplayText = getCurrentDisplayText();
+		if (!displayText.equals(currentDisplayText)) {
+			displayText = currentDisplayText;
+			fireNodeChanged();
 		}
-		return displayName;
+		return displayText;
 	}
 
-	private String getCurrentDisplayName() {
+	private String getCurrentDisplayText() {
 
-		String baseDisplayName = dataType.getName();
+		String baseDisplayText = dataType.getName();
 
 		UniversalID localID = dataType.getDataTypeManager().getUniversalID();
 		SourceArchive sourceArchive = dataType.getSourceArchive();
 		if (sourceArchive != null && sourceArchive.getArchiveType() != ArchiveType.BUILT_IN &&
 			!sourceArchive.getSourceArchiveID().equals(localID)) {
-			return baseDisplayName + "  (" + sourceArchive.getName() + ")";
+			return baseDisplayText + "  (" + sourceArchive.getName() + ")";
 		}
 
-		return baseDisplayName;
+		return baseDisplayText;
 	}
 
 	@Override
