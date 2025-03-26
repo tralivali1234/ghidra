@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -85,7 +85,7 @@ import ghidra.util.task.TaskMonitor;
  * <li>Observations of registers behave exactly the same as observations for memory, by leveraging
  * Ghidra's "register space." The only difference is that those observations must be recorded with
  * respect to a given thread. Each thread is effectively allocated its own copy of the register
- * space. Most the the API components require you to obtain a special "register space" for a given
+ * space. Most of the API components require you to obtain a special "register space" for a given
  * thread before recording observations of or applying annotations to that thread.</li>
  * </ul>
  * 
@@ -288,9 +288,8 @@ public class PopulateDemoTrace extends GhidraScript {
 		int pc2 = 0;
 
 		/**
-		 * For clarity, I will add each tick to the trace in its own transaction. The
-		 * Transaction class eases the syntax and reduces errors in starting and ending
-		 * transactions.
+		 * For clarity, I will add each tick to the trace in its own transaction. The Transaction
+		 * class eases the syntax and reduces errors in starting and ending transactions.
 		 */
 		try (Transaction tx = trace.openTransaction("Populate First Snapshot")) {
 			/**
@@ -699,7 +698,7 @@ public class PopulateDemoTrace extends GhidraScript {
 			long snap =
 				trace.getTimeManager().createSnapshot("Stepped Thread 2: CALL exit").getKey();
 
-			thread2.setDestructionSnap(snap);
+			thread2.remove(snap);
 		}
 
 		/**
@@ -709,7 +708,7 @@ public class PopulateDemoTrace extends GhidraScript {
 			long snap =
 				trace.getTimeManager().createSnapshot("Stepped Thread 1: CALL exit").getKey();
 
-			thread1.setDestructionSnap(snap);
+			thread1.remove(snap);
 		}
 
 		/**

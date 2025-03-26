@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -145,18 +145,50 @@ public interface Listing {
 	public CodeUnitIterator getCommentCodeUnitIterator(int commentType, AddressSetView addrSet);
 
 	/**
+	 * Get a forward code unit iterator over code units that have the specified
+	 * comment type.
+	 * 
+	 * @param type the comment type
+	 * @param addrSet address set to iterate code unit comments over
+	 * @return a CodeUnitIterator that returns all code units from the indicated
+	 *         address set that have the specified comment type defined
+	 */
+	public default CodeUnitIterator getCommentCodeUnitIterator(CommentType type,
+			AddressSetView addrSet) {
+		return getCommentCodeUnitIterator(type.ordinal(), addrSet);
+	}
+
+	/**
 	 * Get a forward iterator over addresses that have the specified comment
 	 * type.
 	 * 
 	 * @param commentType type defined in CodeUnit
-	 * @param addrSet address set
+	 * @param addrSet address set to iterate code unit comments over
+	 * @param forward true to iterator from lowest address to highest, false
+	 *            highest to lowest
+	 * @return an AddressIterator that returns all addresses from the indicated
+	 *         address set that have the specified comment type defined
+	 * @deprecated use {@link #getCommentAddressIterator(CommentType, AddressSetView, boolean)}
+	 */
+	@Deprecated
+	public AddressIterator getCommentAddressIterator(int commentType, AddressSetView addrSet,
+			boolean forward);
+
+	/**
+	 * Get a forward iterator over addresses that have the specified comment
+	 * type.
+	 * 
+	 * @param type the type of comment to iterate over
+	 * @param addrSet address set to iterate code unit comments over
 	 * @param forward true to iterator from lowest address to highest, false
 	 *            highest to lowest
 	 * @return an AddressIterator that returns all addresses from the indicated
 	 *         address set that have the specified comment type defined
 	 */
-	public AddressIterator getCommentAddressIterator(int commentType, AddressSetView addrSet,
-			boolean forward);
+	public default AddressIterator getCommentAddressIterator(CommentType type,
+			AddressSetView addrSet, boolean forward) {
+		return getCommentAddressIterator(type.ordinal(), addrSet, forward);
+	}
 
 	/**
 	 * Get a forward iterator over addresses that have any type of comment.
@@ -179,8 +211,29 @@ public interface Listing {
 	 *         of that type exists for this code unit
 	 * @throws IllegalArgumentException if type is not one of the types of
 	 *             comments supported
+	 * @deprecated use {@link #getComment(CommentType, Address)}
 	 */
+	@Deprecated
 	public String getComment(int commentType, Address address);
+
+	/**
+	 * Get all the comments at the given address.
+	 * @param address the address get comments 
+	 * @return a CodeUnitComments object that has all the comments at the address.
+	 */
+	public CodeUnitComments getAllComments(Address address);
+
+	/**
+	 * Get the comment for the given type at the specified address.
+	 *
+	 * @param type the comment type to retrieve
+	 * @param address the address of the comment.
+	 * @return the comment string of the appropriate type or null if no comment
+	 *         of that type exists for this code unit
+	 */
+	public default String getComment(CommentType type, Address address) {
+		return getComment(type.ordinal(), address);
+	}
 
 	/**
 	 * Set the comment for the given comment type at the specified address.
@@ -191,8 +244,23 @@ public interface Listing {
 	 * @param comment comment to set at the address
 	 * @throws IllegalArgumentException if type is not one of the types of
 	 *             comments supported
+	 * @deprecated use {@link #setComment(Address, CommentType, String)}
 	 */
+	@Deprecated
 	public void setComment(Address address, int commentType, String comment);
+
+	/**
+	 * Set the comment for the given comment type at the specified address.
+	 *
+	 * @param address the address of the comment.
+	 * @param type the type of comment to set
+	 * @param comment comment to set at the address
+	 * @throws IllegalArgumentException if type is not one of the types of
+	 *             comments supported
+	 */
+	public default void setComment(Address address, CommentType type, String comment) {
+		setComment(address, type.ordinal(), comment);
+	}
 
 	/**
 	 * get a CodeUnit iterator that will iterate over the entire address space.
@@ -209,7 +277,6 @@ public interface Listing {
 	 * to the <code>next</code> method. An initial call to the <code>previous</code>
 	 * method would return the code unit with an address less than the specified
 	 * address.
-	 * <p>
 	 *
 	 * @param addr the start address of the iterator.
 	 * @param forward true means get iterator in forward direction
@@ -285,7 +352,6 @@ public interface Listing {
 	 * to the <code>next</code> method. An initial call to the <code>previous</code>
 	 * method would return the instruction with an address less than the
 	 * specified address.
-	 * <p>
 	 *
 	 * @param addr the initial position of the iterator
 	 * @param forward true means get iterator in forward direction
@@ -359,7 +425,6 @@ public interface Listing {
 	 * first Data that would be returned by an initial call to the <code>next</code>
 	 * method. An initial call to the <code>previous</code> method would return the
 	 * Data with an address less than the specified address.
-	 * <p>
 	 *
 	 * @param addr the initial position of the iterator
 	 * @param forward true means get iterator in forward direction
@@ -438,7 +503,6 @@ public interface Listing {
 	 * call to the <code>next</code> method. An initial call to the
 	 * <code>previous</code> method would return the defined Data with an address
 	 * less than the specified address.
-	 * <p>
 	 *
 	 * @param addr the initial position of the iterator
 	 * @param forward true means get iterator in forward direction
@@ -602,17 +666,22 @@ public interface Listing {
 	 * changes will result in a <code>ContextChangeException</code>
 	 *
 	 * @param addr the address at which to create an instruction
-	 * @param prototype the InstructionPrototype the describes the type of
-	 *            instruction to create.
-	 * @param memBuf buffer that provides the bytes that make up the
-	 *            instruction.
+	 * @param prototype the InstructionPrototype that describes the type of instruction to create.
+	 * @param memBuf buffer that provides the bytes that make up the instruction.
 	 * @param context the processor context at this location.
-	 * @return the newly created instruction.
-	 * @exception CodeUnitInsertionException thrown if the new Instruction would
-	 *                overlap and existing Instruction or defined data.
+	 * @param length instruction byte-length (must be in the range 0..prototype.getLength()).
+	 * If smaller than the prototype length it must have a value no greater than 7, otherwise
+	 * an error will be thrown.  A value of 0 or greater-than-or-equal the prototype length
+	 * will be ignored and not impose and override length.  The length value must be a multiple 
+	 * of the {@link Language#getInstructionAlignment() instruction alignment} .
+	 * @return the newly created instruction.  
+	 * @throws CodeUnitInsertionException thrown if the new Instruction would overlap and 
+	 * existing {@link CodeUnit} or the specified {@code length} is unsupported.
+	 * @throws IllegalArgumentException if a negative {@code length} is specified.
 	 */
 	public Instruction createInstruction(Address addr, InstructionPrototype prototype,
-			MemBuffer memBuf, ProcessorContextView context) throws CodeUnitInsertionException;
+			MemBuffer memBuf, ProcessorContextView context, int length)
+			throws CodeUnitInsertionException;
 
 	/**
 	 * Creates a complete set of instructions. A preliminary pass will be made
@@ -659,8 +728,7 @@ public interface Listing {
 	 * @exception CodeUnitInsertionException thrown if the new Instruction would
 	 *                overlap and existing Instruction or defined data.
 	 */
-	public Data createData(Address addr, DataType dataType)
-			throws CodeUnitInsertionException;
+	public Data createData(Address addr, DataType dataType) throws CodeUnitInsertionException;
 
 	/**
 	 * Clears any code units in the given range returning everything to "db"s,
@@ -731,7 +799,6 @@ public interface Listing {
 
 	/**
 	 * Returns the fragment containing the given address.
-	 * <P>
 	 * 
 	 * @param treeName name of the tree to search
 	 * @param addr the address that is contained within a fragment.
@@ -742,7 +809,6 @@ public interface Listing {
 
 	/**
 	 * Returns the module with the given name.
-	 * <P>
 	 * 
 	 * @param treeName name of the tree to search
 	 * @param name the name of the module to find.
@@ -753,7 +819,6 @@ public interface Listing {
 
 	/**
 	 * Returns the fragment with the given name.
-	 * <P>
 	 * 
 	 * @param treeName name of the tree to search
 	 * @param name the name of the fragment to find.
@@ -985,5 +1050,11 @@ public interface Listing {
 	 * @return array of comment history records
 	 */
 	public CommentHistory[] getCommentHistory(Address addr, int commentType);
+
+	/**
+	 * Returns the number of addresses where at least one comment type has been applied.
+	 * @return the number of addresses where at least one comment type has been applied
+	 */
+	public long getCommentAddressCount();
 
 }

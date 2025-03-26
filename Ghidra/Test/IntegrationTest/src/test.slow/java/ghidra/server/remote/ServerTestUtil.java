@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -30,6 +30,7 @@ import javax.rmi.ssl.SslRMIClientSocketFactory;
 import org.apache.commons.lang3.RandomStringUtils;
 
 import generic.test.*;
+import ghidra.framework.Application;
 import ghidra.framework.client.*;
 import ghidra.framework.data.ContentHandler;
 import ghidra.framework.data.DomainObjectAdapter;
@@ -50,9 +51,6 @@ import ghidra.util.task.TaskMonitor;
 import ghidra.util.timer.GTimer;
 import utilities.util.FileUtilities;
 
-/**
- * 
- */
 public class ServerTestUtil {
 
 	public static final int GHIDRA_TEST_SERVER_PORT = 14100;
@@ -347,7 +345,7 @@ public class ServerTestUtil {
 
 	private static synchronized File getPkiTestDirectory() {
 		if (testPkiDirectory == null) {
-			testPkiDirectory = new File(System.getProperty("java.io.tmpdir"), "test-pki");
+			testPkiDirectory = new File(Application.getUserTempDirectory(), "test-pki");
 			FileUtilities.deleteDir(testPkiDirectory);
 			testPkiDirectory.mkdirs();
 
@@ -802,9 +800,9 @@ public class ServerTestUtil {
 	public static void createRepositoryItem(LocalFileSystem repoFilesystem, String name,
 			String folderPath, Program program) throws Exception {
 
-		ContentHandler contentHandler = DomainObjectAdapter.getContentHandler(program);
-		long checkoutId = contentHandler.createFile(repoFilesystem, null, folderPath, name,
-			program, TaskMonitor.DUMMY);
+		ContentHandler<?> contentHandler = DomainObjectAdapter.getContentHandler(program);
+		long checkoutId = contentHandler.createFile(repoFilesystem, null, folderPath, name, program,
+			TaskMonitor.DUMMY);
 		LocalFolderItem item = repoFilesystem.getItem(folderPath, name);
 		if (item == null) {
 			throw new IOException("Item not found: " + FileSystem.SEPARATOR + name);

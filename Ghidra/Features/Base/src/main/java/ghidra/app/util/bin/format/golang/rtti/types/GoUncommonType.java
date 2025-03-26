@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,11 +18,17 @@ package ghidra.app.util.bin.format.golang.rtti.types;
 import java.io.IOException;
 import java.util.List;
 
-import ghidra.app.util.bin.format.golang.rtti.*;
+import ghidra.app.util.bin.format.golang.rtti.GoName;
+import ghidra.app.util.bin.format.golang.rtti.GoRttiMapper;
+import ghidra.app.util.bin.format.golang.rtti.GoSlice;
 import ghidra.app.util.bin.format.golang.structmapping.*;
 import ghidra.util.Msg;
 
-@StructureMapping(structureName = "runtime.uncommontype")
+/**
+ * Structure found immediately after a {@link GoType} structure, if it has the uncommon flag
+ * set.
+ */
+@StructureMapping(structureName = {"runtime.uncommontype", "internal/abi.UncommonType"})
 public class GoUncommonType {
 
 	@ContextField
@@ -32,8 +38,8 @@ public class GoUncommonType {
 	private StructureContext<GoUncommonType> context;
 
 	@FieldMapping(fieldName = "pkgpath")
-	@MarkupReference("pkgPath")
-	@EOLComment("packagePathString")
+	@MarkupReference("getPkgPath")
+	@EOLComment("getPackagePathString")
 	long pkgpath_nameOff;
 
 	@FieldMapping
@@ -45,20 +51,42 @@ public class GoUncommonType {
 	@FieldMapping
 	long moff;
 
+	/**
+	 * Returns the package path of the type.
+	 * 
+	 * @return package path of the type
+	 * @throws IOException if error reading data
+	 */
 	@Markup
 	public GoName getPkgPath() throws IOException {
 		return programContext.resolveNameOff(context.getStructureStart(), pkgpath_nameOff);
 	}
 
+	/**
+	 * Returns the package path of the type.
+	 * @return package path of the type, as a string
+	 * @throws IOException if error reading data
+	 */
 	public String getPackagePathString() throws IOException {
 		GoName pkgPath = getPkgPath();
-		return pkgPath != null ? pkgPath.getName() : null;
+		return pkgPath != null ? pkgPath.getName() : "";
 	}
 
+	/**
+	 * Returns a slice containing the methods defined by the type.
+	 * 
+	 * @return slice containing the methods defined by the type
+	 */
 	public GoSlice getMethodsSlice() {
 		return new GoSlice(context.getFieldLocation(moff), mcount, mcount, programContext);
 	}
 
+	/**
+	 * Returns a list of the methods defined by the type.
+	 * 
+	 * @return list of the methods defined by the type
+	 * @throws IOException if error reading data
+	 */
 	public List<GoMethod> getMethods() throws IOException {
 		GoSlice slice = getMethodsSlice();
 		if (!slice.isValid(
@@ -79,8 +107,10 @@ public class GoUncommonType {
 		if (mcount == 0) {
 			return context.getStructureEnd();
 		}
-		GoSlice slice = getMethodsSlice();
-		return slice.getArrayEnd(GoMethod.class);
+		// calc end of method array manually since getMethodsSlice() is an artificial slice
+		long methodArrayStart = context.getFieldLocation(moff);
+		return methodArrayStart +
+			mcount * programContext.getStructureMappingInfo(GoMethod.class).getStructureLength();
 	}
 
 }

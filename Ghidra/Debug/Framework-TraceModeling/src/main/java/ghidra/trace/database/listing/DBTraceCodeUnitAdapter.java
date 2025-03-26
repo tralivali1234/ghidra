@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -83,7 +83,7 @@ public interface DBTraceCodeUnitAdapter extends TraceCodeUnit, MemBufferMixin {
 			if (region == null) {
 				return address.toString(showBlockName, pad);
 			}
-			return region.getName() + ":" + address.toString(false, pad);
+			return region.getName(getStartSnap()) + ":" + address.toString(false, pad);
 		}
 	}
 
@@ -224,11 +224,9 @@ public interface DBTraceCodeUnitAdapter extends TraceCodeUnit, MemBufferMixin {
 	@Override
 	default Symbol[] getSymbols() {
 		try (LockHold hold = getTrace().lockRead()) {
-			Collection<? extends TraceSymbol> at =
-				getTrace().getSymbolManager()
-						.labelsAndFunctions()
-						.getAt(getStartSnap(), getThread(),
-							getAddress(), true);
+			Collection<? extends TraceSymbol> at = getTrace().getSymbolManager()
+					.labels()
+					.getAt(getStartSnap(), getThread(), getAddress(), true);
 			return at.toArray(new TraceSymbol[at.size()]);
 		}
 	}
@@ -236,11 +234,9 @@ public interface DBTraceCodeUnitAdapter extends TraceCodeUnit, MemBufferMixin {
 	@Override
 	default Symbol getPrimarySymbol() {
 		try (LockHold hold = getTrace().lockRead()) {
-			Collection<? extends TraceSymbol> at =
-				getTrace().getSymbolManager()
-						.labelsAndFunctions()
-						.getAt(getStartSnap(), getThread(),
-							getAddress(), true);
+			Collection<? extends TraceSymbol> at = getTrace().getSymbolManager()
+					.labels()
+					.getAt(getStartSnap(), getThread(), getAddress(), true);
 			if (at.isEmpty()) {
 				return null;
 			}
@@ -280,11 +276,6 @@ public interface DBTraceCodeUnitAdapter extends TraceCodeUnit, MemBufferMixin {
 	@Override
 	default String[] getCommentAsArray(int commentType) {
 		return DBTraceCommentAdapter.arrayFromComment(getComment(commentType));
-	}
-
-	@Override
-	default boolean isSuccessor(CodeUnit codeUnit) {
-		return getMaxAddress().isSuccessor(codeUnit.getMinAddress());
 	}
 
 	@Override

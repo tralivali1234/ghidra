@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,11 +22,11 @@ import java.util.*;
 
 import db.BinaryField;
 import db.DBRecord;
-import ghidra.trace.model.Trace.TraceStackChangeType;
 import ghidra.trace.model.stack.TraceStack;
 import ghidra.trace.model.stack.TraceStackFrame;
 import ghidra.trace.model.thread.TraceThread;
 import ghidra.trace.util.TraceChangeRecord;
+import ghidra.trace.util.TraceEvents;
 import ghidra.util.LockHold;
 import ghidra.util.database.*;
 import ghidra.util.database.DBCachedObjectStoreFactory.AbstractDBFieldCodec;
@@ -146,13 +146,12 @@ public class DBTraceStack extends DBAnnotatedObject implements TraceStack {
 		return thread;
 	}
 
-	@Override
-	public long getSnap() {
+	long getSnap() {
 		return threadSnap.snap;
 	}
 
 	@Override
-	public int getDepth() {
+	public int getDepth(long snap) {
 		if (frameKeys == null) {
 			return 0;
 		}
@@ -175,7 +174,7 @@ public class DBTraceStack extends DBAnnotatedObject implements TraceStack {
 	}
 
 	@Override
-	public void setDepth(int depth, boolean atInner) {
+	public void setDepth(long snap, int depth, boolean atInner) {
 		try (LockHold hold = LockHold.lock(manager.lock.writeLock())) {
 			//System.err.println("setDepth(threadKey=" + thread.getKey() + "snap=" + getSnap() +
 			//	",depth=" + depth + ",inner=" + atInner + ");");
@@ -213,15 +212,15 @@ public class DBTraceStack extends DBAnnotatedObject implements TraceStack {
 			doUpdateFrameKeys();
 		}
 		manager.trace.setChanged(
-			new TraceChangeRecord<>(TraceStackChangeType.CHANGED, null, this, 0L, getSnap()));
+			new TraceChangeRecord<>(TraceEvents.STACK_CHANGED, null, this, 0L, snap));
 	}
 
 	@Override
-	public DBTraceStackFrame getFrame(int level, boolean ensureDepth) {
+	public DBTraceStackFrame getFrame(long snap, int level, boolean ensureDepth) {
 		if (ensureDepth) {
 			try (LockHold hold = LockHold.lock(manager.lock.writeLock())) {
 				if (level >= frames.size()) {
-					setDepth(level + 1, false);
+					setDepth(snap, level + 1, false);
 				}
 				return frames.get(level);
 			}
@@ -251,8 +250,17 @@ public class DBTraceStack extends DBAnnotatedObject implements TraceStack {
 			}
 			manager.deleteStack(this);
 		}
-		manager.trace
-				.setChanged(new TraceChangeRecord<>(TraceStackChangeType.DELETED, null, this));
+		manager.trace.setChanged(new TraceChangeRecord<>(TraceEvents.STACK_DELETED, null, this));
+	}
+
+	@Override
+	public void remove(long snap) {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public boolean isValid(long snap) {
+		return this == manager.getLatestStack(thread, snap);
 	}
 
 	@Override

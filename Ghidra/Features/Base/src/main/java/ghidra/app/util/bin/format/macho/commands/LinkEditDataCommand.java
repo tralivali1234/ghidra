@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -23,9 +23,9 @@ import ghidra.app.util.bin.format.macho.MachHeader;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.flatapi.FlatProgramAPI;
 import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.*;
-import ghidra.program.model.listing.*;
+import ghidra.program.model.listing.Program;
+import ghidra.program.model.listing.ProgramModule;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.task.TaskMonitor;
@@ -34,8 +34,8 @@ import ghidra.util.task.TaskMonitor;
  * Represents a linkedit_data_command structure 
  */
 public class LinkEditDataCommand extends LoadCommand {
-	protected int dataoff;
-	protected int datasize;
+	protected long dataoff;
+	protected long datasize;
 	protected BinaryReader dataReader;
 
 	/**
@@ -51,19 +51,19 @@ public class LinkEditDataCommand extends LoadCommand {
 	LinkEditDataCommand(BinaryReader loadCommandReader, BinaryReader dataReader)
 			throws IOException {
 		super(loadCommandReader);
-		this.dataoff = loadCommandReader.readNextInt();
-		this.datasize = loadCommandReader.readNextInt();
+		this.dataoff = loadCommandReader.readNextUnsignedInt();
+		this.datasize = loadCommandReader.readNextUnsignedInt();
 		this.dataReader = dataReader;
 		this.dataReader.setPointerIndex(dataoff);
 	}
 
 	@Override
-	public int getLinkerDataOffset() {
+	public long getLinkerDataOffset() {
 		return dataoff;
 	}
 
 	@Override
-	public int getLinkerDataSize() {
+	public long getLinkerDataSize() {
 		return datasize;
 	}
 
@@ -73,28 +73,10 @@ public class LinkEditDataCommand extends LoadCommand {
 	}
 
 	@Override
-	public Address getDataAddress(MachHeader header, AddressSpace space) {
-		if (dataoff != 0 && datasize != 0) {
-			SegmentCommand segment = getContainingSegment(header, dataoff);
-			if (segment != null) {
-				return space
-						.getAddress(segment.getVMaddress() + (dataoff - segment.getFileOffset()));
-			}
-		}
-		return null;
-	}
-
-	@Override
-	public void markup(Program program, MachHeader header, Address addr, String source,
-			TaskMonitor monitor, MessageLog log) throws CancelledException {
-		if (addr == null || datasize == 0) {
-			return;
-		}
-		String name = LoadCommandTypes.getLoadCommandName(getCommandType());
-		if (source != null) {
-			name += " - " + source;
-		}
-		program.getListing().setComment(addr, CodeUnit.PLATE_COMMENT, name);
+	public void markup(Program program, MachHeader header, String source, TaskMonitor monitor,
+			MessageLog log) throws CancelledException {
+		markupPlateComment(program, fileOffsetToAddress(program, header, dataoff, datasize), source,
+			null);
 	}
 
 	@Override

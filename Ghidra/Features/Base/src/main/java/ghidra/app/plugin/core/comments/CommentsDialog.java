@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -32,7 +32,7 @@ import docking.widgets.OptionDialog;
 import docking.widgets.checkbox.GCheckBox;
 import docking.widgets.combobox.GComboBox;
 import ghidra.app.util.viewer.field.AnnotatedStringHandler;
-import ghidra.app.util.viewer.field.Annotation;
+import ghidra.app.util.viewer.field.CommentUtils;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.util.HelpLocation;
@@ -225,7 +225,7 @@ public class CommentsDialog extends ReusableDialogComponentProvider implements K
 	}
 
 	private AnnotationAdapterWrapper[] getAnnotationAdapterWrappers() {
-		List<AnnotatedStringHandler> annotations = Annotation.getAnnotatedStringHandlers();
+		List<AnnotatedStringHandler> annotations = CommentUtils.getAnnotatedStringHandlers();
 		int count = annotations.size();
 		AnnotationAdapterWrapper[] retVal = new AnnotationAdapterWrapper[count];
 		for (int i = 0; i < count; i++) {
@@ -277,6 +277,12 @@ public class CommentsDialog extends ReusableDialogComponentProvider implements K
 		plateField = new JTextArea(5, 80);
 		eolField = new JTextArea(5, 80);
 		repeatableField = new JTextArea(5, 80);
+
+		preField.getAccessibleContext().setAccessibleName("Pre Comment");
+		postField.getAccessibleContext().setAccessibleName("Post Comment");
+		plateField.getAccessibleContext().setAccessibleName("Plate Comment");
+		eolField.getAccessibleContext().setAccessibleName("EOL Comment");
+		repeatableField.getAccessibleContext().setAccessibleName("Repeatable Comment");
 
 		DocumentListener dl = new DocumentListener() {
 			@Override
@@ -339,8 +345,24 @@ public class CommentsDialog extends ReusableDialogComponentProvider implements K
 		tab.addTab("  Plate Comment  ", new JScrollPane(plateField));
 		tab.addTab("  Repeatable Comment  ", new JScrollPane(repeatableField));
 
-		tab.addChangeListener(ev -> chooseFocus());
-
+		tab.addKeyListener(new KeyAdapter() {
+			@Override
+			public void keyPressed(KeyEvent e) {
+				int keyCode = e.getKeyCode();
+				if (keyCode == KeyEvent.VK_SPACE || keyCode == KeyEvent.VK_ENTER) {
+					focusSelectedTab();
+					e.consume();
+				}
+			}
+		});
+		tab.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mouseClicked(MouseEvent e) {
+				if (e.getButton() == MouseEvent.BUTTON1) {
+					focusSelectedTab();
+				}
+			}
+		});
 		ActionListener addAnnotationAction = e -> {
 			JTextArea currentTextArea = getSelectedTextArea();
 			for (AnnotationAdapterWrapper annotation : annotations) {
@@ -428,7 +450,7 @@ public class CommentsDialog extends ReusableDialogComponentProvider implements K
 		}
 	}
 
-	private void chooseFocus() {
+	private void focusSelectedTab() {
 		getSelectedTextArea().requestFocus();
 	}
 

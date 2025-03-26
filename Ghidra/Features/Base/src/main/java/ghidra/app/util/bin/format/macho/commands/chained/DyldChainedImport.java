@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,6 +20,7 @@ import java.io.IOException;
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.StructConverter;
 import ghidra.app.util.bin.format.macho.MachConstants;
+import ghidra.app.util.bin.format.macho.commands.dyld.BindingTable.Binding;
 import ghidra.program.model.data.*;
 import ghidra.util.exception.DuplicateNameException;
 
@@ -63,7 +64,7 @@ public class DyldChainedImport implements StructConverter {
 				long ival = reader.readNextLong();
 				lib_ordinal = (int) (ival & 0xffff);
 				weak_import = ((ival >> 8) & 1) == 1;
-				name_offset = (ival >> 32 & 0xffffffff);
+				name_offset = ((ival >> 32) & 0xffffffffL);
 				addend = reader.readNextLong();
 				break;
 			}
@@ -72,25 +73,34 @@ public class DyldChainedImport implements StructConverter {
 		}
 	}
 
+	public DyldChainedImport(Binding binding) {
+		this.imports_format = 0;
+		this.lib_ordinal = binding.getLibraryOrdinal();
+		this.weak_import = binding.isWeak();
+		this.name_offset = 0;
+		this.addend = 0;
+		this.symbolName = binding.getSymbolName();
+	}
+
 	@Override
 	public DataType toDataType() throws DuplicateNameException, IOException {
 		StructureDataType dt = new StructureDataType("dyld_chained_import", 0);
-
+		dt.setPackingEnabled(true);
 		try {
 			switch (imports_format) {
 				case DYLD_CHAINED_IMPORT:
-					dt.addBitField(DWORD, 8, "lib_ordinal", "ordinal in imports");
+					dt.addBitField(DWORD, 8, "lib_ordinal", null);
 					dt.addBitField(DWORD, 1, "weak_import", null);
 					dt.addBitField(DWORD, 23, "name_offset", null);
 					break;
 				case DYLD_CHAINED_IMPORT_ADDEND:
-					dt.addBitField(DWORD, 8, "lib_ordinal", "ordinal in imports");
+					dt.addBitField(DWORD, 8, "lib_ordinal", null);
 					dt.addBitField(DWORD, 1, "weak_import", null);
 					dt.addBitField(DWORD, 23, "name_offset", null);
 					dt.add(DWORD, "addend", null);
 					break;
 				case DYLD_CHAINED_IMPORT_ADDEND64:
-					dt.addBitField(QWORD, 16, "lib_ordinal", "ordinal in imports");
+					dt.addBitField(QWORD, 16, "lib_ordinal", null);
 					dt.addBitField(QWORD, 1, "weak_import", null);
 					dt.addBitField(QWORD, 15, "reserved", null);
 					dt.addBitField(QWORD, 32, "name_offset", null);

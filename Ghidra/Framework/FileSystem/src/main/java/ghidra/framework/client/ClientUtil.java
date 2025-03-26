@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -171,13 +171,7 @@ public class ClientUtil {
 	 * @return default user name
 	 */
 	public static String getUserName() {
-		String name = SystemUtilities.getUserName();
-		// exclude domain prefix which may be included
-		int slashIndex = name.lastIndexOf('\\');
-		if (slashIndex >= 0) {
-			name = name.substring(slashIndex + 1);
-		}
-		return name;
+		return SystemUtilities.getUserName();
 	}
 
 	/**
@@ -204,6 +198,9 @@ public class ClientUtil {
 		if ((exc instanceof ConnectException) || (exc instanceof NotConnectedException)) {
 			Msg.debug(ClientUtil.class, "Server not connected (" + operation + ")");
 			promptForReconnect(repository, operation, mustRetry, parent);
+		}
+		else if (exc instanceof RepositoryNotFoundException) {
+			Msg.showError(ClientUtil.class, parent, title, exc.getMessage());
 		}
 		else if (exc instanceof UserAccessException) {
 			Msg.showError(ClientUtil.class, parent, title,
@@ -428,7 +425,8 @@ public class ClientUtil {
 				"Unsupported authentication callback: " + callbacks[0].getClass().getName());
 		}
 		if (!clientAuthenticator.processPasswordCallbacks("Repository Server Authentication",
-			"Repository Server", serverName, nameCb, passCb, choiceCb, anonymousCb, loginError)) {
+			"Repository Server", serverName, nameCb != null, nameCb, passCb, choiceCb, anonymousCb,
+			loginError)) {
 			return false;
 		}
 		String name = defaultUserID;
@@ -446,8 +444,8 @@ public class ClientUtil {
 	static void processSignatureCallback(String serverName, SignatureCallback sigCb)
 			throws IOException {
 		try {
-			SignedToken signedToken = ApplicationKeyManagerUtils.getSignedToken(
-				sigCb.getRecognizedAuthorities(), sigCb.getToken());
+			SignedToken signedToken = ApplicationKeyManagerUtils
+					.getSignedToken(sigCb.getRecognizedAuthorities(), sigCb.getToken());
 			sigCb.sign(signedToken.certChain, signedToken.signature);
 			Msg.info(ClientUtil.class, "PKI Authenticating to " + serverName + " as user '" +
 				signedToken.certChain[0].getSubjectX500Principal() + "'");

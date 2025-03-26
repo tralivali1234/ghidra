@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -94,7 +94,7 @@ public abstract class AbstractListingMergeManagerTest extends AbstractMergeTest
 				new ProgramProcessorContext(program.getProgramContext(), atAddress);
 			InstructionPrototype proto = program.getLanguage().parse(buf, context, false);
 			Instruction createdInstruction =
-				listing.createInstruction(atAddress, proto, buf, context);
+				listing.createInstruction(atAddress, proto, buf, context, 0);
 			commit = true;
 			return createdInstruction;
 		}
@@ -195,14 +195,14 @@ public abstract class AbstractListingMergeManagerTest extends AbstractMergeTest
 			KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
 		assertNotNull(activeWindow);
 		waitForSwing();
-		triggerEscapeKey(activeWindow);
+		triggerEscape(activeWindow);
 	}
 
 	void escapeWindowWithTitleContaining(String partOfTitle) {
 		Window win = getWindowWithTitleContaining(partOfTitle);
 		if (win != null) {
 			waitForSwing();
-			triggerEscapeKey(win);
+			triggerEscape(win);
 		}
 	}
 

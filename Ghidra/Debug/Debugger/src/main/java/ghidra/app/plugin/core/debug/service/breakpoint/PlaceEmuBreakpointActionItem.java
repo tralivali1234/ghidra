@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,22 +15,21 @@
  */
 package ghidra.app.plugin.core.debug.service.breakpoint;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import db.Transaction;
 import ghidra.async.AsyncUtils;
-import ghidra.dbg.target.TargetBreakpointSpec;
-import ghidra.dbg.target.TargetBreakpointSpecContainer;
-import ghidra.dbg.util.PathMatcher;
 import ghidra.program.model.address.*;
 import ghidra.trace.model.Lifespan;
 import ghidra.trace.model.Trace;
-import ghidra.trace.model.breakpoint.TraceBreakpoint;
-import ghidra.trace.model.breakpoint.TraceBreakpointKind;
+import ghidra.trace.model.breakpoint.*;
 import ghidra.trace.model.memory.TraceMemoryRegion;
 import ghidra.trace.model.memory.TraceObjectMemoryRegion;
 import ghidra.trace.model.target.TraceObject;
+import ghidra.trace.model.target.path.KeyPath;
+import ghidra.trace.model.target.path.PathFilter;
 import ghidra.util.exception.DuplicateNameException;
 
 public record PlaceEmuBreakpointActionItem(Trace trace, long snap, Address address, long length,
@@ -70,7 +69,8 @@ public record PlaceEmuBreakpointActionItem(Trace trace, long snap, Address addre
 		if (region == null) {
 			throw new IllegalArgumentException("Address does not belong to a memory in the trace");
 		}
-		return region.getObject().querySuitableTargetInterface(TargetBreakpointSpecContainer.class);
+		return region.getObject()
+				.findSuitableContainerInterface(TraceObjectBreakpointSpec.class);
 	}
 
 	private String computePath() {
@@ -83,16 +83,26 @@ public record PlaceEmuBreakpointActionItem(Trace trace, long snap, Address addre
 			throw new IllegalArgumentException(
 				"Address is not associated with a breakpoint container");
 		}
-		PathMatcher specMatcher =
-			container.getTargetSchema().searchFor(TargetBreakpointSpec.class, true);
-		if (specMatcher == null) {
+		PathFilter specFilter =
+			container.getSchema().searchFor(TraceObjectBreakpointSpec.class, true);
+		if (specFilter == null) {
 			throw new IllegalArgumentException("Cannot find path to breakpoint specifications");
 		}
-		List<String> relPath = specMatcher.applyKeys(name).getSingletonPath();
-		if (relPath == null) {
+		KeyPath specRelPath = specFilter.applyKeys(name).getSingletonPath();
+		if (specRelPath == null) {
 			throw new IllegalArgumentException("Too many wildcards to breakpoint specification");
 		}
-		return container.getCanonicalPath().extend(relPath).toString();
+		PathFilter locFilter = container.getSchema()
+				.getSuccessorSchema(specRelPath)
+				.searchFor(TraceObjectBreakpointLocation.class, true);
+		if (locFilter == null) {
+			throw new IllegalArgumentException("Cannot find path to breakpoint locations");
+		}
+		KeyPath locRelPath = locFilter.applyIntKeys(0).getSingletonPath();
+		if (locRelPath == null) {
+			throw new IllegalArgumentException("Too many wildcards to breakpoint location");
+		}
+		return container.getCanonicalPath().extend(specRelPath).extend(locRelPath).toString();
 	}
 
 	@Override
@@ -100,11 +110,11 @@ public record PlaceEmuBreakpointActionItem(Trace trace, long snap, Address addre
 		try (Transaction tx = trace.openTransaction("Place Emulated Breakpoint")) {
 			// Defaults with emuEnable=true
 			TraceBreakpoint bpt = trace.getBreakpointManager()
-					.addBreakpoint(computePath(), Lifespan.at(snap), range(address, length),
-						Set.of(), kinds, false, null);
-			bpt.setName(createName(address));
-			bpt.setEmuSleigh(emuSleigh);
-			return AsyncUtils.NIL;
+					.addBreakpoint(computePath(), Lifespan.at(snap),
+						BreakpointActionItem.range(address, length), Set.of(), kinds, false, null);
+			bpt.setName(snap, createName(address));
+			bpt.setEmuSleigh(snap, emuSleigh);
+			return AsyncUtils.nil();
 		}
 		catch (DuplicateNameException e) {
 			throw new AssertionError(e);

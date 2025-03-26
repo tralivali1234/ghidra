@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -42,8 +42,10 @@ import generic.theme.GThemeDefaults.Colors.Messages;
 import ghidra.app.services.ProgramManager;
 import ghidra.formats.gfilesystem.FSRL;
 import ghidra.formats.gfilesystem.FileSystemService;
+import ghidra.framework.main.AppInfo;
 import ghidra.framework.model.DomainFolder;
 import ghidra.framework.plugintool.PluginTool;
+import ghidra.framework.preferences.Preferences;
 import ghidra.plugin.importer.ImporterUtilities;
 import ghidra.plugins.importer.batch.BatchGroup.BatchLoadConfig;
 import ghidra.plugins.importer.tasks.ImportBatchTask;
@@ -53,6 +55,8 @@ import ghidra.util.task.TaskLauncher;
 
 public class BatchImportDialog extends DialogComponentProvider {
 
+	private static final String PREF_STRIPCONTAINER = "BATCHIMPORT.STRIPCONTAINER";
+	private static final String PREF_STRIPLEADING = "BATCHIMPORT.STRIPLEADING";
 	private static final String LAST_IMPORT_DIR = "LastBatchImportDir";
 
 	/**
@@ -61,7 +65,7 @@ public class BatchImportDialog extends DialogComponentProvider {
 	 * <p>
 	 * The dialog will chain to the {@link ImportBatchTask} when the user clicks the
 	 * OK button.
-	 * <p>
+	 * 
 	 * @param tool {@link PluginTool} that will be the parent of the dialog
 	 * @param batchInfo optional {@link BatchInfo} instance with already discovered applications, or null.
 	 * @param initialFiles optional {@link List} of {@link FSRL files} to add to the batch import dialog, or null.
@@ -71,10 +75,8 @@ public class BatchImportDialog extends DialogComponentProvider {
 	 */
 	public static void showAndImport(PluginTool tool, BatchInfo batchInfo, List<FSRL> initialFiles,
 			DomainFolder defaultFolder, ProgramManager programManager) {
-		BatchImportDialog dialog = new BatchImportDialog(batchInfo, defaultFolder);
-		dialog.setProgramManager(programManager);
+		BatchImportDialog dialog = new BatchImportDialog(batchInfo, defaultFolder, programManager);
 		SystemUtilities.runSwingLater(() -> {
-			dialog.build();
 			if (initialFiles != null && !initialFiles.isEmpty()) {
 				dialog.addSources(initialFiles);
 			}
@@ -88,8 +90,8 @@ public class BatchImportDialog extends DialogComponentProvider {
 	private BatchInfo batchInfo;
 	private DomainFolder destinationFolder;
 	private ProgramManager programManager;
-	private boolean stripLeading = true;
-	private boolean stripContainer = false;
+	private boolean stripLeading = getBooleanPref(PREF_STRIPLEADING, true);
+	private boolean stripContainer = getBooleanPref(PREF_STRIPCONTAINER, false);
 	private boolean openAfterImporting = false;
 
 	private BatchImportTableModel tableModel;
@@ -100,17 +102,22 @@ public class BatchImportDialog extends DialogComponentProvider {
 
 	private SourcesListModel sourceListModel;
 
-	private BatchImportDialog(BatchInfo batchInfo, DomainFolder defaultFolder) {
+	private BatchImportDialog(BatchInfo batchInfo, DomainFolder defaultFolder,
+			ProgramManager programManager) {
 		super("Batch Import", true);
 
 		this.batchInfo = (batchInfo != null) ? batchInfo : new BatchInfo();
 		this.destinationFolder = defaultFolder != null ? defaultFolder
-				: ghidra.framework.main.AppInfo.getActiveProject().getProjectData().getRootFolder();
+				: AppInfo.getActiveProject().getProjectData().getRootFolder();
+		this.programManager = programManager;
+
 		setHelpLocation(new HelpLocation("ImporterPlugin", "Batch_Import_Dialog"));
 
 		// a reasonable size that is long enough to show path information and table columns with
 		// a height that has enough room to show table rows and import sources
 		setPreferredSize(900, 600);
+
+		build();
 	}
 
 	private void build() {
@@ -123,7 +130,7 @@ public class BatchImportDialog extends DialogComponentProvider {
 
 		};
 		table = new GTable(tableModel);
-
+		table.getAccessibleContext().setAccessibleName("Batch Content");
 		table.addMouseListener(new MouseAdapter() {
 			@Override
 			public void mouseClicked(MouseEvent e) {
@@ -171,11 +178,13 @@ public class BatchImportDialog extends DialogComponentProvider {
 		JPanel sourceListPanel = new JPanel();
 		sourceListPanel.setLayout(new BorderLayout());
 		sourceListPanel.setBorder(createTitledBorder("Import Sources", false));
+		sourceListPanel.getAccessibleContext().setAccessibleName("Source List");
 
 		sourceListModel = new SourcesListModel();
 
 		JList<String> sourceList = new JList<>(sourceListModel);
 		sourceList.setName("batch.import.source.list");
+		sourceList.getAccessibleContext().setAccessibleName("Batch Import Source List");
 		sourceList.addListSelectionListener(e -> {
 			if (!e.getValueIsAdjusting()) {
 				boolean hasSelection = sourceList.getSelectedIndices().length > 0;
@@ -184,8 +193,10 @@ public class BatchImportDialog extends DialogComponentProvider {
 		});
 		JScrollPane sourceListScrollPane = new JScrollPane(sourceList);
 		sourceListPanel.add(sourceListScrollPane, BorderLayout.CENTER);
+		sourceListScrollPane.getAccessibleContext().setAccessibleName("Source List Scroll");
 
 		JPanel sourceOptionsPanel = new JPanel();
+		sourceOptionsPanel.getAccessibleContext().setAccessibleName("Source Options");
 
 		// some padding before the files table
 		sourceOptionsPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
@@ -224,10 +235,13 @@ public class BatchImportDialog extends DialogComponentProvider {
 
 		JPanel sourceListButtonsPanel = new JPanel();
 		sourceListButtonsPanel.setLayout(new BorderLayout());
+		sourceListButtonsPanel.getAccessibleContext().setAccessibleName("Source List Buttons");
 
 		JButton addSourceButton = new JButton("Add");
+		addSourceButton.getAccessibleContext().setAccessibleName("Add Source");
 		this.removeSourceButton = new JButton("Remove");
 		removeSourceButton.setEnabled(false);
+		removeSourceButton.getAccessibleContext().setAccessibleName("Remove");
 
 		addSourceButton.addActionListener(e -> {
 			addSources();
@@ -275,11 +289,13 @@ public class BatchImportDialog extends DialogComponentProvider {
 		});
 
 		JPanel outputOptionsPanel = buildOutputOptionsPanel();
+		outputOptionsPanel.getAccessibleContext().setAccessibleName("Output Options");
 
 		Box box = Box.createVerticalBox();
 		box.add(sourceListPanel);
 		box.add(filesPanel);
 		box.add(outputOptionsPanel);
+		box.getAccessibleContext().setAccessibleName("Batch Import");
 
 		addOKButton();
 		addCancelButton();
@@ -297,21 +313,25 @@ public class BatchImportDialog extends DialogComponentProvider {
 
 		JPanel outputChoicesPanel = new JPanel();
 		outputChoicesPanel.setLayout(new BoxLayout(outputChoicesPanel, BoxLayout.LINE_AXIS));
+		outputChoicesPanel.getAccessibleContext().setAccessibleName("Output Choices");
 
 		GCheckBox stripLeadingCb = new GCheckBox("Strip leading path", stripLeading);
 		stripLeadingCb.addChangeListener(e -> setStripLeading(stripLeadingCb.isSelected()));
 		stripLeadingCb.setToolTipText("The destination folder for imported files will not " +
 			"include the source file's leading path");
+		stripLeadingCb.getAccessibleContext().setAccessibleName("Strip Leading Path");
 
 		GCheckBox stripContainerCb = new GCheckBox("Strip container paths", stripContainer);
 		stripContainerCb.addChangeListener(e -> setStripContainer(stripContainerCb.isSelected()));
 		stripContainerCb.setToolTipText(
 			"The destination folder for imported files will not include any source path names");
+		stripContainerCb.getAccessibleContext().setAccessibleName("Strip Container Paths");
 
 		GCheckBox openAfterImportCb = new GCheckBox("Open after import", openAfterImporting);
-		openAfterImportCb.addChangeListener(
-			e -> setOpenAfterImporting(openAfterImportCb.isSelected()));
+		openAfterImportCb
+				.addChangeListener(e -> setOpenAfterImporting(openAfterImportCb.isSelected()));
 		openAfterImportCb.setToolTipText("Open imported binaries in Code Browser");
+		openAfterImportCb.getAccessibleContext().setAccessibleName("Open After Import");
 
 		outputChoicesPanel.add(stripLeadingCb);
 		outputChoicesPanel.add(stripContainerCb);
@@ -334,6 +354,7 @@ public class BatchImportDialog extends DialogComponentProvider {
 		outputOptionsPanel.setBorder(createTitledBorder("Import Options", true));
 		outputOptionsPanel.add(outputChoicesPanel, BorderLayout.NORTH);
 		outputOptionsPanel.add(destPanel, BorderLayout.SOUTH);
+		outputOptionsPanel.getAccessibleContext().setAccessibleName("Output Options");
 		return outputOptionsPanel;
 	}
 
@@ -417,9 +438,7 @@ public class BatchImportDialog extends DialogComponentProvider {
 
 	private boolean addSources(List<FSRL> filesToAdd) {
 
-		List<FSRL> updatedFiles = filesToAdd.stream()
-				.map(FSRL::convertRootToContainer)
-				.collect(Collectors.toList());
+		List<FSRL> updatedFiles = filesToAdd.stream().map(FSRL::convertRootToContainer).toList();
 
 		List<FSRL> badFiles = batchInfo.addFiles(updatedFiles);
 		if (!badFiles.isEmpty()) {
@@ -589,10 +608,12 @@ public class BatchImportDialog extends DialogComponentProvider {
 
 	private void setStripLeading(boolean stripLeading) {
 		this.stripLeading = stripLeading;
+		setBooleanPref(PREF_STRIPLEADING, stripLeading);
 	}
 
 	private void setStripContainer(boolean stripContainer) {
 		this.stripContainer = stripContainer;
+		setBooleanPref(PREF_STRIPCONTAINER, stripContainer);
 	}
 
 	private void setMaxDepth(int newMaxDepth) {
@@ -604,7 +625,12 @@ public class BatchImportDialog extends DialogComponentProvider {
 		refreshData();
 	}
 
-	private void setProgramManager(ProgramManager programManager) {
-		this.programManager = programManager;
+	private static boolean getBooleanPref(String name, boolean defaultValue) {
+		return Boolean
+				.parseBoolean(Preferences.getProperty(name, Boolean.toString(defaultValue), true));
+	}
+
+	private static void setBooleanPref(String name, boolean value) {
+		Preferences.setProperty(name, Boolean.toString(value));
 	}
 }

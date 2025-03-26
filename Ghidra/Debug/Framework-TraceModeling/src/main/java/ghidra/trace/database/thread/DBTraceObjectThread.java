@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,51 +15,60 @@
  */
 package ghidra.trace.database.thread;
 
-import ghidra.dbg.target.TargetObject;
+import java.util.*;
+
 import ghidra.trace.database.target.DBTraceObject;
 import ghidra.trace.database.target.DBTraceObjectInterface;
 import ghidra.trace.model.Lifespan;
 import ghidra.trace.model.Trace;
-import ghidra.trace.model.Trace.TraceThreadChangeType;
-import ghidra.trace.model.target.annot.TraceObjectInterfaceUtils;
+import ghidra.trace.model.target.info.TraceObjectInterfaceUtils;
+import ghidra.trace.model.target.schema.TraceObjectSchema;
 import ghidra.trace.model.thread.TraceObjectThread;
 import ghidra.trace.model.thread.TraceThread;
-import ghidra.trace.util.TraceChangeRecord;
-import ghidra.trace.util.TraceChangeType;
+import ghidra.trace.util.*;
 import ghidra.util.LockHold;
-import ghidra.util.exception.DuplicateNameException;
 
 public class DBTraceObjectThread implements TraceObjectThread, DBTraceObjectInterface {
 
 	protected class ThreadChangeTranslator extends Translator<TraceThread> {
+		private static final Map<TraceObjectSchema, Set<String>> KEYS_BY_SCHEMA =
+			new WeakHashMap<>();
+
+		private final Set<String> keys;
+
 		protected ThreadChangeTranslator(DBTraceObject object, TraceThread iface) {
 			super(null, object, iface);
+			TraceObjectSchema schema = object.getSchema();
+			synchronized (KEYS_BY_SCHEMA) {
+				keys = KEYS_BY_SCHEMA.computeIfAbsent(schema, s -> Set.of(
+					s.checkAliasedAttribute(KEY_COMMENT),
+					s.checkAliasedAttribute(KEY_DISPLAY)));
+			}
 		}
 
 		@Override
-		protected TraceChangeType<TraceThread, Void> getAddedType() {
-			return TraceThreadChangeType.ADDED;
+		protected TraceEvent<TraceThread, Void> getAddedType() {
+			return TraceEvents.THREAD_ADDED;
 		}
 
 		@Override
-		protected TraceChangeType<TraceThread, Lifespan> getLifespanChangedType() {
-			return TraceThreadChangeType.LIFESPAN_CHANGED;
+		protected TraceEvent<TraceThread, Lifespan> getLifespanChangedType() {
+			return TraceEvents.THREAD_LIFESPAN_CHANGED;
 		}
 
 		@Override
-		protected TraceChangeType<TraceThread, Void> getChangedType() {
-			return TraceThreadChangeType.CHANGED;
+		protected TraceEvent<TraceThread, Void> getChangedType() {
+			return TraceEvents.THREAD_CHANGED;
 		}
 
 		@Override
 		protected boolean appliesToKey(String key) {
-			return KEY_COMMENT.equals(key) ||
-				TargetObject.DISPLAY_ATTRIBUTE_NAME.equals(key);
+			return keys.contains(key);
 		}
 
 		@Override
-		protected TraceChangeType<TraceThread, Void> getDeletedType() {
-			return TraceThreadChangeType.DELETED;
+		protected TraceEvent<TraceThread, Void> getDeletedType() {
+			return TraceEvents.THREAD_DELETED;
 		}
 	}
 
@@ -93,75 +102,56 @@ public class DBTraceObjectThread implements TraceObjectThread, DBTraceObjectInte
 	}
 
 	@Override
-	public String getName() {
-		return TraceObjectInterfaceUtils.getValue(object, getCreationSnap(),
-			TargetObject.DISPLAY_ATTRIBUTE_NAME, String.class, "");
+	public String getName(long snap) {
+		return TraceObjectInterfaceUtils.getValue(object, snap, KEY_DISPLAY, String.class, "");
 	}
 
 	@Override
 	public void setName(Lifespan lifespan, String name) {
-		object.setValue(lifespan, TargetObject.DISPLAY_ATTRIBUTE_NAME, name);
+		object.setValue(lifespan, KEY_DISPLAY, name);
 	}
 
 	@Override
-	public void setName(String name) {
+	public void setName(long snap, String name) {
 		try (LockHold hold = object.getTrace().lockWrite()) {
-			setName(computeSpan(), name);
+			setName(Lifespan.nowOn(snap), name);
 		}
 	}
 
 	@Override
-	public void setCreationSnap(long creationSnap) throws DuplicateNameException {
+	public void setComment(long snap, String comment) {
 		try (LockHold hold = object.getTrace().lockWrite()) {
-			setLifespan(Lifespan.span(creationSnap, getDestructionSnap()));
+			object.setValue(Lifespan.nowOn(snap), KEY_COMMENT, comment);
 		}
 	}
 
 	@Override
-	public long getCreationSnap() {
-		return computeMinSnap();
-	}
-
-	@Override
-	public void setDestructionSnap(long destructionSnap) throws DuplicateNameException {
-		try (LockHold hold = object.getTrace().lockWrite()) {
-			setLifespan(Lifespan.span(getCreationSnap(), destructionSnap));
-		}
-	}
-
-	@Override
-	public long getDestructionSnap() {
-		return computeMaxSnap();
-	}
-
-	@Override
-	public void setLifespan(Lifespan lifespan) throws DuplicateNameException {
-		TraceObjectInterfaceUtils.setLifespan(TraceObjectThread.class, object, lifespan);
-	}
-
-	@Override
-	public Lifespan getLifespan() {
-		return computeSpan();
-	}
-
-	@Override
-	public void setComment(String comment) {
-		try (LockHold hold = object.getTrace().lockWrite()) {
-			object.setValue(getLifespan(), KEY_COMMENT, comment);
-		}
-	}
-
-	@Override
-	public String getComment() {
-		return TraceObjectInterfaceUtils.getValue(object, getCreationSnap(), KEY_COMMENT,
-			String.class, "");
+	public String getComment(long snap) {
+		return TraceObjectInterfaceUtils.getValue(object, snap, KEY_COMMENT, String.class, "");
 	}
 
 	@Override
 	public void delete() {
 		try (LockHold hold = object.getTrace().lockWrite()) {
-			object.removeTree(computeSpan());
+			object.removeTree(Lifespan.ALL);
 		}
+	}
+
+	@Override
+	public void remove(long snap) {
+		try (LockHold hold = object.getTrace().lockWrite()) {
+			object.removeTree(Lifespan.nowOn(snap));
+		}
+	}
+
+	@Override
+	public boolean isValid(long snap) {
+		return object.isAlive(snap);
+	}
+
+	@Override
+	public boolean isAlive(Lifespan span) {
+		return object.isAlive(span);
 	}
 
 	@Override

@@ -26,6 +26,7 @@ import docking.ReusableDialogComponentProvider;
 import docking.widgets.filechooser.GhidraFileChooser;
 import docking.widgets.filechooser.GhidraFileChooserMode;
 import docking.widgets.label.GDLabel;
+import generic.theme.Gui;
 import ghidra.framework.GenericRunInfo;
 import ghidra.framework.model.ProjectLocator;
 import ghidra.framework.preferences.Preferences;
@@ -33,7 +34,7 @@ import ghidra.util.*;
 import ghidra.util.filechooser.ExtensionFileFilter;
 
 /**
- * Dialog to prompt the user for the archive file to restore 
+ * Dialog to prompt the user for the archive file to restore
  * and where to restore it to.
  */
 public class RestoreDialog extends ReusableDialogComponentProvider {
@@ -77,12 +78,15 @@ public class RestoreDialog extends ReusableDialogComponentProvider {
 
 		// Create the individual components that make up the panel.
 		archiveLabel = new GDLabel(" Archive File ");
+		archiveLabel.getAccessibleContext().setAccessibleName("Archive File");
 		archiveField = new JTextField();
 		archiveField.setColumns(NUM_TEXT_COLUMNS);
 		archiveField.setName("archiveField");
+		archiveField.getAccessibleContext().setAccessibleName("Archive");
 
 		archiveBrowse = new JButton(ArchivePlugin.DOT_DOT_DOT);
 		archiveBrowse.setName("archiveButton");
+		archiveBrowse.getAccessibleContext().setAccessibleName("Archive");
 		archiveBrowse.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -112,16 +116,19 @@ public class RestoreDialog extends ReusableDialogComponentProvider {
 				}
 			}
 		});
-		Font font = archiveBrowse.getFont();
-		archiveBrowse.setFont(font.deriveFont(Font.BOLD));
+
+		Gui.registerFont(archiveBrowse, Font.BOLD);
 
 		restoreLabel = new GDLabel(" Restore Directory ");
+		restoreLabel.getAccessibleContext().setAccessibleName("Restore Directory");
 		restoreField = new JTextField();
 		restoreField.setName("restoreField");
+		restoreField.getAccessibleContext().setAccessibleName("Restore");
 		restoreField.setColumns(RestoreDialog.NUM_TEXT_COLUMNS);
 
 		restoreBrowse = new JButton(ArchivePlugin.DOT_DOT_DOT);
 		restoreBrowse.setName("restoreButton");
+		restoreBrowse.getAccessibleContext().setAccessibleName("Restore Browse");
 		restoreBrowse.addActionListener(e -> {
 			String dirPath = chooseDirectory("Choose restore directory",
 				"Select the directory for restoring the project.");
@@ -129,12 +136,14 @@ public class RestoreDialog extends ReusableDialogComponentProvider {
 				restoreField.setText(dirPath);
 			}
 		});
-		font = restoreBrowse.getFont();
-		restoreBrowse.setFont(font.deriveFont(Font.BOLD));
+
+		Gui.registerFont(restoreBrowse, Font.BOLD);
 
 		projectNameLabel = new GDLabel(" Project Name ");
+		projectNameLabel.getAccessibleContext().setAccessibleName("Project Name");
 		projectNameField = new JTextField();
 		projectNameField.setName("projectNameField");
+		projectNameField.getAccessibleContext().setAccessibleName("Project Name");
 		projectNameField.setColumns(RestoreDialog.NUM_TEXT_COLUMNS);
 
 		projectNameField.addActionListener(e -> {
@@ -205,7 +214,7 @@ public class RestoreDialog extends ReusableDialogComponentProvider {
 		gbc.gridy = 1;
 		gbl.setConstraints(restoreBrowse, gbc);
 		outerPanel.add(restoreBrowse);
-
+		outerPanel.getAccessibleContext().setAccessibleName("Restore");
 		return outerPanel;
 	}
 
@@ -365,7 +374,7 @@ public class RestoreDialog extends ReusableDialogComponentProvider {
 	}
 
 	/**
-	 * Creates a directory chooser for selecting the directory where the 
+	 * Creates a directory chooser for selecting the directory where the
 	 * archive will be restored..
 	 * @return the file chooser.
 	 */
@@ -380,7 +389,7 @@ public class RestoreDialog extends ReusableDialogComponentProvider {
 	}
 
 	/**
-	 * Brings up a file chooser for the user to specify a directory and 
+	 * Brings up a file chooser for the user to specify a directory and
 	 * filename that are used for the Project location and name
 	 * @param approveButtonText The label for the "Open" button on the file chooser
 	 * @param approveToolTip The tool tip for the "Open" button on the file chooser
@@ -389,14 +398,13 @@ public class RestoreDialog extends ReusableDialogComponentProvider {
 	String chooseArchiveFile(String approveButtonText, String approveToolTip) {
 
 		GhidraFileChooser jarFileChooser =
-			createFileChooser(ArchivePlugin.ARCHIVE_EXTENSION, "Ghidra Archives",
-				archivePathName);
+			createFileChooser(ArchivePlugin.ARCHIVE_EXTENSION, "Ghidra Archives", archivePathName);
 		jarFileChooser.setTitle("Restore a Ghidra Project - Archive");
 		String lastDirSelected = Preferences.getProperty(ArchivePlugin.LAST_ARCHIVE_DIR);
 		if (lastDirSelected != null) {
-			File file = new File(lastDirSelected);
-			if (file.exists()) {
-				jarFileChooser.setCurrentDirectory(file);
+			File dir = new File(lastDirSelected);
+			if (dir.isDirectory()) {
+				jarFileChooser.setCurrentDirectory(dir);
 			}
 		}
 		File jarFile = null;

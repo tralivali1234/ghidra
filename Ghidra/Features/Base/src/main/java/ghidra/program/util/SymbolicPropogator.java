@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,8 +20,8 @@ import java.util.*;
 
 import org.apache.commons.collections4.map.LRUMap;
 
-import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.cmd.function.CallDepthChangeInfo;
+import ghidra.app.util.PseudoDisassembler;
 import ghidra.pcode.opbehavior.*;
 import ghidra.program.model.address.*;
 import ghidra.program.model.data.*;
@@ -32,7 +32,6 @@ import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.scalar.Scalar;
 import ghidra.program.model.symbol.*;
-import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.BigEndianDataConverter;
 import ghidra.util.Msg;
 import ghidra.util.exception.*;
@@ -146,25 +145,7 @@ public class SymbolicPropogator {
 
 		this.evaluator = eval;
 
-		AddressSpace defaultDataSpace = program.getLanguage().getDefaultDataSpace();
-		AddressSpace defaultSpace = program.getLanguage().getDefaultSpace();
-		defaultSpacesAreTheSame = defaultSpace.equals(defaultDataSpace);
-
-		AddressSpace defaultAddrSpace = program.getAddressFactory().getDefaultAddressSpace();
-
-		// Only make reference if other reference or symbol exists
-		memorySpaces = new ArrayList<>();
-		for (AddressSpace space : program.getAddressFactory().getAddressSpaces()) {
-			if (!space.isLoadedMemorySpace()) {
-				continue;
-			}
-			if (space == defaultAddrSpace) {
-				memorySpaces.add(0, space); // default space is always at index 0
-			}
-			else {
-				memorySpaces.add(space);
-			}
-		}
+		initValidAddressSpaces();
 
 		// if assuming, make a copy of programContext
 		savedProgramContext = programContext;
@@ -205,6 +186,44 @@ public class SymbolicPropogator {
 		readExecutableAddress = context.readExecutableCode();
 
 		return bodyDone;
+	}
+
+	/**
+	 * Initialize address spaces to be used for a potential reference with an unknown space.
+	 */
+	private void initValidAddressSpaces() {
+		AddressSpace defaultDataSpace = program.getLanguage().getDefaultDataSpace();
+		AddressSpace defaultSpace = program.getLanguage().getDefaultSpace();
+		defaultSpacesAreTheSame = defaultSpace.equals(defaultDataSpace);
+
+		AddressSpace defaultAddrSpace = program.getAddressFactory().getDefaultAddressSpace();
+
+		// Only make reference if other reference or symbol exists
+		memorySpaces = new ArrayList<>();
+		for (AddressSpace space : program.getAddressFactory().getAddressSpaces()) {
+			if (!space.isLoadedMemorySpace()) {
+				continue;
+			}
+
+			// only default or defaultData based overlay spaces added
+			if (space.isOverlaySpace()) {
+				OverlayAddressSpace ovSpace = (OverlayAddressSpace) space;
+				AddressSpace baseSpace = ovSpace.getPhysicalSpace();
+				if (!( baseSpace.equals(defaultDataSpace) || baseSpace.equals(defaultSpace) ) ) {
+					continue;
+				}
+			}
+			else if (!( space.equals(defaultDataSpace) || space.equals(defaultSpace) ) ) {
+				continue;
+			}
+
+			if (space.equals(defaultAddrSpace)) {
+				memorySpaces.add(0, space); // default space is always at index 0
+			}
+			else {
+				memorySpaces.add(space);
+			}
+		}
 	}
 
 	/**
@@ -595,6 +614,7 @@ public class SymbolicPropogator {
 						//       FLOW end will probably work correctly, but....
 						//
 						vContext.flowStart(minInstrAddress, maxAddr);
+						retAddr = null;
 					}
 				}
 
@@ -670,7 +690,8 @@ public class SymbolicPropogator {
 			else {
 				int instrByteHashCode = -1;
 				try {
-					instrByteHashCode = Arrays.hashCode(instr.getBytes());
+					byte[] bytes = instr.getParsedBytes();
+					instrByteHashCode = Arrays.hashCode(bytes);
 				}
 				catch (MemoryAccessException e) {
 					// this should NEVER happen, should always be able to get the bytes...
@@ -1465,7 +1486,10 @@ public class SymbolicPropogator {
 		if (ptype == PcodeOp.BRANCH || ptype == PcodeOp.RETURN || ptype == PcodeOp.BRANCHIND) {
 			// if says this is branch, but has a fallthru, then really isn't a fallthru
 			//   assume the future flow will have flowed the correct info.
-			nextAddr = fallthru;
+			// only assign for branch if it isn't a degenerate fallthru to itself
+			if (!minInstrAddress.equals(fallthru)) {
+				nextAddr = fallthru;
+			}
 		}
 
 		return nextAddr;
@@ -1741,7 +1765,9 @@ public class SymbolicPropogator {
 		con.refAddr = con.callAddr;
 		con.inputlist = inputs;
 		con.output = new ArrayList<Varnode>();
-		con.output.add(out);
+		if (out != null) {
+			con.output.add(out);
+		}
 		try {
 			return payload.getPcode(prog, con);
 		}
@@ -2302,7 +2328,8 @@ public class SymbolicPropogator {
 		AddressSpace instrSpace = instruction.getMinAddress().getAddressSpace();
 
 		// Find likely preferred target space
-		// 1. only non-overlay space is default space, or
+		// 1. only non-overlay spaces are defaultSpace of defaultDataSpace,
+		//    or overlay spaces with base space of defaultSpace or defaultDataSpace
 		// 2. presence of destination symbol/reference at only one of many possible targets
 
 		// if this instruction is in an overlay space overlaying the default space, change the default space
@@ -2620,7 +2647,8 @@ public class SymbolicPropogator {
 			Instruction targetInstr = getInstructionContaining(target);
 			if (targetInstr != null) {
 				// if not at the top of an instruction, don't do it
-				if (!targetInstr.getMinAddress().equals(target)) {
+				Address disassemblyAddress = PseudoDisassembler.getNormalizedDisassemblyAddress(program, target);
+				if (!targetInstr.getMinAddress().equals(disassemblyAddress)) {
 					return false;
 				}
 				if (targetInstr.isInDelaySlot()) {
@@ -2629,7 +2657,7 @@ public class SymbolicPropogator {
 
 				// if not at the top of an instruction flow, don't do it
 				Function func = program.getFunctionManager().getFunctionContaining(target);
-				if (func != null && !func.getEntryPoint().equals(target)) {
+				if (func != null && !func.getEntryPoint().equals(disassemblyAddress)) {
 					return false;
 				}
 			}

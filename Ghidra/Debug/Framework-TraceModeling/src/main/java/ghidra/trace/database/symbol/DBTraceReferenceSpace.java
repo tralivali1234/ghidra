@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -39,13 +39,12 @@ import ghidra.trace.database.map.DBTraceAddressSnapRangePropertyMapTree.TraceAdd
 import ghidra.trace.database.space.AbstractDBTraceSpaceBasedManager.DBTraceSpaceEntry;
 import ghidra.trace.database.space.DBTraceSpaceBased;
 import ghidra.trace.model.Lifespan;
-import ghidra.trace.model.Trace.TraceReferenceChangeType;
-import ghidra.trace.model.Trace.TraceSymbolChangeType;
 import ghidra.trace.model.memory.TraceMemoryRegion;
 import ghidra.trace.model.symbol.TraceReference;
 import ghidra.trace.model.symbol.TraceReferenceSpace;
 import ghidra.trace.model.thread.TraceThread;
 import ghidra.trace.util.TraceChangeRecord;
+import ghidra.trace.util.TraceEvents;
 import ghidra.util.*;
 import ghidra.util.database.*;
 import ghidra.util.database.annot.*;
@@ -229,11 +228,11 @@ public class DBTraceReferenceSpace implements DBTraceSpaceBased, TraceReferenceS
 
 			if (oldSymbol != null) {
 				space.trace.setChanged(new TraceChangeRecord<>(
-					TraceSymbolChangeType.ASSOCIATION_REMOVED, space, oldSymbol, ref));
+					TraceEvents.SYMBOL_ASSOCIATION_REMOVED, space, oldSymbol, ref));
 			}
 			if (newSymbol != null) {
 				space.trace.setChanged(new TraceChangeRecord<>(
-					TraceSymbolChangeType.ASSOCIATION_ADDED, space, newSymbol, ref));
+					TraceEvents.SYMBOL_ASSOCIATION_ADDED, space, newSymbol, ref));
 			}
 		}
 
@@ -487,7 +486,8 @@ public class DBTraceReferenceSpace implements DBTraceSpaceBased, TraceReferenceS
 		// TODO: Verify that this works for emulation
 		TraceMemoryRegion region =
 			trace.getMemoryManager().getRegionContaining(lifespan.lmin(), addr);
-		return region != null && MemoryBlock.EXTERNAL_BLOCK_NAME.equals(region.getName());
+		return region != null &&
+			MemoryBlock.EXTERNAL_BLOCK_NAME.equals(region.getName(lifespan.lmin()));
 	}
 
 	@Override
@@ -692,8 +692,8 @@ public class DBTraceReferenceSpace implements DBTraceSpaceBased, TraceReferenceS
 		if (ref.getLifespan().lmin() < otherStartSnap) {
 			Lifespan oldSpan = ref.getLifespan();
 			ref.setEndSnap(otherStartSnap - 1);
-			trace.setChanged(new TraceChangeRecord<>(TraceReferenceChangeType.LIFESPAN_CHANGED,
-				this, ref.ref, oldSpan, ref.getLifespan()));
+			trace.setChanged(new TraceChangeRecord<>(TraceEvents.REFERENCE_LIFESPAN_CHANGED, this,
+				ref.ref, oldSpan, ref.getLifespan()));
 		}
 		else {
 			ref.ref.delete();

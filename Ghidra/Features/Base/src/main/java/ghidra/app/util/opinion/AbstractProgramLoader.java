@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,8 +17,9 @@ package ghidra.app.util.opinion;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+
+import org.apache.commons.io.FilenameUtils;
 
 import ghidra.app.plugin.processors.generic.MemoryBlockDefinition;
 import ghidra.app.util.Option;
@@ -26,15 +27,14 @@ import ghidra.app.util.OptionUtils;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.formats.gfilesystem.FSRL;
+import ghidra.formats.gfilesystem.FSUtilities;
 import ghidra.framework.model.*;
 import ghidra.framework.store.LockException;
-import ghidra.plugin.importer.ProgramMappingService;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.database.function.OverlappingFunctionException;
 import ghidra.program.model.address.*;
 import ghidra.program.model.lang.*;
-import ghidra.program.model.listing.FunctionManager;
-import ghidra.program.model.listing.Program;
+import ghidra.program.model.listing.*;
 import ghidra.program.model.mem.InvalidAddressException;
 import ghidra.program.model.mem.MemoryConflictException;
 import ghidra.program.model.symbol.*;
@@ -141,7 +141,17 @@ public abstract class AbstractProgramLoader implements Loader {
 			}
 
 			// Subclasses can perform custom post-load fix-ups
-			postLoadProgramFixups(loadedPrograms, project, options, messageLog, monitor);
+			postLoadProgramFixups(loadedPrograms, project, loadSpec, options, messageLog, monitor);
+
+			// Discard unneeded programs
+			Iterator<Loaded<Program>> iter = loadedPrograms.iterator();
+			while (iter.hasNext()) {
+				Loaded<Program> loaded = iter.next();
+				if (loaded.shouldDiscard()) {
+					iter.remove();
+					loaded.release(consumer);
+				}
+			}
 
 			success = true;
 			return new LoadResults<Program>(loadedPrograms);
@@ -211,6 +221,7 @@ public abstract class AbstractProgramLoader implements Loader {
 	 *
 	 * @param loadedPrograms The {@link Loaded loaded programs} to be fixed up.
 	 * @param project The {@link Project} to load into.  Could be null if there is no project.
+	 * @param loadSpec The {@link LoadSpec} to use during load.
 	 * @param options The load options.
 	 * @param messageLog The message log.
 	 * @param monitor A cancelable task monitor.
@@ -218,7 +229,7 @@ public abstract class AbstractProgramLoader implements Loader {
 	 * @throws CancelledException if the user cancelled the load.
 	 */
 	protected void postLoadProgramFixups(List<Loaded<Program>> loadedPrograms, Project project,
-			List<Option> options, MessageLog messageLog, TaskMonitor monitor)
+			LoadSpec loadSpec, List<Option> options, MessageLog messageLog, TaskMonitor monitor)
 			throws CancelledException, IOException {
 		// Default behavior is to do nothing
 	}
@@ -248,32 +259,18 @@ public abstract class AbstractProgramLoader implements Loader {
 	}
 
 	/**
-	 * Concatenates the given path elements to form a single path.  Empty and null path elements
-	 * are ignored.
+	 * Joins the given path elements to form a single path.  Empty and null path elements
+	 * are ignored. The returned path's separators are converted to unix-style and
+	 * windows-specific characters like {@code :} are stripped out, making the path suitable
+	 * to be a project path
 	 * 
 	 * @param pathElements The path elements to append to one another
 	 * @return A single path consisting of the given path elements appended together
+	 * @see FSUtilities#appendPath(String...)
 	 */
-	protected String concatenatePaths(String... pathElements) {
-		StringBuilder sb = new StringBuilder();
-		for (String pathElement : pathElements) {
-			if (pathElement == null || pathElement.isEmpty()) {
-				continue;
-			}
-			boolean sbEndsWithSlash =
-				sb.length() > 0 && "/\\".indexOf(sb.charAt(sb.length() - 1)) != -1;
-			boolean elementStartsWithSlash = "/\\".indexOf(pathElement.charAt(0)) != -1;
-
-			if (!sbEndsWithSlash && !elementStartsWithSlash && sb.length() > 0) {
-				sb.append("/");
-			}
-			else if (elementStartsWithSlash && sbEndsWithSlash) {
-				pathElement = pathElement.substring(1);
-			}
-			sb.append(pathElement);
-		}
-
-		return sb.toString();
+	protected String joinPaths(String... pathElements) {
+		String str = FSUtilities.appendPath(pathElements);
+		return str != null ? FilenameUtils.separatorsToUnix(str).replaceAll(":", "") : null;
 	}
 
 	/**
@@ -346,7 +343,6 @@ public abstract class AbstractProgramLoader implements Loader {
 
 	/**
 	 * Sets a program's Executable Path, Executable Format, MD5, SHA256, and FSRL properties.
-	 * <p>
 	 *  
 	 * @param prog {@link Program} (with active transaction)
 	 * @param provider {@link ByteProvider} that the program was created from
@@ -367,8 +363,7 @@ public abstract class AbstractProgramLoader implements Loader {
 			if (fsrl.getMD5() == null) {
 				fsrl = fsrl.withMD5(md5);
 			}
-			prog.getOptions(Program.PROGRAM_INFO)
-				.setString(ProgramMappingService.PROGRAM_SOURCE_FSRL, fsrl.toString());
+			FSRL.writeToProgramInfo(prog, fsrl);
 		}
 		prog.setExecutableMD5(md5);
 		String sha256 = computeBinarySHA256(provider);
@@ -489,7 +484,7 @@ public abstract class AbstractProgramLoader implements Loader {
 			for (Register reg : lang.getRegisters()) {
 				Address addr = reg.getAddress();
 				if (addr.isMemoryAddress()) {
-					createSymbol(program, reg.getName(), addr, false, true, true);
+					createSymbol(program, reg.getName(), addr, null, false, true, true);
 				}
 			}
 			// optionally create default symbols defined by pspec
@@ -497,7 +492,7 @@ public abstract class AbstractProgramLoader implements Loader {
 				boolean anchorSymbols = shouldAnchorSymbols(options);
 				List<AddressLabelInfo> labels = lang.getDefaultSymbols();
 				for (AddressLabelInfo info : labels) {
-					createSymbol(program, info.getLabel(), info.getAddress(), info.isEntry(),
+					createSymbol(program, info.getLabel(), info.getAddress(), info.getDescription(), info.isEntry(),
 						info.isPrimary(), anchorSymbols);
 				}
 			}
@@ -509,13 +504,16 @@ public abstract class AbstractProgramLoader implements Loader {
 	}
 
 	private static void createSymbol(Program program, String labelname, Address address,
-			boolean isEntry, boolean isPrimary, boolean anchorSymbols) {
+			String comment, boolean isEntry, boolean isPrimary, boolean anchorSymbols) {
 		SymbolTable symTable = program.getSymbolTable();
 		Address addr = address;
 		Symbol s = symTable.getPrimarySymbol(addr);
 		try {
 			Namespace namespace = program.getGlobalNamespace();
 			s = symTable.createLabel(addr, labelname, namespace, SourceType.IMPORTED);
+			if (comment != null) {
+				program.getListing().setComment(address, CommentType.EOL, comment);
+			}
 			if (isEntry) {
 				symTable.addExternalEntryPoint(addr);
 			}

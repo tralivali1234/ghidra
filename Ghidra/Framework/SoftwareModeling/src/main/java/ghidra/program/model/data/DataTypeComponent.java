@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -23,6 +23,9 @@ import ghidra.util.exception.DuplicateNameException;
  * and Unions) dataTypes.
  */
 public interface DataTypeComponent {
+
+	// TODO: known issue accessing big-endian data when component-length differs from 
+	// datatype length.
 
 	/** The default prefix for the name of a component. */
 	public final static String DEFAULT_FIELD_NAME_PREFIX = "field";
@@ -74,10 +77,10 @@ public interface DataTypeComponent {
 	public int getEndOffset();
 
 	/**
-	 * Get the length of this component.  Zero-length components will report a length of 0
-	 * and may overlap other components at the same offset.  Similarly, multiple adjacent
+	 * Get the length of this component in 8-bit bytes.  Zero-length components will report a length
+	 * of 0 and may overlap other components at the same offset.  Similarly, multiple adjacent
 	 * bit-field components may appear to overlap at the byte-level.
-	 * @return the length of this component
+	 * @return the length of this component in 8-bit bytes
 	 */
 	public int getLength();
 
@@ -114,8 +117,10 @@ public interface DataTypeComponent {
 	 *
 	 * @param fieldName the new field name for this component.
 	 *
-	 * @throws DuplicateNameException if another component of the parent has
-	 * the specified field name.
+	 * @throws DuplicateNameException This is actually never thrown anymore. All the other ways
+	 * of naming fields did not perform this check and it would cause quite a bit of churn to 
+	 * add that exception to all the other methods that affect field names. So to be consistent,
+	 * we no longer do the check in this method.
 	 */
 	public void setFieldName(String fieldName) throws DuplicateNameException;
 
@@ -169,5 +174,11 @@ public interface DataTypeComponent {
 		}
 		return false;
 	}
+
+	/**
+	 * Returns true if this this component is not defined. It is just a placeholder.
+	 * @return true if this this component is not defined. It is just a placeholder.
+	 */
+	public boolean isUndefined();
 
 }

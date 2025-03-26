@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -27,6 +27,7 @@ import ghidra.formats.gfilesystem.*;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.util.NumericUtilities;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.task.TaskMonitor;
 
@@ -149,7 +150,8 @@ public class DyldCacheUtils {
 				splitHeader.parseFromFile(shouldProcessLocalSymbols, log, monitor);
 				headers.add(splitHeader);
 				names.add(splitFSRL.getName());
-				uuidToFileMap.put(splitHeader.getUUID(), splitFSRL);
+				uuidToFileMap.put(NumericUtilities.convertBytesToString(splitHeader.getUUID()),
+					splitFSRL);
 			}
 
 			// Validate the subcaches
@@ -157,26 +159,23 @@ public class DyldCacheUtils {
 				String uuid = subcacheEntry.getUuid();
 				String extension = subcacheEntry.getCacheExtension();
 				FSRL fsrl = uuidToFileMap.get(uuid);
-				if (fsrl != null) {
-					log.appendMsg("Including subcache: " + fsrl.getName() + " - " + uuid);
-				}
-				else {
-					log.appendMsg(String.format("Missing subcache: %s%s",
+				if (fsrl == null) {
+					throw new IOException("Missing subcache: %s%s".formatted(
 						extension != null ? (baseProvider.getName() + extension + " - ") : "",
 						uuid));
 				}
+				log.appendMsg("Including subcache: " + fsrl.getName() + " - " + uuid);
 			}
-			String symbolUUID = baseHeader.getSymbolFileUUID();
+			String symbolUUID =
+				NumericUtilities.convertBytesToString(baseHeader.getSymbolFileUUID());
 			if (symbolUUID != null) {
 				FSRL symbolFSRL = uuidToFileMap.get(symbolUUID);
-				if (symbolFSRL != null) {
-					log.appendMsg(
-						"Including symbols subcache: " + symbolFSRL.getName() + " - " + symbolUUID);
+				if (symbolFSRL == null) {
+					throw new IOException("Missing symbols subcache: %s.symbols - %s"
+							.formatted(baseProvider.getName(), symbolUUID));
 				}
-				else {
-					log.appendMsg(String.format("Missing symbols subcache: %s.symbols - %s",
-						baseProvider.getName(), symbolUUID));
-				}
+				log.appendMsg(
+					"Including symbols subcache: " + symbolFSRL.getName() + " - " + symbolUUID);
 			}
 		}
 
@@ -217,6 +216,30 @@ public class DyldCacheUtils {
 		 */
 		public int size() {
 			return providers.size();
+		}
+		
+		/**
+		 * Gets the base address of the split DYLD cache.  This is where the cache should be loaded 
+		 * in memory.
+		 * 
+		 * @return The base address of the split DYLD cache
+		 */
+		public long getBaseAddress() {
+			return headers.get(0).getBaseAddress();
+		}
+
+		/**
+		 * Gets the {@link DyldCacheLocalSymbolsInfo} from the split DYLD Cache files
+		 * 
+		 * @return The {@link DyldCacheLocalSymbolsInfo} from the split DYLD Cache files, or null 
+		 *   if no local symbols are defined
+		 */
+		public DyldCacheLocalSymbolsInfo getLocalSymbolInfo() {
+			return headers.stream()
+					.map(h -> h.getLocalSymbolsInfo())
+					.filter(info -> info != null)
+					.findAny()
+					.orElse(null);
 		}
 
 		@Override

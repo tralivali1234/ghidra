@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -40,6 +40,7 @@ import ghidra.program.model.listing.*;
 import ghidra.program.model.symbol.*;
 import ghidra.program.util.*;
 import ghidra.util.HelpLocation;
+import util.CollectionUtils;
 
 /**
  * Class for showing plate comments
@@ -51,7 +52,7 @@ public class PlateFieldFactory extends FieldFactory {
 	public static final Color DEFAULT_COLOR = Palette.BLUE;
 	private final static String FIELD_GROUP_TITLE = "Plate Comments Field";
 	public final static String ENABLE_WORD_WRAP_MSG =
-		FIELD_GROUP_TITLE + Options.DELIMITER + "Enable Word Wrapping";
+		FIELD_GROUP_TITLE + Options.DELIMITER + FieldUtils.WORD_WRAP_OPTION_NAME;
 
 	/**
 	 * This is the length of the padding, which is a '*' and a space on each side
@@ -142,12 +143,14 @@ public class PlateFieldFactory extends FieldFactory {
 		CodeUnit cu = (CodeUnit) proxy.getObject();
 		boolean isClipped = false;
 		List<FieldElement> elements = new ArrayList<>();
-		String commentText = getCommentText(cu);
+		List<String> offcutComments = CommentUtils.getOffcutComments(cu, CommentType.PLATE);
+		String commentText = getCommentText(cu, offcutComments);
+
 		if (StringUtils.isBlank(commentText)) {
 			getDefaultFieldElements(cu, elements);
 		}
 		else {
-			isClipped = getFormattedFieldElements(cu, elements);
+			isClipped = getFormattedFieldElements(cu, elements, offcutComments);
 		}
 
 		if (elements.isEmpty()) {
@@ -170,14 +173,15 @@ public class PlateFieldFactory extends FieldFactory {
 		return listingField;
 	}
 
-	private boolean getFormattedFieldElements(CodeUnit cu, List<FieldElement> elements) {
+	private boolean getFormattedFieldElements(CodeUnit cu, List<FieldElement> elements,
+			List<String> offcutComments) {
 
 		int numberBlankLines = getNumberBlankLines(cu, true);
 
 		addBlankLines(elements, numberBlankLines, cu);
 
 		String[] comments = cu.getCommentAsArray(CodeUnit.PLATE_COMMENT);
-		return generateFormattedPlateComment(elements, comments, cu.getProgram());
+		return generateFormattedPlateComment(elements, comments, offcutComments, cu.getProgram());
 	}
 
 	private void getDefaultFieldElements(CodeUnit cu, List<FieldElement> elements) {
@@ -205,7 +209,7 @@ public class PlateFieldFactory extends FieldFactory {
 		return false;
 	}
 
-	private String getCommentText(CodeUnit cu) {
+	private String getCommentText(CodeUnit cu, List<String> offcutComments) {
 		String[] comments = cu.getCommentAsArray(CodeUnit.PLATE_COMMENT);
 		if (comments == null) {
 			return null;
@@ -218,6 +222,12 @@ public class PlateFieldFactory extends FieldFactory {
 			}
 			buffy.append(comment);
 		}
+		for (String offcut : offcutComments) {
+			if (buffy.length() != 0) {
+				buffy.append('\n');
+			}
+			buffy.append(offcut);
+		}
 		return buffy.toString();
 	}
 
@@ -226,8 +236,8 @@ public class PlateFieldFactory extends FieldFactory {
 	 * data is clipped because it is too long to display.
 	 */
 	private boolean generateFormattedPlateComment(List<FieldElement> elements, String[] comments,
-			Program p) {
-		if (comments == null || comments.length == 0) {
+			List<String> offcutComments, Program p) {
+		if (offcutComments.isEmpty() && CollectionUtils.isBlank(comments)) {
 			return false;
 		}
 
@@ -245,13 +255,20 @@ public class PlateFieldFactory extends FieldFactory {
 		for (String c : comments) {
 			commentsList.add(CommentUtils.parseTextForAnnotations(c, p, prototype, row++));
 		}
-		if (isWordWrap) {
-			int charWidth = getMetrics().charWidth(' ');
-			int paddingWidth = CONTENT_PADDING * charWidth;
-			commentsList = FieldUtils.wordWrapList(
-				new CompositeFieldElement(commentsList),
-				Math.max(width - paddingWidth, charWidth));
+		for (String offcut : offcutComments) {
+			AttributedString as = new AttributedString(offcut, CommentColors.OFFCUT,
+				getMetrics(style), false, null);
+			commentsList.add(new TextFieldElement(as, commentsList.size(), 0));
 		}
+
+		if (isWordWrap) {
+			int spaceWidth = getMetrics().charWidth(' ');
+			int starWidth = getMetrics().charWidth('*');
+			int charWidth = Math.max(spaceWidth, starWidth);
+			int paddingWidth = CONTENT_PADDING * charWidth;
+			commentsList = FieldUtils.wrap(commentsList, Math.max(width - paddingWidth, charWidth));
+		}
+
 		boolean isClipped = addSideBorders(commentsList);
 		elements.addAll(commentsList);
 
@@ -274,27 +291,36 @@ public class PlateFieldFactory extends FieldFactory {
 
 	private FieldElementResult addSideBorder(FieldElement element, int row, boolean center) {
 
-		int ellipsisLength = 0;
-		int availableWidth = stars.length() - CONTENT_PADDING;
+		boolean isClipped = false;
+		int ellipsisWidth = 0;
 		String ellipsisText = EMPTY_STRING;
-		if (element.length() > availableWidth) {
+
+		int spaceWidth = getMetrics().charWidth(' ');
+		int starWidth = getMetrics().charWidth('*');
+		int fullStarWidth = stars.length() * starWidth;
+		int sideStarWidth = 2 * starWidth;
+		int sideSpaceWidth = 2 * spaceWidth;
+		int availableWidth = fullStarWidth - sideStarWidth - sideSpaceWidth;
+		if (availableWidth < element.getStringWidth()) {
 			// not enough room; clip the text and add ellipses
+			isClipped = true;
 			ellipsisText = ELLIPSIS;
-			ellipsisLength = ELLIPSIS.length();
-			availableWidth = stars.length() - CONTENT_PADDING - ellipsisLength;
-			element = element.substring(0, availableWidth); // clip
+			ellipsisWidth = getMetrics().charWidth('.') * ELLIPSIS.length();
+			availableWidth -= ellipsisWidth;
+			int charsThatFit = element.getMaxCharactersForWidth(availableWidth);
+			element = element.substring(0, charsThatFit); // clip
 		}
 
-		int charWidth = getMetrics().charWidth(' ');
-		int paddingWidth = (CONTENT_PADDING + ellipsisLength) * charWidth;
-		int textWidth = paddingWidth + element.getStringWidth();
-		int totalPadding = (width - textWidth) / charWidth;
-		int prePadding = center ? totalPadding / 2 : 0;
-		int postPadding = center ? (totalPadding + 1) / 2 : totalPadding;
+		int paddingWidth = sideStarWidth + sideSpaceWidth;
+		int currentTextWidth = paddingWidth + element.getStringWidth() + ellipsisWidth;
+		int biggestCharWidth = Math.max(starWidth, spaceWidth);
+		int paddingCharsNeeded = (width - currentTextWidth) / biggestCharWidth;
+		int prePaddingCharCount = center ? paddingCharsNeeded / 2 : 0;
+		int postPaddingCharCount = center ? (paddingCharsNeeded + 1) / 2 : paddingCharsNeeded;
 
 		StringBuilder buffy = new StringBuilder();
 		buffy.append('*').append(' ');
-		addPadding(buffy, prePadding);
+		addPaddingSpaces(buffy, prePaddingCharCount);
 
 		FieldElement prefix = new TextFieldElement(
 			new AttributedString(buffy.toString(), CommentColors.PLATE, getMetrics()), row, 0);
@@ -304,7 +330,7 @@ public class PlateFieldFactory extends FieldFactory {
 			prefix.length() + element.length());
 
 		buffy.setLength(0);
-		addPadding(buffy, postPadding);
+		addPaddingSpaces(buffy, postPaddingCharCount);
 		buffy.append(' ').append('*');
 
 		FieldElement suffix = new TextFieldElement(
@@ -313,10 +339,10 @@ public class PlateFieldFactory extends FieldFactory {
 
 		return new FieldElementResult(
 			new CompositeFieldElement(new FieldElement[] { prefix, element, ellipsis, suffix }),
-			ellipsisLength > 0);
+			isClipped);
 	}
 
-	private void addPadding(StringBuilder buf, int count) {
+	private void addPaddingSpaces(StringBuilder buf, int count) {
 		for (int i = 0; i < count; i++) {
 			buf.append(' ');
 		}
@@ -543,7 +569,8 @@ public class PlateFieldFactory extends FieldFactory {
 		 */
 
 		CodeUnit cu = (CodeUnit) obj;
-		String commentText = getCommentText(cu);
+		List<String> offcutComments = CommentUtils.getOffcutComments(cu, CommentType.PLATE);
+		String commentText = getCommentText(cu, offcutComments);
 		boolean hasComment = true;
 		if (StringUtils.isBlank(commentText)) {
 			String defaultComment = getDefaultComment(cu);
@@ -688,12 +715,7 @@ public class PlateFieldFactory extends FieldFactory {
 		options.getOptions(GROUP_TITLE).setOptionsHelpLocation(help);
 
 		options.registerOption(ENABLE_WORD_WRAP_MSG, false, null,
-			"Enables word wrapping in the pre-comments field.  If word " +
-				"wrapping is on, user enter new lines are ignored and " +
-				"the entire comment is displayed in paragraph form.  If word " +
-				"wrapping is off, comments are displayed in line format " +
-				"however the user entered them.  Lines that are too long " +
-				"for the field, are truncated.");
+			FieldUtils.WORD_WRAP_OPTION_DESCRIPTION);
 
 		options.registerOption(SHOW_SUBROUTINE_PLATES_OPTION, true, help,
 			"Toggle for whether a plate comment should be displayed for subroutines.");

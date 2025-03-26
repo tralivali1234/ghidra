@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -26,7 +26,6 @@ import ghidra.app.util.bin.format.macho.MachHeader;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.flatapi.FlatProgramAPI;
 import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.*;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.symbol.*;
@@ -38,10 +37,10 @@ import ghidra.util.task.TaskMonitor;
  * Represents a symtab_command structure
  */
 public class SymbolTableCommand extends LoadCommand {
-	private int symoff;
-	private int nsyms;
-	private int stroff;
-	private int strsize;
+	private long symoff;
+	private long nsyms;
+	private long stroff;
+	private long strsize;
 
 	private List<NList> symbols = new ArrayList<NList>();
 
@@ -59,12 +58,12 @@ public class SymbolTableCommand extends LoadCommand {
 			MachHeader header) throws IOException {
 		super(loadCommandReader);
 
-		symoff = loadCommandReader.readNextInt();
-		nsyms = loadCommandReader.readNextInt();
-		stroff = loadCommandReader.readNextInt();
-		strsize = loadCommandReader.readNextInt();
+		symoff = loadCommandReader.readNextUnsignedInt();
+		nsyms = checkCount(loadCommandReader.readNextUnsignedInt());
+		stroff = loadCommandReader.readNextUnsignedInt();
+		strsize = loadCommandReader.readNextUnsignedInt();
 
-		List<NList> nlistList = new ArrayList<>(nsyms);
+		List<NList> nlistList = new ArrayList<>((int) nsyms);
 		dataReader.setPointerIndex(header.getStartIndex() + symoff);
 		for (int i = 0; i < nsyms; ++i) {
 			nlistList.add(new NList(dataReader, header.is32bit()));
@@ -91,7 +90,7 @@ public class SymbolTableCommand extends LoadCommand {
 	 * The symbol table is an array of nlist data structures.
 	 * @return symbol table offset
 	 */
-	public int getSymbolOffset() {
+	public long getSymbolOffset() {
 		return symoff;
 	}
 
@@ -99,7 +98,7 @@ public class SymbolTableCommand extends LoadCommand {
 	 * An integer indicating the number of entries in the symbol table.
 	 * @return the number of entries in the symbol table
 	 */
-	public int getNumberOfSymbols() {
+	public long getNumberOfSymbols() {
 		return nsyms;
 	}
 
@@ -108,7 +107,7 @@ public class SymbolTableCommand extends LoadCommand {
 	 * location of the string table.
 	 * @return string table offset
 	 */
-	public int getStringTableOffset() {
+	public long getStringTableOffset() {
 		return stroff;
 	}
 
@@ -116,12 +115,28 @@ public class SymbolTableCommand extends LoadCommand {
 	 * An integer indicating the size (in bytes) of the string table.
 	 * @return string table size in bytes
 	 */
-	public int getStringTableSize() {
+	public long getStringTableSize() {
 		return strsize;
 	}
 
 	public List<NList> getSymbols() {
 		return symbols;
+	}
+
+	/**
+	 * Adds the given {@link List} of {@link NList}s to this symbol/string table, and adjusts the
+	 * affected symbol table load command fields appropriately
+	 * 
+	 * @param list The {@link List} of {@link NList}s to add
+	 */
+	public void addSymbols(List<NList> list) {
+		if (list.isEmpty()) {
+			return;
+		}
+		symbols.addAll(list);
+		nsyms += list.size();
+		stroff += list.size() * list.get(0).getSize();
+		strsize = symbols.stream().mapToInt(e -> e.getString().length() + 1).sum();
 	}
 
 	public NList getSymbolAt(int index) {
@@ -154,55 +169,30 @@ public class SymbolTableCommand extends LoadCommand {
 	}
 
 	@Override
-	public int getLinkerDataOffset() {
+	public long getLinkerDataOffset() {
 		return symoff;
 	}
 
 	@Override
-	public int getLinkerDataSize() {
-		if (!symbols.isEmpty()) {
-			int totalStringSize = 0;
-			for (NList nlist : symbols) {
-				totalStringSize += nlist.getString().length() + 1; // Add 1 for null terminator
-			}
-			return nsyms * symbols.get(0).getSize() + totalStringSize;
-		}
-		return 0;
+	public long getLinkerDataSize() {
+		return NList.getSize(symbols);
 	}
 
 	@Override
-	public Address getDataAddress(MachHeader header, AddressSpace space) {
-		if (symoff != 0 && nsyms != 0) {
-			SegmentCommand segment = getContainingSegment(header, symoff);
-			if (segment != null) {
-				return space
-						.getAddress(segment.getVMaddress() + (symoff - segment.getFileOffset()));
-			}
-		}
-		return null;
-	}
+	public void markup(Program program, MachHeader header, String source, TaskMonitor monitor,
+			MessageLog log) throws CancelledException {
 
-	@Override
-	public void markup(Program program, MachHeader header, Address symbolTableAddr,
-			String source, TaskMonitor monitor, MessageLog log) throws CancelledException {
+		Address symbolTableAddr = fileOffsetToAddress(program, header, symoff, nsyms);
 		if (symbolTableAddr == null) {
 			return;
 		}
-		Address stringTableAddr = stroff != 0 ? symbolTableAddr.add(stroff - symoff) : null;
+		Address stringTableAddr = fileOffsetToAddress(program, header, stroff, strsize);
 
-		Listing listing = program.getListing();
+		markupPlateComment(program, symbolTableAddr, source, "symbols");
+		markupPlateComment(program, stringTableAddr, source, "strings");
+
 		ReferenceManager referenceManager = program.getReferenceManager();
-		String symbolsName = LoadCommandTypes.getLoadCommandName(getCommandType()) + " (symbols)";
-		String stringsName = LoadCommandTypes.getLoadCommandName(getCommandType()) + " (strings)";
-		if (source != null) {
-			symbolsName += " - " + source;
-			stringsName += " - " + source;
-		}
 		try {
-			listing.setComment(symbolTableAddr, CodeUnit.PLATE_COMMENT, symbolsName);
-			if (stringTableAddr != null) {
-				listing.setComment(stringTableAddr, CodeUnit.PLATE_COMMENT, stringsName);
-			}
 			for (int i = 0; i < nsyms; i++) {
 				NList nlist = symbols.get(i);
 				DataType dt = nlist.toDataType();
@@ -210,7 +200,7 @@ public class SymbolTableCommand extends LoadCommand {
 				Data d = DataUtilities.createData(program, nlistAddr, dt, -1,
 					DataUtilities.ClearDataMode.CHECK_FOR_SPACE);
 
-				if (stringTableAddr != null) {
+				if (stringTableAddr != null && nlist.getStringTableIndex() != 0) {
 					Address strAddr = stringTableAddr.add(nlist.getStringTableIndex());
 					DataUtilities.createData(program, strAddr, STRING, -1,
 						DataUtilities.ClearDataMode.CHECK_FOR_SPACE);
@@ -223,7 +213,7 @@ public class SymbolTableCommand extends LoadCommand {
 		}
 		catch (Exception e) {
 			log.appendMsg(SymbolTableCommand.class.getSimpleName(),
-				"Failed to markup %s.".formatted(symbolsName));
+				"Failed to markup: " + getContextualName(source, "symbols"));
 		}
 	}
 

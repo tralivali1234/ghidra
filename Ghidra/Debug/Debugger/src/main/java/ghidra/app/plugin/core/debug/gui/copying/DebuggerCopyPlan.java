@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -131,7 +131,8 @@ public class DebuggerCopyPlan {
 					}
 					long off = ins.getMinAddress().subtract(fromRange.getMinAddress());
 					Address dest = intoAddress.add(off);
-					intoListing.createInstruction(dest, ins.getPrototype(), ins, ins);
+					intoListing.createInstruction(dest, ins.getPrototype(), ins, ins,
+						ins.getLength());
 				}
 			}
 		},
@@ -143,8 +144,7 @@ public class DebuggerCopyPlan {
 
 			@Override
 			public void copy(TraceProgramView from, AddressRange fromRange, Program into,
-					Address intoAddress, TaskMonitor monitor)
-					throws Exception {
+					Address intoAddress, TaskMonitor monitor) throws Exception {
 				Listing intoListing = into.getListing();
 				for (Data data : from.getListing()
 						.getDefinedData(new AddressSet(fromRange), true)) {
@@ -204,8 +204,8 @@ public class DebuggerCopyPlan {
 				}
 			}
 
-			private Namespace findOrCopyNamespace(Namespace ns, SymbolTable intoTable,
-					Program into) throws Exception {
+			private Namespace findOrCopyNamespace(Namespace ns, SymbolTable intoTable, Program into)
+					throws Exception {
 				if (ns.isGlobal()) {
 					return into.getGlobalNamespace();
 				}
@@ -219,21 +219,22 @@ public class DebuggerCopyPlan {
 			@Override
 			public void copy(TraceProgramView from, AddressRange fromRange, Program into,
 					Address intoAddress, TaskMonitor monitor) throws Exception {
+				long snap = from.getSnap();
 				for (TraceBreakpoint bpt : from.getTrace()
 						.getBreakpointManager()
 						.getBreakpointsIntersecting(Lifespan.at(from.getSnap()), fromRange)) {
 					monitor.checkCancelled();
-					long off = bpt.getMinAddress().subtract(fromRange.getMinAddress());
+					long off = bpt.getMinAddress(snap).subtract(fromRange.getMinAddress());
 					Address dest = intoAddress.add(off);
 					ProgramBreakpoint pb =
-						new ProgramBreakpoint(into, dest, bpt.getLength(), bpt.getKinds());
+						new ProgramBreakpoint(into, dest, bpt.getLength(snap), bpt.getKinds(snap));
 					if (bpt.isEnabled(from.getSnap())) {
 						pb.enable();
 					}
 					else {
 						pb.disable();
 					}
-					pb.setEmuSleigh(bpt.getEmuSleigh());
+					pb.setEmuSleigh(bpt.getEmuSleigh(snap));
 				}
 			}
 		},
@@ -442,8 +443,8 @@ public class DebuggerCopyPlan {
 	public boolean isRequiresInitializedMemory(TraceProgramView from, Program dest) {
 		return checkBoxes.entrySet().stream().anyMatch(ent -> {
 			Copier copier = ent.getKey();
-			return copier.isRequiresInitializedMemory() &&
-				copier.isAvailable(from, dest) && ent.getValue().isSelected();
+			return copier.isRequiresInitializedMemory() && copier.isAvailable(from, dest) &&
+				ent.getValue().isSelected();
 		});
 	}
 }

@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -26,7 +26,7 @@ import ghidra.program.util.LanguageTranslator;
 import ghidra.util.exception.InvalidInputException;
 
 /**
- * <code></code> encapsulates the ordered list of storage varnodes which correspond to a 
+ * Encapsulates the ordered list of storage varnodes which correspond to a 
  * function parameter or local variable.  For big-endian the first element corresponds 
  * to the most-significant varnode, while for little-endian the first element 
  * corresponds to the least-significant varnode.
@@ -181,7 +181,7 @@ public class VariableStorage implements Comparable<VariableStorage> {
 		return size;
 	}
 
-	private void checkVarnodes() throws InvalidInputException {
+	private void checkVarnodes() throws IllegalArgumentException, InvalidInputException {
 		if (varnodes.length == 0) {
 			throw new IllegalArgumentException("A minimum of one varnode must be specified");
 		}
@@ -191,10 +191,11 @@ public class VariableStorage implements Comparable<VariableStorage> {
 		for (int i = 0; i < varnodes.length; i++) {
 			Varnode varnode = varnodes[i];
 			if (varnode == null) {
-				throw new InvalidInputException("Null varnode not permitted");
+				throw new IllegalArgumentException("Null varnode not permitted");
 			}
 			if (varnode.getSize() <= 0) {
-				throw new InvalidInputException("Unsupported varnode size: " + varnode.getSize());
+				throw new IllegalArgumentException(
+					"Unsupported varnode size: " + varnode.getSize());
 			}
 
 			boolean isRegister = false;
@@ -243,16 +244,24 @@ public class VariableStorage implements Comparable<VariableStorage> {
 							stackOffset + ", size=" + varnode.getSize());
 				}
 			}
-			if (i < (varnodes.length - 1) && !isRegister) {
-				throw new InvalidInputException(
-					"Compound storage must use registers except for last varnode");
+			if (programArch.getLanguage().isBigEndian()) {
+				if (i < (varnodes.length - 1) && !isRegister) {
+					throw new InvalidInputException(
+						"Compound storage must use registers except for last BE varnode");
+				}
+			}
+			else {
+				if (i > 0 && !isRegister) {
+					throw new InvalidInputException(
+						"Compound storage must use registers except for first LE varnode");
+				}
 			}
 			size += varnode.getSize();
 		}
 		for (int i = 0; i < varnodes.length; i++) {
 			for (int j = i + 1; j < varnodes.length; j++) {
 				if (varnodes[i].intersects(varnodes[j])) {
-					throw new InvalidInputException("One or more conflicting varnodes");
+					throw new InvalidInputException("One or more conflicting storage varnodes");
 				}
 			}
 		}
@@ -269,6 +278,9 @@ public class VariableStorage implements Comparable<VariableStorage> {
 		if (programArch == null || newProgramArch == programArch) {
 			if (getClass().equals(VariableStorage.class)) {
 				return this; // only reuse if simple VariableStorage instance
+			}
+			if (isVoidStorage()) {
+				return VOID_STORAGE;
 			}
 			if (isUnassignedStorage()) {
 				return UNASSIGNED_STORAGE;
@@ -294,8 +306,7 @@ public class VariableStorage implements Comparable<VariableStorage> {
 					"Variable storage incompatible with program, address space not found: " +
 						curSpace.getName());
 			}
-			newVarnodes[i] =
-				new Varnode(newSpace.getAddress(v[i].getOffset()), v[i].getSize());
+			newVarnodes[i] = new Varnode(newSpace.getAddress(v[i].getOffset()), v[i].getSize());
 		}
 		return new VariableStorage(newProgramArch, newVarnodes);
 	}
@@ -625,9 +636,9 @@ public class VariableStorage implements Comparable<VariableStorage> {
 		if (varnodes == null || otherVarnodes == null) {
 			return false;
 		}
-		for (int i = 0; i < varnodes.length; i++) {
-			for (int j = 0; j < otherVarnodes.length; j++) {
-				if (varnodes[i].intersects(otherVarnodes[j])) {
+		for (Varnode varnode : varnodes) {
+			for (Varnode otherVarnode : otherVarnodes) {
+				if (varnode.intersects(otherVarnode)) {
 					return true;
 				}
 			}
@@ -644,8 +655,8 @@ public class VariableStorage implements Comparable<VariableStorage> {
 		if (varnodes == null || set == null || set.isEmpty()) {
 			return false;
 		}
-		for (int i = 0; i < varnodes.length; i++) {
-			if (varnodes[i].intersects(set)) {
+		for (Varnode varnode : varnodes) {
+			if (varnode.intersects(set)) {
 				return true;
 			}
 		}
@@ -662,8 +673,8 @@ public class VariableStorage implements Comparable<VariableStorage> {
 			return false;
 		}
 		Varnode regVarnode = new Varnode(reg.getAddress(), reg.getMinimumByteSize());
-		for (int i = 0; i < varnodes.length; i++) {
-			if (varnodes[i].intersects(regVarnode)) {
+		for (Varnode varnode : varnodes) {
+			if (varnode.intersects(regVarnode)) {
 				return true;
 			}
 		}
@@ -679,8 +690,8 @@ public class VariableStorage implements Comparable<VariableStorage> {
 		if (varnodes == null) {
 			return false;
 		}
-		for (int i = 0; i < varnodes.length; i++) {
-			if (varnodes[i].contains(address)) {
+		for (Varnode varnode : varnodes) {
+			if (varnode.contains(address)) {
 				return true;
 			}
 		}
@@ -816,8 +827,8 @@ public class VariableStorage implements Comparable<VariableStorage> {
 			list = null;
 		}
 		if (list == null) {
-			throw new InvalidInputException("Invalid varnode serialization: '" + serialization +
-				"'");
+			throw new InvalidInputException(
+				"Invalid varnode serialization: '" + serialization + "'");
 		}
 		return list;
 	}
@@ -869,9 +880,10 @@ public class VariableStorage implements Comparable<VariableStorage> {
 					if (space.isRegisterSpace()) {
 						long offset = Long.parseUnsignedLong(offsetStr, 16);
 						int size = Integer.parseInt(sizeStr);
-						Address oldRegAddr =
-							translator.getOldLanguage().getAddressFactory().getRegisterSpace().getAddress(
-								offset);
+						Address oldRegAddr = translator.getOldLanguage()
+								.getAddressFactory()
+								.getRegisterSpace()
+								.getAddress(offset);
 						String newOffsetStr =
 							translateRegisterVarnodeOffset(oldRegAddr, size, translator);
 						if (newOffsetStr != null) {
@@ -895,8 +907,8 @@ public class VariableStorage implements Comparable<VariableStorage> {
 		}
 
 		if (strBuilder == null) {
-			throw new InvalidInputException("Invalid varnode serialization: '" + serialization +
-				"'");
+			throw new InvalidInputException(
+				"Invalid varnode serialization: '" + serialization + "'");
 		}
 
 		return strBuilder.toString();
@@ -924,7 +936,7 @@ public class VariableStorage implements Comparable<VariableStorage> {
 		}
 		if (oldReg != null && !(oldReg instanceof UnknownRegister)) {
 			Register newReg = translator.getNewRegister(oldReg);
-			if (newReg != null) { // assume reg endianess unchanged
+			if (newReg != null) { // assume reg endianness unchanged
 				// NOTE: could produce bad results if not careful with mapping
 				int origByteShift = (int) offset - oldReg.getOffset();
 				offset = newReg.getOffset() + origByteShift;

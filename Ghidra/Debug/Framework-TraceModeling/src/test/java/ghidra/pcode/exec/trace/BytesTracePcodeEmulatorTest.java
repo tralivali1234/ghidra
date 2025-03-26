@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -28,9 +28,6 @@ import org.junit.Test;
 import db.Transaction;
 import ghidra.app.plugin.assembler.*;
 import ghidra.app.plugin.assembler.sleigh.sem.AssemblyPatternBlock;
-import ghidra.dbg.target.schema.SchemaContext;
-import ghidra.dbg.target.schema.TargetObjectSchema.SchemaName;
-import ghidra.dbg.target.schema.XmlSchemaContext;
 import ghidra.pcode.emu.PcodeThread;
 import ghidra.pcode.exec.*;
 import ghidra.pcode.exec.PcodeExecutorStatePiece.Reason;
@@ -45,7 +42,10 @@ import ghidra.trace.model.Lifespan;
 import ghidra.trace.model.guest.TraceGuestPlatform;
 import ghidra.trace.model.memory.*;
 import ghidra.trace.model.target.TraceObject.ConflictResolution;
-import ghidra.trace.model.target.TraceObjectKeyPath;
+import ghidra.trace.model.target.path.KeyPath;
+import ghidra.trace.model.target.schema.SchemaContext;
+import ghidra.trace.model.target.schema.XmlSchemaContext;
+import ghidra.trace.model.target.schema.TraceObjectSchema.SchemaName;
 import ghidra.trace.model.thread.TraceThread;
 import ghidra.util.NumericUtilities;
 
@@ -908,7 +908,7 @@ public class BytesTracePcodeEmulatorTest extends AbstractTracePcodeEmulatorTest 
 				x64.addMappedRegisterRange();
 				x64.addMappedRange(tb.addr(0x00000000), tb.addr(x64, 0x00400000), 0x10000);
 				x64.addMappedRange(tb.addr(0x20000000), tb.addr(x64, 0x00100000), 0x10000);
-				objects.createObject(TraceObjectKeyPath.parse("Targets[0].Threads[0].Registers"))
+				objects.createObject(KeyPath.parse("Targets[0].Threads[0].Registers"))
 						.insert(Lifespan.nowOn(0), ConflictResolution.DENY);
 
 				tb.exec(x64, 0, thread, 0, """
@@ -946,28 +946,29 @@ public class BytesTracePcodeEmulatorTest extends AbstractTracePcodeEmulatorTest 
 	}
 
 	@Test
-	public void testITECC_VMOVCCF32() throws Throwable {
+	public void testIT_ContextFlow() throws Throwable {
 		try (ToyDBTraceBuilder tb = new ToyDBTraceBuilder("Test", "ARM:LE:32:v8T")) {
 			TraceThread thread = initTrace(tb, """
 					pc = 0x00400000;
 					sp = 0x00110000;
-					s1 = 0x12341234;
+					r0 = 0x12341234;
+					r1 = 0x43214321;
+					r7 = 0xbeef;
 					CY = 1;
 					""",
 				List.of(
-					"ite cc"));
-			//"vmov.cc.f32 s1,0xbf000000"));
-
-			try (Transaction tx = tb.startTransaction()) {
-				tb.trace.getMemoryManager()
-						.putBytes(0, tb.addr(0x00400002), tb.buf(0xfe, 0xee, 0x00, 0x0a));
-			}
+					"it cc",
+					"mov r0,r7", // Assembler doesn't handle context flow
+					"mov r1,r7"));
 
 			BytesTracePcodeEmulator emu = new BytesTracePcodeEmulator(tb.host, 0);
 			PcodeThread<byte[]> emuThread = emu.newThread(thread.getPath());
 			emuThread.stepInstruction();
-			emuThread.stepPcodeOp(); // decode
-			assertEquals("vmov.cc.f32 s1,0xbf000000", emuThread.getInstruction().toString());
+			emuThread.stepPcodeOp(); // decode second
+			assertEquals("mov.cc r0,r7", emuThread.getInstruction().toString());
+			emuThread.finishInstruction();
+			emuThread.stepPcodeOp(); // decode third
+			assertEquals("mov r1,r7", emuThread.getInstruction().toString());
 			emuThread.finishInstruction();
 
 			try (Transaction tx = tb.startTransaction()) {
@@ -976,8 +977,55 @@ public class BytesTracePcodeEmulatorTest extends AbstractTracePcodeEmulatorTest 
 
 			assertEquals(BigInteger.valueOf(0x00400006),
 				TraceSleighUtils.evaluate("pc", tb.trace, 1, thread, 0));
-			assertEquals(BigInteger.valueOf(0x12341234), // Unaffected
-				TraceSleighUtils.evaluate("s1", tb.trace, 1, thread, 0));
+			assertEquals(BigInteger.valueOf(0x12341234), // r0 Unaffected
+				TraceSleighUtils.evaluate("r0", tb.trace, 1, thread, 0));
+			assertEquals(BigInteger.valueOf(0xbeef), // r1 Affected
+				TraceSleighUtils.evaluate("r1", tb.trace, 1, thread, 0));
+		}
+	}
+
+	@Test
+	public void testITE_ContextFlow() throws Throwable {
+		try (ToyDBTraceBuilder tb = new ToyDBTraceBuilder("Test", "ARM:LE:32:v8T")) {
+			TraceThread thread = initTrace(tb, """
+					pc = 0x00400000;
+					sp = 0x00110000;
+					r0 = 0x12341234;
+					r1 = 0x43214321;
+					r7 = 0xbeef;
+					CY = 1;
+					""",
+				List.of(
+					"ite cc",
+					"mov r0,r7", // Assembler doesn't handle context flow
+					"mov r1,r7", // "
+					"mov r2,r7"));
+
+			BytesTracePcodeEmulator emu = new BytesTracePcodeEmulator(tb.host, 0);
+			PcodeThread<byte[]> emuThread = emu.newThread(thread.getPath());
+			emuThread.stepInstruction();
+			emuThread.stepPcodeOp(); // decode second
+			assertEquals("mov.cc r0,r7", emuThread.getInstruction().toString());
+			emuThread.finishInstruction();
+			emuThread.stepPcodeOp(); // decode third
+			assertEquals("mov.cs r1,r7", emuThread.getInstruction().toString());
+			emuThread.finishInstruction();
+			emuThread.stepPcodeOp(); // decode fourth
+			assertEquals("mov r2,r7", emuThread.getInstruction().toString());
+			emuThread.finishInstruction();
+
+			try (Transaction tx = tb.startTransaction()) {
+				emu.writeDown(tb.host, 1, 1);
+			}
+
+			assertEquals(BigInteger.valueOf(0x00400008),
+				TraceSleighUtils.evaluate("pc", tb.trace, 1, thread, 0));
+			assertEquals(BigInteger.valueOf(0x12341234), // r0 Unaffected
+				TraceSleighUtils.evaluate("r0", tb.trace, 1, thread, 0));
+			assertEquals(BigInteger.valueOf(0xbeef), // r1 Affected
+				TraceSleighUtils.evaluate("r1", tb.trace, 1, thread, 0));
+			assertEquals(BigInteger.valueOf(0xbeef), // r2 Affected
+				TraceSleighUtils.evaluate("r2", tb.trace, 1, thread, 0));
 		}
 	}
 }

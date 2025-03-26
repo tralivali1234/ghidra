@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -28,6 +28,9 @@ import ghidra.util.task.TaskMonitor;
  * A loaded {@link DomainObject} produced by a {@link Loader}.  In addition to storing the loaded
  * {@link DomainObject}, it also stores the {@link Loader}'s desired name and project folder path 
  * for the loaded {@link DomainObject}, should it get saved to a project.
+ * <p>
+ * NOTE: If an object of this type is marked as {@link #setDiscard(boolean) discardable}, it should
+ * be {@link #release(Object) released} and not saved. 
  * 
  * @param <T> The type of {@link DomainObject} that was loaded
  */
@@ -38,6 +41,8 @@ public class Loaded<T extends DomainObject> {
 	private String projectFolderPath;
 
 	private DomainFile domainFile;
+	private boolean ignoreSave;
+	private boolean discard;
 
 	/**
 	 * Creates a new {@link Loaded} object
@@ -54,6 +59,19 @@ public class Loaded<T extends DomainObject> {
 		this.domainObject = domainObject;
 		this.name = name;
 		setProjectFolderPath(projectFolderPath);
+	}
+
+	/**
+	 * Creates a {@link Loaded} view on an existing {@link DomainFile}. This type of {@link Loaded}
+	 * object cannot be saved.
+	 * 
+	 * @param domainObject The loaded {@link DomainObject}
+	 * @param domainFile The {@link DomainFile} to be loaded
+	 */
+	public Loaded(T domainObject, DomainFile domainFile) {
+		this(domainObject, domainFile.getName(), domainFile.getParent().getPathname());
+		this.domainFile = domainFile;
+		this.ignoreSave = true;
 	}
 
 	/**
@@ -97,7 +115,7 @@ public class Loaded<T extends DomainObject> {
 	 *   project folder will be used.
 	 */
 	public void setProjectFolderPath(String projectFolderPath) {
-		if (projectFolderPath == null) {
+		if (projectFolderPath == null || projectFolderPath.isBlank()) {
 			projectFolderPath = "/";
 		}
 		else if (!projectFolderPath.endsWith("/")) {
@@ -140,6 +158,10 @@ public class Loaded<T extends DomainObject> {
 	public DomainFile save(Project project, MessageLog messageLog, TaskMonitor monitor)
 			throws CancelledException, ClosedException, IOException {
 
+		if (ignoreSave) {
+			return domainFile;
+		}
+
 		if (domainObject.isClosed()) {
 			throw new ClosedException(
 				"Cannot saved closed DomainObject: " + domainObject.getName());
@@ -152,7 +174,7 @@ public class Loaded<T extends DomainObject> {
 		}
 		catch (FileNotFoundException e) {
 			// DomainFile was already saved, but no longer exists.
-			// Allow the save to proceeded.
+			// Allow the save to proceed.
 			domainFile = null;
 		}
 
@@ -194,6 +216,27 @@ public class Loaded<T extends DomainObject> {
 		}
 		return domainFile;
 	}
+
+	/**
+	 * Checks to see if this {@link Loaded} {@link DomainObject} should be discarded (not saved)
+	 * 
+	 * @return True if this {@link Loaded} {@link DomainObject} should be discarded; otherwise, 
+	 *   false
+	 */
+	public boolean shouldDiscard() {
+		return discard;
+	}
+
+	/**
+	 * Sets whether or not this {@link Loaded} {@link DomainObject} should be discarded (not saved)
+	 * 
+	 * @param discard True if this {@link Loaded} {@link DomainObject} should be discarded;
+	 *   otherwise, false
+	 */
+	public void setDiscard(boolean discard) {
+		this.discard = discard;
+	}
+
 
 	/**
 	 * Deletes the loaded {@link DomainObject}'s associated {@link DomainFile} that was

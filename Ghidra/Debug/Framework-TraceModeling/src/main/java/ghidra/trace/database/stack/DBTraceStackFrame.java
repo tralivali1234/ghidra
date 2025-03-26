@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -25,9 +25,9 @@ import ghidra.trace.database.address.DBTraceOverlaySpaceAdapter;
 import ghidra.trace.database.address.DBTraceOverlaySpaceAdapter.AddressDBFieldCodec;
 import ghidra.trace.database.address.DBTraceOverlaySpaceAdapter.DecodesAddresses;
 import ghidra.trace.model.Lifespan;
-import ghidra.trace.model.Trace.TraceStackChangeType;
 import ghidra.trace.model.stack.TraceStackFrame;
 import ghidra.trace.util.TraceChangeRecord;
+import ghidra.trace.util.TraceEvents;
 import ghidra.util.LockHold;
 import ghidra.util.database.*;
 import ghidra.util.database.annot.*;
@@ -130,8 +130,7 @@ public class DBTraceStackFrame extends DBAnnotatedObject
 			update(PC_COLUMN);
 		}
 		manager.trace.setChanged(
-			new TraceChangeRecord<>(TraceStackChangeType.CHANGED, null, stack, 0L,
-				stack.getSnap()));
+			new TraceChangeRecord<>(TraceEvents.STACK_CHANGED, null, stack, 0L, span.lmin()));
 	}
 
 	@Override
@@ -146,8 +145,7 @@ public class DBTraceStackFrame extends DBAnnotatedObject
 			update(COMMENT_COLUMN);
 		}
 		manager.trace.setChanged(
-			new TraceChangeRecord<>(TraceStackChangeType.CHANGED, null, stack, 0L,
-				stack.getSnap()));
+			new TraceChangeRecord<>(TraceEvents.STACK_CHANGED, null, stack, 0L, snap));
 	}
 
 	@Internal

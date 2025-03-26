@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,8 +18,8 @@ package ghidra.app.plugin.core.debug.service.breakpoint;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
-import ghidra.app.services.TraceRecorder;
 import ghidra.async.AsyncUtils;
+import ghidra.debug.api.target.Target;
 import ghidra.framework.model.DomainObject;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
@@ -101,8 +101,8 @@ public class LoneLogicalBreakpoint implements LogicalBreakpointInternal {
 	}
 
 	@Override
-	public void setRecorder(Trace trace, TraceRecorder recorder) {
-		breaks.setRecorder(recorder);
+	public void setTarget(Trace trace, Target target) {
+		breaks.setTarget(target);
 	}
 
 	@Override
@@ -196,7 +196,7 @@ public class LoneLogicalBreakpoint implements LogicalBreakpointInternal {
 	public CompletableFuture<Void> enableForTrace(Trace trace) {
 		if (trace != breaks.getTrace()) {
 			// Ignore silently
-			return AsyncUtils.NIL;
+			return AsyncUtils.nil();
 		}
 		return enable();
 	}
@@ -205,7 +205,7 @@ public class LoneLogicalBreakpoint implements LogicalBreakpointInternal {
 	public CompletableFuture<Void> disableForTrace(Trace trace) {
 		if (trace != breaks.getTrace()) {
 			// Ignore silently
-			return AsyncUtils.NIL;
+			return AsyncUtils.nil();
 		}
 		return disable();
 	}
@@ -214,7 +214,7 @@ public class LoneLogicalBreakpoint implements LogicalBreakpointInternal {
 	public CompletableFuture<Void> deleteForTrace(Trace trace) {
 		if (trace != breaks.getTrace()) {
 			// Ignore silently
-			return AsyncUtils.NIL;
+			return AsyncUtils.nil();
 		}
 		return delete();
 	}
@@ -278,8 +278,8 @@ public class LoneLogicalBreakpoint implements LogicalBreakpointInternal {
 	}
 
 	@Override
-	public boolean canMerge(TraceBreakpoint breakpoint) {
-		if (!Objects.equals(kinds, breakpoint.getKinds())) {
+	public boolean canMerge(TraceBreakpoint breakpoint, long snap) {
+		if (!Objects.equals(kinds, breakpoint.getKinds(snap))) {
 			return false;
 		}
 		return breaks.canMerge(breakpoint);

@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,6 +16,7 @@
 package ghidra.app.util.bin.format.macho.commands;
 
 import java.io.IOException;
+import java.util.List;
 
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.StructConverter;
@@ -68,11 +69,14 @@ public class NList implements StructConverter {
 	 * @param stringTableOffset offset of the string table
 	 */
 	public void initString(BinaryReader reader, long stringTableOffset) {
-		try {
-			string = reader.readAsciiString(stringTableOffset + n_strx);
-		}
-		catch (Exception e) {
-			string = "";
+		string = "";
+		if (n_strx != 0) {
+			try {
+				string = reader.readAsciiString(stringTableOffset + n_strx);
+			}
+			catch (Exception e) {
+				// use empty string
+			}
 		}
 	}
 
@@ -203,5 +207,22 @@ public class NList implements StructConverter {
 	@Override
 	public String toString() {
 		return string;
+	}
+
+	/**
+	 * Gets the size in bytes of the given {@link NList}s (including associated strings)
+	 * 
+	 * @param nlists A {@link List} of {@link NList}s
+	 * @return The size in bytes of the given {@link NList}s (including associated strings)
+	 */
+	public static int getSize(List<NList> nlists) {
+		if (!nlists.isEmpty()) {
+			int totalStringSize = 1; // First byte should always be 0
+			for (NList nlist : nlists) {
+				totalStringSize += nlist.getString().length() + 1; // Add 1 for null terminator
+			}
+			return nlists.size() * nlists.get(0).getSize() + totalStringSize;
+		}
+		return 0;
 	}
 }

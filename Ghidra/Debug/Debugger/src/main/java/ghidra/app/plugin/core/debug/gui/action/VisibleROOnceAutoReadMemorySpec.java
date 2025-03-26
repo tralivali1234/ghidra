@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,19 +20,22 @@ import java.util.concurrent.CompletableFuture;
 
 import javax.swing.Icon;
 
-import ghidra.app.plugin.core.debug.DebuggerCoordinates;
 import ghidra.app.plugin.core.debug.gui.DebuggerResources.AutoReadMemoryAction;
-import ghidra.app.services.TraceRecorder;
-import ghidra.async.AsyncUtils;
+import ghidra.debug.api.target.Target;
+import ghidra.debug.api.tracemgr.DebuggerCoordinates;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.*;
 import ghidra.trace.model.Lifespan;
 import ghidra.trace.model.TraceAddressSnapRange;
 import ghidra.trace.model.memory.*;
-import ghidra.util.task.TaskMonitor;
 
 public class VisibleROOnceAutoReadMemorySpec implements AutoReadMemorySpec {
-	public static final String CONFIG_NAME = "READ_VIS_RO_ONCE";
+	public static final String CONFIG_NAME = "1_READ_VIS_RO_ONCE";
+
+	@Override
+	public boolean equals(Object obj) {
+		return this.getClass() == obj.getClass();
+	}
 
 	@Override
 	public String getConfigName() {
@@ -50,48 +53,44 @@ public class VisibleROOnceAutoReadMemorySpec implements AutoReadMemorySpec {
 	}
 
 	@Override
-	public CompletableFuture<?> readMemory(PluginTool tool, DebuggerCoordinates coordinates,
+	public CompletableFuture<Boolean> readMemory(PluginTool tool, DebuggerCoordinates coordinates,
 			AddressSetView visible) {
 		if (!coordinates.isAliveAndReadsPresent()) {
-			return AsyncUtils.NIL;
+			return CompletableFuture.completedFuture(false);
 		}
-		TraceRecorder recorder = coordinates.getRecorder();
-		boolean ffv = coordinates.getView().getMemory().isForceFullView();
-		AddressSetView visibleAccessible =
-			ffv ? visible : recorder.getAccessibleMemory().intersect(visible);
+		Target target = coordinates.getTarget();
 		TraceMemoryManager mm = coordinates.getTrace().getMemoryManager();
-		AddressSetView alreadyKnown =
-			mm.getAddressesWithState(coordinates.getSnap(), visibleAccessible,
-				s -> s == TraceMemoryState.KNOWN);
-		AddressSet toRead = visibleAccessible.subtract(alreadyKnown);
+		long snap = coordinates.getSnap();
+		AddressSetView alreadyKnown = mm.getAddressesWithState(snap, visible,
+			s -> s == TraceMemoryState.KNOWN || s == TraceMemoryState.ERROR);
+		AddressSet toRead = visible.subtract(alreadyKnown);
 
 		if (toRead.isEmpty()) {
-			return AsyncUtils.NIL;
+			return CompletableFuture.completedFuture(false);
 		}
 
 		AddressSet everKnown = new AddressSet();
 		for (AddressRange range : visible) {
-			for (Entry<TraceAddressSnapRange, TraceMemoryState> ent : mm
-					.getMostRecentStates(coordinates.getSnap(), range)) {
+			for (Entry<TraceAddressSnapRange, TraceMemoryState> ent : mm.getMostRecentStates(snap,
+				range)) {
 				everKnown.add(ent.getKey().getRange());
 			}
 		}
 		AddressSet readOnly = new AddressSet();
 		for (AddressRange range : visible) {
-			for (TraceMemoryRegion region : mm
-					.getRegionsIntersecting(Lifespan.at(coordinates.getSnap()), range)) {
-				if (region.isWrite()) {
+			for (TraceMemoryRegion region : mm.getRegionsIntersecting(Lifespan.at(snap), range)) {
+				if (region.isWrite(snap)) {
 					continue;
 				}
-				readOnly.add(region.getRange());
+				readOnly.add(region.getRange(snap));
 			}
 		}
 		toRead.delete(everKnown.intersect(readOnly));
 
 		if (toRead.isEmpty()) {
-			return AsyncUtils.NIL;
+			return CompletableFuture.completedFuture(false);
 		}
 
-		return recorder.readMemoryBlocks(toRead, TaskMonitor.DUMMY);
+		return doRead(tool, monitor -> target.readMemoryAsync(toRead, monitor));
 	}
 }

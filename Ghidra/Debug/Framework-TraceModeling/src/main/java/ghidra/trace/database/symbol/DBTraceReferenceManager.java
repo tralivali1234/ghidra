@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,6 +22,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 
 import db.DBHandle;
+import ghidra.framework.data.OpenMode;
 import ghidra.program.model.address.*;
 import ghidra.program.model.lang.Language;
 import ghidra.program.model.lang.Register;
@@ -38,7 +39,6 @@ import ghidra.trace.model.symbol.TraceReference;
 import ghidra.trace.model.symbol.TraceReferenceManager;
 import ghidra.trace.model.thread.TraceThread;
 import ghidra.util.UnionAddressSetView;
-import ghidra.util.database.DBOpenMode;
 import ghidra.util.exception.VersionException;
 import ghidra.util.task.TaskMonitor;
 
@@ -48,7 +48,7 @@ public class DBTraceReferenceManager extends AbstractDBTraceSpaceBasedManager<DB
 
 	protected final DBTraceOverlaySpaceAdapter overlayAdapter;
 
-	public DBTraceReferenceManager(DBHandle dbh, DBOpenMode openMode, ReadWriteLock lock,
+	public DBTraceReferenceManager(DBHandle dbh, OpenMode openMode, ReadWriteLock lock,
 			TaskMonitor monitor, Language baseLanguage, DBTrace trace,
 			DBTraceThreadManager threadManager, DBTraceOverlaySpaceAdapter overlayAdapter)
 			throws VersionException, IOException {
@@ -65,18 +65,19 @@ public class DBTraceReferenceManager extends AbstractDBTraceSpaceBasedManager<DB
 	}
 
 	@Override
-	protected DBTraceReferenceSpace createRegisterSpace(AddressSpace space,
-			TraceThread thread, DBTraceSpaceEntry ent) throws VersionException, IOException {
+	protected DBTraceReferenceSpace createRegisterSpace(AddressSpace space, TraceThread thread,
+			DBTraceSpaceEntry ent) throws VersionException, IOException {
 		return new DBTraceReferenceSpace(this, dbh, space, ent, thread);
 	}
 
 	/**
-	 * Ensures that a "from" addresses is in memory
+	 * Ensures that a "from" address is in memory
 	 * 
+	 * <p>
 	 * NOTE: To manage references from registers, you must use
 	 * {@link #getReferenceRegisterSpace(TraceThread, boolean)}, which requires a thread.
 	 * 
-	 * @param address the address to check
+	 * @param space the space of the address to check
 	 */
 	@Override
 	public void checkIsInMemory(AddressSpace space) {

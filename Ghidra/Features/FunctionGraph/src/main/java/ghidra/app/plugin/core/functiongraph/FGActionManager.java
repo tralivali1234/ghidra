@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -662,7 +662,7 @@ class FGActionManager {
 		Icon image = new GIcon("icon.plugin.functiongraph.action.viewer.clone");
 		cloneAction.setToolBarData(new ToolBarData(image, toolbarEndGroup));
 		cloneAction.setDescription(
-			"Create a snapshot (disconnected) copy of this Function Graph window ");
+			"Create a snapshot (disconnected) copy of this Function Graph window");
 		cloneAction.setHelpLocation(new HelpLocation("Snapshots", "Snapshots_Start"));
 		cloneAction.setHelpLocation(
 			new HelpLocation("FunctionGraphPlugin", "Function_Graph_Action_Snapshot"));
@@ -911,13 +911,11 @@ class FGActionManager {
 	private List<ActionState<FGLayoutProvider>> createActionStates(
 			List<FGLayoutProvider> layoutProviders) {
 		List<ActionState<FGLayoutProvider>> list = new ArrayList<>();
-		HelpLocation layoutHelpLocation =
-			new HelpLocation("FunctionGraphPlugin", "Function_Graph_Action_Layout");
 		for (FGLayoutProvider layout : layoutProviders) {
 
 			ActionState<FGLayoutProvider> layoutState =
 				new ActionState<>(layout.getLayoutName(), layout.getActionIcon(), layout);
-			layoutState.setHelpLocation(layoutHelpLocation);
+			layoutState.setHelpLocation(layout.getHelpLocation());
 			list.add(layoutState);
 		}
 

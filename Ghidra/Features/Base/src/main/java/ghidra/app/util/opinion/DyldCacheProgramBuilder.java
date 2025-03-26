@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -35,6 +35,7 @@ import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.SymbolUtilities;
+import ghidra.util.NumericUtilities;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.task.TaskMonitor;
@@ -88,10 +89,10 @@ public class DyldCacheProgramBuilder extends MachoProgramBuilder {
 			new SplitDyldCache(provider, options.processLocalSymbols(), log, monitor)) {
 
 			// Set image base
-			setDyldCacheImageBase(splitDyldCache.getDyldCacheHeader(0));
+			setDyldCacheImageBase(splitDyldCache);
 
 			// Set entry point
-			setDyldCacheEntryPoint(splitDyldCache.getDyldCacheHeader(0));
+			setDyldCacheEntryPoint(splitDyldCache);
 
 			// Setup memory
 			// Check if local symbols are present
@@ -125,25 +126,27 @@ public class DyldCacheProgramBuilder extends MachoProgramBuilder {
 	/**
 	 * Sets the program's image base.
 	 * 
-	 * @param dyldCacheHeader The "base" DYLD Cache header
+	 * @param splitDyldCache The split DYLD cache
 	 * @throws Exception if there was problem setting the program's image base
 	 */
-	private void setDyldCacheImageBase(DyldCacheHeader dyldCacheHeader) throws Exception {
+	private void setDyldCacheImageBase(SplitDyldCache splitDyldCache) throws Exception {
 		monitor.setMessage("Setting image base...");
 		monitor.initialize(1);
-		program.setImageBase(space.getAddress(dyldCacheHeader.getBaseAddress()), true);
+		program.setImageBase(space.getAddress(splitDyldCache.getBaseAddress()), true);
 		monitor.incrementProgress(1);
 	}
 
 	/**
 	 * Sets the program's entry point (if known).
 	 * 
-	 * @param dyldCacheHeader The "base" DYLD Cache header
+	 * @param splitDyldCache The split DYLD cache
 	 * @throws Exception if there was problem setting the program's entry point
 	 */
-	private void setDyldCacheEntryPoint(DyldCacheHeader dyldCacheHeader) throws Exception {
+	private void setDyldCacheEntryPoint(SplitDyldCache splitDyldCache) throws Exception {
 		monitor.initialize(1, "Setting entry pointer base...");
-		Long entryPoint = dyldCacheHeader.getEntryPoint();
+		Long entryPoint = !splitDyldCache.getDyldCacheHeader(0).hasAccelerateInfo()
+				? splitDyldCache.getDyldCacheHeader(0).getAccelerateInfoSizeOrDyldInCacheEntry()
+				: null;
 		if (entryPoint != null) {
 			Address entryPointAddr = space.getAddress(entryPoint);
 			program.getSymbolTable().addExternalEntryPoint(entryPointAddr);
@@ -186,7 +189,8 @@ public class DyldCacheProgramBuilder extends MachoProgramBuilder {
 			if (!bookmarkSet) {
 				program.getBookmarkManager()
 						.setBookmark(block.getStart(), BookmarkType.INFO, "Dyld Cache Header",
-							name + " - " + dyldCacheHeader.getUUID());
+							name + " - " +
+								NumericUtilities.convertBytesToString(dyldCacheHeader.getUUID()));
 				bookmarkSet = true;
 			}
 

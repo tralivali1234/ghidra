@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -25,9 +25,9 @@ import ghidra.trace.database.DBTraceUtils;
 import ghidra.trace.database.map.DBTraceAddressSnapRangePropertyMapTree;
 import ghidra.trace.database.map.DBTraceAddressSnapRangePropertyMapTree.AbstractDBTraceAddressSnapRangePropertyMapData;
 import ghidra.trace.model.Lifespan;
-import ghidra.trace.model.Trace.TraceMemoryRegionChangeType;
 import ghidra.trace.model.memory.*;
 import ghidra.trace.util.TraceChangeRecord;
+import ghidra.trace.util.TraceEvents;
 import ghidra.util.LockHold;
 import ghidra.util.database.DBCachedObjectStore;
 import ghidra.util.database.DBObjectColumn;
@@ -145,66 +145,24 @@ public class DBTraceMemoryRegion
 	}
 
 	@Override
-	public void setName(String name) {
+	public void setName(long snap, String name) {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			this.name = name;
 			update(NAME_COLUMN);
 			space.trace.updateViewsChangeRegionBlockName(this);
 		}
-		space.trace.setChanged(
-			new TraceChangeRecord<>(TraceMemoryRegionChangeType.CHANGED, space, this));
+		space.trace.setChanged(new TraceChangeRecord<>(TraceEvents.REGION_CHANGED, space, this));
 	}
 
 	@Override
-	public String getName() {
+	public String getName(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return name;
 		}
 	}
 
 	@Override
-	public void setLifespan(Lifespan newLifespan)
-			throws TraceOverlappedRegionException, DuplicateNameException {
-		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
-			checkOverlapConflicts(newLifespan, range);
-			checkPathConflicts(newLifespan, path);
-			Lifespan oldLifespan = getLifespan();
-			doSetLifespan(newLifespan);
-			space.trace.updateViewsChangeRegionBlockLifespan(this, oldLifespan, newLifespan);
-			space.trace.setChanged(
-				new TraceChangeRecord<>(TraceMemoryRegionChangeType.LIFESPAN_CHANGED,
-					space, this, oldLifespan, newLifespan));
-		}
-	}
-
-	@Override
-	public void setCreationSnap(long creationSnap)
-			throws DuplicateNameException, TraceOverlappedRegionException {
-		setLifespan(Lifespan.span(creationSnap, getDestructionSnap()));
-	}
-
-	@Override
-	public long getCreationSnap() {
-		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
-			return lifespan.lmin();
-		}
-	}
-
-	@Override
-	public void setDestructionSnap(long destructionSnap)
-			throws DuplicateNameException, TraceOverlappedRegionException {
-		setLifespan(Lifespan.span(getCreationSnap(), destructionSnap));
-	}
-
-	@Override
-	public long getDestructionSnap() {
-		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
-			return lifespan.lmax();
-		}
-	}
-
-	@Override
-	public void setRange(AddressRange newRange) throws TraceOverlappedRegionException {
+	public void setRange(long snap, AddressRange newRange) throws TraceOverlappedRegionException {
 		AddressRange oldRange;
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			if (range.equals(newRange)) {
@@ -215,56 +173,62 @@ public class DBTraceMemoryRegion
 			doSetRange(newRange);
 			space.trace.updateViewsChangeRegionBlockRange(this, oldRange, newRange);
 		}
-		space.trace.setChanged(
-			new TraceChangeRecord<>(TraceMemoryRegionChangeType.CHANGED, space, this));
+		space.trace.setChanged(new TraceChangeRecord<>(TraceEvents.REGION_CHANGED, space, this));
 	}
 
 	@Override
-	public void setMinAddress(Address min) throws TraceOverlappedRegionException {
-		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
-			setRange(DBTraceUtils.toRange(min, range.getMaxAddress()));
+	public AddressRange getRange(long snap) {
+		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
+			return range;
 		}
 	}
 
 	@Override
-	public Address getMinAddress() {
+	public void setMinAddress(long snap, Address min) throws TraceOverlappedRegionException {
+		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
+			setRange(snap, DBTraceUtils.toRange(min, range.getMaxAddress()));
+		}
+	}
+
+	@Override
+	public Address getMinAddress(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return range.getMinAddress();
 		}
 	}
 
 	@Override
-	public void setMaxAddress(Address max) throws TraceOverlappedRegionException {
+	public void setMaxAddress(long snap, Address max) throws TraceOverlappedRegionException {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
-			setRange(DBTraceUtils.toRange(range.getMinAddress(), max));
+			setRange(snap, DBTraceUtils.toRange(range.getMinAddress(), max));
 		}
 	}
 
 	@Override
-	public Address getMaxAddress() {
+	public Address getMaxAddress(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return range.getMaxAddress();
 		}
 	}
 
 	@Override
-	public void setLength(long length)
+	public void setLength(long snap, long length)
 			throws AddressOverflowException, TraceOverlappedRegionException {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			Address minAddress = range.getMinAddress();
-			setRange(DBTraceUtils.toRange(minAddress, minAddress.addNoWrap(length - 1)));
+			setRange(snap, DBTraceUtils.toRange(minAddress, minAddress.addNoWrap(length - 1)));
 		}
 	}
 
 	@Override
-	public long getLength() {
+	public long getLength(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return range.getLength();
 		}
 	}
 
 	@Override
-	public void setFlags(Collection<TraceMemoryFlag> flags) {
+	public void setFlags(long snap, Collection<TraceMemoryFlag> flags) {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			this.flagsByte = TraceMemoryFlag.toBits(flags);
 			this.flags.clear();
@@ -272,38 +236,35 @@ public class DBTraceMemoryRegion
 			update(FLAGS_COLUMN);
 			space.trace.updateViewsChangeRegionBlockFlags(this, lifespan);
 		}
-		space.trace.setChanged(
-			new TraceChangeRecord<>(TraceMemoryRegionChangeType.CHANGED, space, this));
+		space.trace.setChanged(new TraceChangeRecord<>(TraceEvents.REGION_CHANGED, space, this));
 	}
 
 	@SuppressWarnings("hiding")
 	@Override
-	public void addFlags(Collection<TraceMemoryFlag> flags) {
+	public void addFlags(long snap, Collection<TraceMemoryFlag> flags) {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			this.flagsByte |= TraceMemoryFlag.toBits(flags);
 			this.flags.addAll(flags);
 			update(FLAGS_COLUMN);
 			space.trace.updateViewsChangeRegionBlockFlags(this, lifespan);
 		}
-		space.trace.setChanged(
-			new TraceChangeRecord<>(TraceMemoryRegionChangeType.CHANGED, space, this));
+		space.trace.setChanged(new TraceChangeRecord<>(TraceEvents.REGION_CHANGED, space, this));
 	}
 
 	@SuppressWarnings("hiding")
 	@Override
-	public void clearFlags(Collection<TraceMemoryFlag> flags) {
+	public void clearFlags(long snap, Collection<TraceMemoryFlag> flags) {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			this.flagsByte &= ~TraceMemoryFlag.toBits(flags);
 			this.flags.removeAll(flags);
 			update(FLAGS_COLUMN);
 			space.trace.updateViewsChangeRegionBlockFlags(this, lifespan);
 		}
-		space.trace.setChanged(
-			new TraceChangeRecord<>(TraceMemoryRegionChangeType.CHANGED, space, this));
+		space.trace.setChanged(new TraceChangeRecord<>(TraceEvents.REGION_CHANGED, space, this));
 	}
 
 	@Override
-	public Set<TraceMemoryFlag> getFlags() {
+	public Set<TraceMemoryFlag> getFlags(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return Set.copyOf(flags);
 		}
@@ -312,5 +273,24 @@ public class DBTraceMemoryRegion
 	@Override
 	public void delete() {
 		space.deleteRegion(this);
+	}
+
+	@Override
+	public void remove(long snap) {
+		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
+			if (snap <= lifespan.lmin()) {
+				space.deleteRegion(this);
+			}
+			else if (snap <= lifespan.lmax()) {
+				doSetLifespan(lifespan.withMax(snap - 1));
+			}
+		}
+	}
+
+	@Override
+	public boolean isValid(long snap) {
+		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
+			return lifespan.contains(snap);
+		}
 	}
 }

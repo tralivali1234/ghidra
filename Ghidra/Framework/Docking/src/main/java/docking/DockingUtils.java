@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -78,10 +78,10 @@ import resources.ResourceManager;
  * (ie. when displaying an error to the user about a bad file, don't put the filename
  * value at the start of the string, but instead put a quote or some other delimiter to prevent
  * html mode).
- * <p>
+ * 
  * <h3>Recommended Ghidra UI Components:</h3>
- * <p>
- * <table border=1><caption></caption>
+ * 
+ * <table border=1>
  * 	<tr><th>Native Component</th><th>Recommended Component</th></tr>
  * 	<tr><td>{@link JLabel}</td><td>{@link GLabel}<br>{@link GDLabel}<br>{@link GHtmlLabel}<br>{@link GDHtmlLabel}<br>{@link GIconLabel}</td></tr>
  * 	<tr><td>{@link JCheckBox}</td><td>{@link GCheckBox}<br>{@link GHtmlCheckBox}</td></tr>
@@ -299,7 +299,7 @@ public class DockingUtils {
 	}
 
 	/**
-	 * Perform some operation on a component and all of its descendents, recursively.
+	 * Perform some operation on a component and all of its descendants, recursively.
 	 *
 	 * This applies the operation to all components in the tree, children first.
 	 *

@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,7 +15,8 @@
  */
 package ghidra.app.plugin.core.data;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.swing.tree.TreePath;
 
@@ -33,6 +34,7 @@ import ghidra.app.plugin.core.compositeeditor.*;
 import ghidra.app.plugin.core.datamgr.DataTypesActionContext;
 import ghidra.app.plugin.core.datamgr.tree.DataTypeNode;
 import ghidra.app.plugin.core.datamgr.tree.DataTypeTreeNode;
+import ghidra.app.plugin.core.datamgr.util.DataTypeUtils;
 import ghidra.app.services.DataService;
 import ghidra.app.services.DataTypeManagerService;
 import ghidra.docking.settings.SettingsDefinition;
@@ -99,7 +101,6 @@ public class DataPlugin extends Plugin implements DataService {
 	private DockingAction editDataTypeAction;
 	private CreateStructureAction createStructureAction;
 	private CreateArrayAction createArrayAction;
-	private RenameDataFieldAction renameDataFieldAction;
 
 	private List<DataAction> favoriteActions = new ArrayList<>();
 
@@ -112,7 +113,7 @@ public class DataPlugin extends Plugin implements DataService {
 	public DataPlugin(PluginTool tool) {
 		super(tool);
 
-		addActions();
+		createActions();
 
 		favoritesUpdateManager = new SwingUpdateManager(1000, 30000, () -> updateFavoriteActions());
 	}
@@ -134,7 +135,7 @@ public class DataPlugin extends Plugin implements DataService {
 	/**
 	 * Add actions
 	 */
-	private void addActions() {
+	private void createActions() {
 		recentlyUsedAction = new RecentlyUsedAction(this);
 		recentlyUsedAction.setEnabled(false);
 
@@ -146,15 +147,19 @@ public class DataPlugin extends Plugin implements DataService {
 		createArrayAction = new CreateArrayAction(this);
 		tool.addAction(createArrayAction);
 
-		renameDataFieldAction = new RenameDataFieldAction(this);
-		tool.addAction(renameDataFieldAction);
-
 		pointerAction = new PointerDataAction(this);
 		tool.addAction(pointerAction);
 
+		new ActionBuilder("Edit Field", getName())
+				.popupMenuPath("Data", "Edit Field")
+				.keyBinding("ctrl shift E")
+				.withContext(ListingActionContext.class)
+				.enabledWhen(this::canEditField)
+				.onAction(this::editField)
+				.buildAndInstall(tool);
+
 		// Data instance settings action based upon data selection in listing
-		new ActionBuilder("Data Settings", getName())
-				.sharedKeyBinding()
+		new ActionBuilder("Data Settings", getName()).sharedKeyBinding()
 				.popupMenuPath(DATA_SETTINGS_POPUP_PATH)
 				.popupMenuGroup("Settings")
 				.withContext(ListingActionContext.class)
@@ -163,8 +168,7 @@ public class DataPlugin extends Plugin implements DataService {
 				.buildAndInstall(tool);
 
 		// Default settings action based upon data selection in listing
-		new ActionBuilder("Default Settings", getName())
-				.sharedKeyBinding()
+		new ActionBuilder("Default Settings", getName()).sharedKeyBinding()
 				.popupMenuPath(DEFAULT_SETTINGS_POPUP_PATH)
 				.popupMenuGroup("Settings")
 				.withContext(ListingActionContext.class)
@@ -173,8 +177,7 @@ public class DataPlugin extends Plugin implements DataService {
 				.buildAndInstall(tool);
 
 		// Default settings action for selected datatypes from datatype manager
-		new ActionBuilder("Default Settings", getName())
-				.sharedKeyBinding()
+		new ActionBuilder("Default Settings", getName()).sharedKeyBinding()
 				.popupMenuPath(DATATYPE_SETTINGS_POPUP_PATH)
 				.popupMenuGroup("Settings")
 				.withContext(DataTypesActionContext.class)
@@ -183,8 +186,7 @@ public class DataPlugin extends Plugin implements DataService {
 				.buildAndInstall(tool);
 
 		// Default settings action for composite editor components (Program-based)
-		new ActionBuilder("Default Settings", getName())
-				.sharedKeyBinding()
+		new ActionBuilder("Default Settings", getName()).sharedKeyBinding()
 				.popupMenuPath(DATATYPE_SETTINGS_POPUP_PATH)
 				.popupMenuGroup("Settings")
 				.withContext(ComponentProgramActionContext.class)
@@ -193,8 +195,7 @@ public class DataPlugin extends Plugin implements DataService {
 				.buildAndInstall(tool);
 
 		// Default settings action for composite editor components (stand-alone archive)
-		new ActionBuilder("Default Settings", getName())
-				.sharedKeyBinding()
+		new ActionBuilder("Default Settings", getName()).sharedKeyBinding()
 				.popupMenuPath(DATATYPE_SETTINGS_POPUP_PATH)
 				.popupMenuGroup("Settings")
 				.withContext(ComponentStandAloneActionContext.class)
@@ -202,31 +203,31 @@ public class DataPlugin extends Plugin implements DataService {
 				.onAction(context -> editDefaultComponentSettings(context))
 				.buildAndInstall(tool);
 
-		editDataTypeAction = new ActionBuilder("Edit Data Type", getName())
-				.popupMenuPath(EDIT_DATA_TYPE_POPUP_PATH)
-				.popupMenuGroup("BasicData")
-				.withContext(ListingActionContext.class)
-				.enabledWhen(c -> {
-					DataType editableDt = getEditableDataTypeFromContext(c);
-					if (editableDt != null) {
-						editDataTypeAction.setHelpLocation(
-							dtmService.getEditorHelpLocation(editableDt));
-						return true;
-					}
-					return false;
-				})
-				.onAction(c -> editDataTypeCallback(c))
-				.helpLocation(new HelpLocation("DataTypeEditors", "Structure_Editor"))
-				.buildAndInstall(tool);
+		editDataTypeAction =
+			new ActionBuilder("Edit Data Type", getName()).popupMenuPath(EDIT_DATA_TYPE_POPUP_PATH)
+					.popupMenuGroup("BasicData")
+					.withContext(ListingActionContext.class)
+					.enabledWhen(c -> {
+						DataType editableDt = getEditableDataTypeFromContext(c);
+						if (editableDt != null) {
+							editDataTypeAction
+									.setHelpLocation(dtmService.getEditorHelpLocation(editableDt));
+							return true;
+						}
+						return false;
+					})
+					.onAction(c -> editDataTypeCallback(c))
+					.helpLocation(new HelpLocation("DataTypeEditors", "Structure_Editor"))
+					.buildAndInstall(tool);
 
 		chooseDataTypeAction = new ChooseDataTypeAction(this);
 		chooseDataTypeAction.setEnabled(false);
 
-		chooseDataTypeAction.setPopupMenuData(
-			new MenuData(CHOOSE_DATA_TYPE_POPUP_PATH, BASIC_DATA_GROUP));
+		chooseDataTypeAction
+				.setPopupMenuData(new MenuData(CHOOSE_DATA_TYPE_POPUP_PATH, BASIC_DATA_GROUP));
 		chooseDataTypeAction.setEnabled(true);
-		chooseDataTypeAction.setHelpLocation(
-			new HelpLocation("DataTypeEditors", "DataTypeSelectionDialog"));
+		chooseDataTypeAction
+				.setHelpLocation(new HelpLocation("DataTypeEditors", "DataTypeSelectionDialog"));
 		tool.addAction(chooseDataTypeAction);
 	}
 
@@ -290,8 +291,8 @@ public class DataPlugin extends Plugin implements DataService {
 	}
 
 	@Override
-	public boolean createData(DataType dt, ListingActionContext context,
-			boolean stackPointers, boolean enableConflictHandling) {
+	public boolean createData(DataType dt, ListingActionContext context, boolean stackPointers,
+			boolean enableConflictHandling) {
 // TODO: conflict handler (i.e., removal of other conflicting data not yet supported)
 		ProgramLocation location = context.getLocation();
 		if (!(location instanceof CodeUnitLocation)) {
@@ -352,7 +353,7 @@ public class DataPlugin extends Plugin implements DataService {
 				new CreateDataInStructureBackgroundCmd(start, startPath, length, dt, stackPointers);
 		}
 		else {
-			cmd = new CreateDataBackgroundCmd(selection, dt, true);
+			cmd = new CreateDataBackgroundCmd(selection, dt, stackPointers);
 		}
 
 		boolean didCreateData = false;
@@ -385,9 +386,8 @@ public class DataPlugin extends Plugin implements DataService {
 		}
 
 		if (newSize <= 0) {
-			tool.setStatusInfo(
-				"Invalid data location.  Unable to resolve data length at " + start + " for " +
-					dataType.getName());
+			tool.setStatusInfo("Invalid data location.  Unable to resolve data length at " + start +
+				" for " + dataType.getName());
 			return false;
 		}
 
@@ -516,9 +516,7 @@ public class DataPlugin extends Plugin implements DataService {
 	 * Get rid of the dynamically created list of data types
 	 */
 	private void clearActions(List<DataAction> actions) {
-		Iterator<DataAction> iter = actions.iterator();
-		while (iter.hasNext()) {
-			DockingAction action = iter.next();
+		for (DockingAction action : actions) {
 			tool.removeAction(action);
 			action.dispose();
 		}
@@ -837,6 +835,29 @@ public class DataPlugin extends Plugin implements DataService {
 			return false;
 		}
 		return true;
+	}
+
+	public DataType pickDataType() {
+		return dtmService.getDataType("");
+	}
+
+	private boolean canEditField(ListingActionContext context) {
+		ProgramLocation location = context.getLocation();
+		int[] componentPath = location.getComponentPath();
+		return componentPath != null && componentPath.length > 0;
+	}
+
+	private void editField(ListingActionContext context) {
+		Program program = context.getProgram();
+		ProgramLocation location = context.getLocation();
+		Address address = location.getAddress();
+		int[] path = location.getComponentPath();
+		DataTypeComponent component = DataTypeUtils.getDataTypeComponent(program, address, path);
+		if (component != null) {
+			EditDataFieldDialog dialog =
+				new EditDataFieldDialog(tool, dtmService, location, component);
+			tool.showDialog(dialog);
+		}
 	}
 
 }

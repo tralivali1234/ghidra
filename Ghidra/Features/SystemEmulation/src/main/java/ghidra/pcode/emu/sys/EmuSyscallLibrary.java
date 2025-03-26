@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,6 +16,7 @@
 package ghidra.pcode.emu.sys;
 
 import java.io.*;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
@@ -37,12 +38,13 @@ import ghidra.program.model.symbol.*;
  *
  * <p>
  * A system call library is a collection of p-code executable routines, invoked by a system call
- * dispatcher. That dispatcher is represented by {@link #syscall(PcodeExecutor)}, and is exported as
- * a sleigh userop. If this interface is "mixed in" with {@link AnnotatedPcodeUseropLibrary}, that
- * userop is automatically included in the userop library. The simplest means of implementing a
- * syscall library is probably via {@link AnnotatedEmuSyscallUseropLibrary}. It implements this
- * interface and extends {@link AnnotatedPcodeUseropLibrary}. In addition, it provides its own
- * annotation system for exporting userops as system calls.
+ * dispatcher. That dispatcher is represented by
+ * {@link #syscall(PcodeExecutor, PcodeUseropLibrary)}, and is exported as a sleigh userop. If this
+ * interface is "mixed in" with {@link AnnotatedPcodeUseropLibrary}, that userop is automatically
+ * included in the userop library. The simplest means of implementing a syscall library is probably
+ * via {@link AnnotatedEmuSyscallUseropLibrary}. It implements this interface and extends
+ * {@link AnnotatedPcodeUseropLibrary}. In addition, it provides its own annotation system for
+ * exporting userops as system calls.
  *
  * @param <T> the type of data processed by the system calls, typically {@code byte[]}
  */
@@ -131,8 +133,8 @@ public interface EmuSyscallLibrary<T> extends PcodeUseropLibrary<T> {
 	 * Derive a syscall number to calling convention map by scraping functions in the program's
 	 * "syscall" space.
 	 * 
-	 * @param program
-	 * @return
+	 * @param program the program whose "syscall" space to scrape
+	 * @return the map of syscall number to calling convention
 	 */
 	public static Map<Long, PrototypeModel> loadSyscallConventionMap(Program program) {
 		return loadSyscallFunctionMap(program).entrySet()
@@ -141,7 +143,8 @@ public interface EmuSyscallLibrary<T> extends PcodeUseropLibrary<T> {
 	}
 
 	/**
-	 * The {@link EmuSyscallLibrary#syscall(PcodeExecutor)} method wrapped as a userop definition
+	 * The {@link EmuSyscallLibrary#syscall(PcodeExecutor, PcodeUseropLibrary)} method wrapped as a
+	 * userop definition
 	 * 
 	 * @param <T> the type of data processed by the userop, typically {@code byte[]}
 	 */
@@ -166,6 +169,37 @@ public interface EmuSyscallLibrary<T> extends PcodeUseropLibrary<T> {
 		public void execute(PcodeExecutor<T> executor, PcodeUseropLibrary<T> library,
 				Varnode outVar, List<Varnode> inVars) {
 			syslib.syscall(executor, library);
+		}
+
+		@Override
+		public boolean isFunctional() {
+			return false;
+		}
+
+		@Override
+		public boolean hasSideEffects() {
+			return true;
+		}
+
+		@Override
+		public boolean canInlinePcode() {
+			return false;
+		}
+
+		@Override
+		public PcodeUseropLibrary<?> getDefiningLibrary() {
+			return syslib;
+		}
+
+		@Override
+		public Method getJavaMethod() {
+			try {
+				return syslib.getClass()
+						.getMethod("syscall", PcodeExecutor.class, PcodeUseropLibrary.class);
+			}
+			catch (NoSuchMethodException | SecurityException e) {
+				throw new AssertionError(e);
+			}
 		}
 	}
 
@@ -197,7 +231,7 @@ public interface EmuSyscallLibrary<T> extends PcodeUseropLibrary<T> {
 	 */
 	default PcodeUseropDefinition<T> getSyscallUserop() {
 		return new SyscallPcodeUseropDefinition<>(this);
-	};
+	}
 
 	/**
 	 * Retrieve the desired system call number according to the emulated system's conventions
@@ -207,8 +241,8 @@ public interface EmuSyscallLibrary<T> extends PcodeUseropLibrary<T> {
 	 * database. Until then, we require system-specific implementations.
 	 * 
 	 * @param state the executor's state
-	 * @param the reason for reading state, probably {@link Reason#EXECUTE}, but should be taken
-	 *            from the executor
+	 * @param reason the reason for reading state, probably {@link Reason#EXECUTE_READ}, but should
+	 *            be taken from the executor
 	 * @return the system call number
 	 */
 	long readSyscallNumber(PcodeExecutorState<T> state, Reason reason);
@@ -233,7 +267,7 @@ public interface EmuSyscallLibrary<T> extends PcodeUseropLibrary<T> {
 	 * <p>
 	 * The executor's state must already be prepared according to the relevant system calling
 	 * conventions. This will determine the system call number, according to
-	 * {@link #readSyscallNumber(PcodeExecutorStatePiece)}, retrieve the relevant system call
+	 * {@link #readSyscallNumber(PcodeExecutorState, Reason)}, retrieve the relevant system call
 	 * definition, and invoke it.
 	 * 
 	 * @param executor the executor

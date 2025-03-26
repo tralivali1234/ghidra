@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,18 +22,17 @@ import java.util.stream.Collectors;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
-import ghidra.app.plugin.core.debug.utils.DomainFolderChangeAdapter;
 import ghidra.app.plugin.core.debug.utils.ProgramURLUtils;
 import ghidra.framework.model.*;
 import ghidra.framework.options.Options;
 import ghidra.framework.plugintool.PluginTool;
-import ghidra.program.model.address.AddressRangeImpl;
-import ghidra.program.model.address.AddressSpace;
+import ghidra.program.model.address.*;
 import ghidra.program.model.listing.Program;
+import ghidra.trace.model.Lifespan;
 import ghidra.trace.model.modules.TraceModule;
 
 // TODO: Consider making this a front-end plugin?
-public class ProgramModuleIndexer implements DomainFolderChangeAdapter {
+public class ProgramModuleIndexer implements DomainFolderChangeListener {
 	public static final String MODULE_PATHS_PROPERTY = "Module Paths";
 	private static final Gson JSON = new Gson();
 
@@ -74,8 +73,7 @@ public class ProgramModuleIndexer implements DomainFolderChangeAdapter {
 	// TODO: Note language and prefer those from the same processor?
 	// Will get difficult with new OBTR, since I'd need a platform
 	// There's also the WoW64 issue....
-	protected record IndexEntry(String name, String dfID, NameSource source) {
-	}
+	protected record IndexEntry(String name, String dfID, NameSource source) {}
 
 	protected class ModuleChangeListener
 			implements DomainObjectListener, DomainObjectClosedListener {
@@ -94,7 +92,8 @@ public class ProgramModuleIndexer implements DomainFolderChangeAdapter {
 		}
 
 		@Override
-		public void domainObjectClosed() {
+		public void domainObjectClosed(DomainObject dobj) {
+			// assume dobj == program
 			dispose();
 		}
 
@@ -103,13 +102,13 @@ public class ProgramModuleIndexer implements DomainFolderChangeAdapter {
 			if (disposed) {
 				return;
 			}
-			if (ev.containsEvent(DomainObject.DO_OBJECT_RESTORED)) {
+			if (ev.contains(DomainObjectEvent.RESTORED)) {
 				refreshIndex(program.getDomainFile(), program);
 				return;
 			}
-			if (ev.containsEvent(DomainObject.DO_PROPERTY_CHANGED)) {
+			if (ev.contains(DomainObjectEvent.PROPERTY_CHANGED)) {
 				for (DomainObjectChangeRecord rec : ev) {
-					if (rec.getEventType() == DomainObject.DO_PROPERTY_CHANGED) {
+					if (rec.getEventType() == DomainObjectEvent.PROPERTY_CHANGED) {
 						// OldValue is actually the property name :/
 						// See DomainObjectAdapter#propertyChanged
 						String propertyName = (String) rec.getOldValue();
@@ -288,11 +287,6 @@ public class ProgramModuleIndexer implements DomainFolderChangeAdapter {
 	}
 
 	@Override
-	public void domainFileObjectReplaced(DomainFile file, DomainObject oldObject) {
-		refreshIndex(file);
-	}
-
-	@Override
 	public void domainFileObjectOpenedForUpdate(DomainFile file, DomainObject object) {
 		if (disposed) {
 			return;
@@ -353,14 +347,13 @@ public class ProgramModuleIndexer implements DomainFolderChangeAdapter {
 		 * trace, or bogus external libraries in a mapped program, scoring libraries before module
 		 * names should not cause problems.
 		 */
-		Comparator<IndexEntry> comparator = byIsLibrary
-				.thenComparing(byNameSource)
-				.thenComparing(byFolderUses);
+		Comparator<IndexEntry> comparator =
+			byIsLibrary.thenComparing(byNameSource).thenComparing(byFolderUses);
 		return projectData.getFileByID(entries.stream().max(comparator).get().dfID);
 	}
 
-	public DomainFile getBestMatch(AddressSpace space, TraceModule module, Program currentProgram,
-			Collection<IndexEntry> entries) {
+	public DomainFile getBestMatch(AddressSpace space, TraceModule module, long snap,
+			Program currentProgram, Collection<IndexEntry> entries) {
 		if (entries.isEmpty()) {
 			return null;
 		}
@@ -369,10 +362,11 @@ public class ProgramModuleIndexer implements DomainFolderChangeAdapter {
 				.getStaticMappingManager()
 				.findAllOverlapping(
 					new AddressRangeImpl(space.getMinAddress(), space.getMaxAddress()),
-					module.getLifespan())
+					Lifespan.at(snap))
 				.stream()
-				.map(m -> ProgramURLUtils.getFileForHackedUpGhidraURL(project,
+				.map(m -> ProgramURLUtils.getDomainFileFromOpenProject(project,
 					m.getStaticProgramURL()))
+				.filter(Objects::nonNull)
 				.collect(Collectors.toSet());
 		Set<DomainFile> libraries = DebuggerStaticMappingUtils.collectLibraries(alreadyMapped);
 		alreadyMapped.stream()
@@ -386,13 +380,17 @@ public class ProgramModuleIndexer implements DomainFolderChangeAdapter {
 		return selectBest(entries, libraries, folderUses, currentProgram);
 	}
 
-	public DomainFile getBestMatch(TraceModule module, Program currentProgram,
+	public DomainFile getBestMatch(TraceModule module, long snap, Program currentProgram,
 			Collection<IndexEntry> entries) {
-		return getBestMatch(module.getBase().getAddressSpace(), module, currentProgram, entries);
+		Address base = module.getBase(snap);
+		AddressSpace space = base == null
+				? module.getTrace().getBaseAddressFactory().getDefaultAddressSpace()
+				: base.getAddressSpace();
+		return getBestMatch(space, module, snap, currentProgram, entries);
 	}
 
-	public List<IndexEntry> getBestEntries(TraceModule module) {
-		String modulePathName = module.getName().toLowerCase();
+	public List<IndexEntry> getBestEntries(TraceModule module, long snap) {
+		String modulePathName = module.getName(snap).toLowerCase();
 		List<IndexEntry> entries = new ArrayList<>(index.getByName(modulePathName));
 		if (!entries.isEmpty()) {
 			return entries;
@@ -402,8 +400,9 @@ public class ProgramModuleIndexer implements DomainFolderChangeAdapter {
 		return entries;
 	}
 
-	public DomainFile getBestMatch(AddressSpace space, TraceModule module, Program currentProgram) {
-		return getBestMatch(space, module, currentProgram, getBestEntries(module));
+	public DomainFile getBestMatch(AddressSpace space, TraceModule module, long snap,
+			Program currentProgram) {
+		return getBestMatch(space, module, snap, currentProgram, getBestEntries(module, snap));
 	}
 
 	public Collection<IndexEntry> filter(Collection<IndexEntry> entries,
@@ -415,7 +414,7 @@ public class ProgramModuleIndexer implements DomainFolderChangeAdapter {
 				continue;
 			}
 			try (PeekOpenedDomainObject peek = new PeekOpenedDomainObject(df)) {
-				if (programs.contains(peek.object)) {
+				if (peek.object != null && programs.contains(peek.object)) {
 					result.add(e);
 				}
 			}

@@ -23,12 +23,10 @@ import docking.action.*;
 import docking.tool.ToolConstants;
 import ghidra.framework.OperatingSystem;
 import ghidra.framework.Platform;
-import ghidra.framework.plugintool.util.PluginsConfiguration;
 import ghidra.util.HelpLocation;
 
 public class StandAlonePluginTool extends PluginTool {
 
-	private PluginsConfiguration pluginClassManager;
 	private DockingAction configureToolAction;
 	private final GenericStandAloneApplication app;
 	private final String name;

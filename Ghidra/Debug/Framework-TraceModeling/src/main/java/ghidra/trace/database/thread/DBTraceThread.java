@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,13 +20,12 @@ import java.io.IOException;
 import db.DBRecord;
 import ghidra.trace.model.Lifespan;
 import ghidra.trace.model.Trace;
-import ghidra.trace.model.Trace.TraceThreadChangeType;
 import ghidra.trace.model.thread.TraceThread;
 import ghidra.trace.util.TraceChangeRecord;
+import ghidra.trace.util.TraceEvents;
 import ghidra.util.LockHold;
 import ghidra.util.database.*;
 import ghidra.util.database.annot.*;
-import ghidra.util.exception.DuplicateNameException;
 
 @DBAnnotatedObjectInfo(version = 0)
 public class DBTraceThread extends DBAnnotatedObject implements TraceThread {
@@ -90,7 +89,15 @@ public class DBTraceThread extends DBAnnotatedObject implements TraceThread {
 
 	@Override
 	public String toString() {
-		return "TraceThread: " + getName();
+		return "TraceThread: " + getName(0);
+	}
+
+	protected void doSetLifespan(Lifespan lifespan) {
+		this.creationSnap = lifespan.lmin();
+		this.destructionSnap = lifespan.lmax();
+		update(CREATION_SNAP_COLUMN, DESTRUCTION_SNAP_COLUMN);
+
+		this.lifespan = lifespan;
 	}
 
 	@Override
@@ -106,83 +113,65 @@ public class DBTraceThread extends DBAnnotatedObject implements TraceThread {
 	}
 
 	@Override
-	public String getName() {
+	public String getName(long snap) {
 		try (LockHold hold = LockHold.lock(manager.lock.readLock())) {
 			return name;
 		}
 	}
 
 	@Override
-	public void setName(String name) {
+	public void setName(long snap, String name) {
 		try (LockHold hold = LockHold.lock(manager.lock.writeLock())) {
 			this.name = name;
 			update(NAME_COLUMN);
 			manager.trace
-					.setChanged(new TraceChangeRecord<>(TraceThreadChangeType.CHANGED, null, this));
+					.setChanged(new TraceChangeRecord<>(TraceEvents.THREAD_CHANGED, null, this));
 		}
 	}
 
 	@Override
-	public void setCreationSnap(long creationSnap) throws DuplicateNameException {
-		setLifespan(Lifespan.span(creationSnap, destructionSnap));
-	}
-
-	@Override
-	public long getCreationSnap() {
-		try (LockHold hold = LockHold.lock(manager.lock.readLock())) {
-			return creationSnap;
-		}
-	}
-
-	@Override
-	public void setDestructionSnap(long destructionSnap) throws DuplicateNameException {
-		setLifespan(Lifespan.span(creationSnap, destructionSnap));
-	}
-
-	@Override
-	public long getDestructionSnap() {
-		return destructionSnap;
-	}
-
-	@Override
-	public void setLifespan(Lifespan newLifespan) throws DuplicateNameException {
-		try (LockHold hold = LockHold.lock(manager.lock.writeLock())) {
-			manager.checkConflictingPath(this, path, newLifespan);
-			Lifespan oldLifespan = this.lifespan;
-			this.creationSnap = newLifespan.lmin();
-			this.destructionSnap = newLifespan.lmax();
-			update(CREATION_SNAP_COLUMN, DESTRUCTION_SNAP_COLUMN);
-
-			this.lifespan = newLifespan;
-
-			manager.trace.setChanged(
-				new TraceChangeRecord<>(TraceThreadChangeType.LIFESPAN_CHANGED, null,
-					this, oldLifespan, newLifespan));
-		}
-	}
-
-	@Override
-	public Lifespan getLifespan() {
-		return lifespan;
-	}
-
-	@Override
-	public void setComment(String comment) {
+	public void setComment(long snap, String comment) {
 		try (LockHold hold = LockHold.lock(manager.lock.writeLock())) {
 			this.comment = comment;
 			update(COMMENT_COLUMN);
 			manager.trace
-					.setChanged(new TraceChangeRecord<>(TraceThreadChangeType.CHANGED, null, this));
+					.setChanged(new TraceChangeRecord<>(TraceEvents.THREAD_CHANGED, null, this));
 		}
 	}
 
 	@Override
-	public String getComment() {
+	public String getComment(long snap) {
 		return comment;
 	}
 
 	@Override
 	public void delete() {
 		manager.deleteThread(this);
+	}
+
+	@Override
+	public void remove(long snap) {
+		try (LockHold hold = LockHold.lock(manager.lock.writeLock())) {
+			if (snap <= lifespan.lmin()) {
+				manager.deleteThread(this);
+			}
+			else if (snap <= lifespan.lmax()) {
+				doSetLifespan(lifespan.withMax(snap - 1));
+			}
+		}
+	}
+
+	@Override
+	public boolean isValid(long snap) {
+		try (LockHold hold = LockHold.lock(manager.lock.readLock())) {
+			return lifespan.contains(snap);
+		}
+	}
+
+	@Override
+	public boolean isAlive(Lifespan span) {
+		try (LockHold hold = LockHold.lock(manager.lock.readLock())) {
+			return lifespan.intersects(span);
+		}
 	}
 }

@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -23,8 +23,7 @@ import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.format.elf.ElfException;
 import ghidra.app.util.bin.format.elf.ElfHeader;
 import ghidra.app.util.importer.MessageLog;
-import ghidra.framework.model.DomainObject;
-import ghidra.framework.model.Project;
+import ghidra.framework.model.*;
 import ghidra.framework.options.Options;
 import ghidra.program.model.lang.Endian;
 import ghidra.program.model.listing.Program;
@@ -93,6 +92,7 @@ public class ElfLoader extends AbstractLibrarySupportLoader {
 				return validationErrorStr;
 			}
 		}
+
 		return super.validateOptions(provider, loadSpec, options, program);
 	}
 
@@ -102,7 +102,7 @@ public class ElfLoader extends AbstractLibrarySupportLoader {
 
 		try {
 			ElfHeader elf = new ElfHeader(provider, null);
-			// TODO: Why do we convey image base to loader ?  This will be managed by each loader !
+
 			List<QueryResult> results =
 				QueryOpinionService.query(getName(), elf.getMachineName(), elf.getFlags());
 			for (QueryResult result : results) {
@@ -153,12 +153,21 @@ public class ElfLoader extends AbstractLibrarySupportLoader {
 
 	@Override
 	protected void postLoadProgramFixups(List<Loaded<Program>> loadedPrograms, Project project,
-			List<Option> options, MessageLog messageLog, TaskMonitor monitor)
+			LoadSpec loadSpec, List<Option> options, MessageLog messageLog, TaskMonitor monitor)
 			throws CancelledException, IOException {
-		super.postLoadProgramFixups(loadedPrograms, project, options, messageLog, monitor);
-
-		ExternalSymbolResolver.fixUnresolvedExternalSymbols(loadedPrograms, true, messageLog,
+		super.postLoadProgramFixups(loadedPrograms, project, loadSpec, options, messageLog,
 			monitor);
+
+		ProjectData projectData = project != null ? project.getProjectData() : null;
+		try (ExternalSymbolResolver esr = new ExternalSymbolResolver(projectData, monitor)) {
+			for (Loaded<Program> loadedProgram : loadedPrograms) {
+				esr.addProgramToFixup(
+					loadedProgram.getProjectFolderPath() + loadedProgram.getName(),
+					loadedProgram.getDomainObject());
+			}
+			esr.fixUnresolvedExternalSymbols();
+			esr.logInfo(messageLog::appendMsg, true);
+		}
 	}
 
 	@Override

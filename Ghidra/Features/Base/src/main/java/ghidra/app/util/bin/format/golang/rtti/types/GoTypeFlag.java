@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,6 +18,9 @@ package ghidra.app.util.bin.format.golang.rtti.types;
 import java.util.EnumSet;
 import java.util.Set;
 
+/**
+ * Enum defining the various bitflags held in a GoType's tflag
+ */
 public enum GoTypeFlag {
 	Uncommon(1 << 0),		// 1
 	ExtraStar(1 << 1),		// 2
@@ -26,7 +29,7 @@ public enum GoTypeFlag {
 
 	private final int value;
 
-	private GoTypeFlag(int i) {
+	GoTypeFlag(int i) {
 		this.value = i;
 	}
 
@@ -36,6 +39,10 @@ public enum GoTypeFlag {
 
 	public boolean isSet(int i) {
 		return (i & value) != 0;
+	}
+
+	public static boolean isValid(int b) {
+		return b <= 15; // TODO: make better const
 	}
 
 	public static Set<GoTypeFlag> parseFlags(int b) {

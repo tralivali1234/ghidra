@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,9 +17,10 @@ package ghidra.app.util.opinion;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
+import java.util.function.Predicate;
 
+import generic.jar.ResourceFile;
 import ghidra.app.util.Option;
 import ghidra.app.util.OptionUtils;
 import ghidra.app.util.bin.ByteProvider;
@@ -31,7 +32,6 @@ import ghidra.framework.options.Options;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.*;
-import ghidra.util.Msg;
 import ghidra.util.exception.*;
 import ghidra.util.task.TaskMonitor;
 
@@ -71,50 +71,38 @@ public abstract class AbstractOrdinalSupportLoader extends AbstractLibrarySuppor
 	}
 
 	@Override
-	protected boolean shouldSearchAllPaths(List<Option> options) {
+	protected boolean shouldSearchAllPaths(Program program, List<Option> options, MessageLog log) {
 		return shouldPerformOrdinalLookup(options);
 	}
 
 	@Override
-	protected boolean shouldLoadLibrary(String libName, FSRL libFsrl, ByteProvider provider,
-			LoadSpec loadSpec, MessageLog log) throws IOException {
-
-		if (!super.shouldLoadLibrary(libName, libFsrl, provider, loadSpec, log)) {
-			return false;
-		}
-
-		int size = loadSpec.getLanguageCompilerSpec().getLanguageDescription().getSize();
-		File localLibFile = getLocalFile(libFsrl);
-
-		if (localLibFile == null ||
-			!LibraryLookupTable.hasFileAndPathAndTimeStampMatch(localLibFile, size) &&
-				LibraryLookupTable.libraryLookupTableFileExists(libName, size)) {
-			log.appendMsg("WARNING! Using existing exports file for " + libName +
-				" which may not be an exact match");
-		}
-
-		return true;
-	}
-
-	@Override
 	protected void processLibrary(Program lib, String libName, FSRL libFsrl, ByteProvider provider,
-			LoadSpec loadSpec, List<Option> options, MessageLog log, TaskMonitor monitor)
+			Queue<UnprocessedLibrary> unprocessed, int depth, LoadSpec loadSpec,
+			List<Option> options, MessageLog log, TaskMonitor monitor)
 			throws IOException, CancelledException {
 		int size = loadSpec.getLanguageCompilerSpec().getLanguageDescription().getSize();
-		File localLibFile = getLocalFile(libFsrl);
+		ResourceFile existingExportsFile = LibraryLookupTable.getExistingExportsFile(libName, size);
 
-		// Create exports file
-		if (localLibFile == null ||
-			!LibraryLookupTable.libraryLookupTableFileExists(libName, size) ||
-			!LibraryLookupTable.hasFileAndPathAndTimeStampMatch(localLibFile, size)) {
+		if (!shouldPerformOrdinalLookup(options)) {
+			return;
+		}
+
+		// Create exports file if necessary
+		if (existingExportsFile == null) {
 			try {
-				// Need to write correct library exports file (LibrarySymbolTable)
-				// for use with related imports
-				LibraryLookupTable.createFile(lib, true, monitor);
+				ResourceFile newExportsFile = LibraryLookupTable.createFile(lib, true, monitor);
+				log.appendMsg("Created exports file: " + newExportsFile);
 			}
 			catch (IOException e) {
 				log.appendMsg("Unable to create exports file for " + libFsrl);
-				Msg.error(this, "Unable to create exports file for " + libFsrl, e);
+			}
+		}
+		else {
+			log.appendMsg("Using existing exports file: " + existingExportsFile);
+			File localLibFile = getLocalFile(libFsrl);
+			if (localLibFile != null &&
+				!LibraryLookupTable.hasFileAndPathAndTimeStampMatch(localLibFile, size)) {
+				log.appendMsg("WARNING: Existing exports file may not be an exact match.");
 			}
 		}
 	}
@@ -139,12 +127,14 @@ public abstract class AbstractOrdinalSupportLoader extends AbstractLibrarySuppor
 
 	@Override
 	protected void postLoadProgramFixups(List<Loaded<Program>> loadedPrograms, Project project,
-			List<Option> options, MessageLog messageLog, TaskMonitor monitor)
+			LoadSpec loadSpec, List<Option> options, MessageLog messageLog, TaskMonitor monitor)
 			throws CancelledException, IOException {
-		monitor.initialize(loadedPrograms.size());
 
 		if (shouldPerformOrdinalLookup(options)) {
-			for (Loaded<Program> loadedProgram : loadedPrograms) {
+			List<Loaded<Program>> saveablePrograms =
+				loadedPrograms.stream().filter(Predicate.not(Loaded::shouldDiscard)).toList();
+			monitor.initialize(saveablePrograms.size());
+			for (Loaded<Program> loadedProgram : saveablePrograms) {
 				monitor.checkCancelled();
 				Program program = loadedProgram.getDomainObject();
 				int id = program.startTransaction("Ordinal fixups");
@@ -158,7 +148,8 @@ public abstract class AbstractOrdinalSupportLoader extends AbstractLibrarySuppor
 			}
 		}
 
-		super.postLoadProgramFixups(loadedPrograms, project, options, messageLog, monitor);
+		super.postLoadProgramFixups(loadedPrograms, project, loadSpec, options, messageLog,
+			monitor);
 	}
 
 	@Override

@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -51,7 +51,7 @@ public class DBTraceProgramViewRegisterMemoryBlock implements MemoryBlock {
 
 		@Override
 		public String getDescription() {
-			return "Trace registers: " + space.getThread().getName();
+			return "Trace registers: " + space.getThread().getName(program.getSnap());
 		}
 
 		@Override
@@ -116,7 +116,7 @@ public class DBTraceProgramViewRegisterMemoryBlock implements MemoryBlock {
 	}
 
 	@Override
-	public int getPermissions() {
+	public int getFlags() {
 		return MemoryBlock.READ | MemoryBlock.WRITE;
 	}
 
@@ -128,6 +128,11 @@ public class DBTraceProgramViewRegisterMemoryBlock implements MemoryBlock {
 	@Override
 	public boolean contains(Address addr) {
 		return range.contains(addr);
+	}
+
+	@Override
+	public AddressRange getAddressRange() {
+		return range;
 	}
 
 	@Override
@@ -212,6 +217,16 @@ public class DBTraceProgramViewRegisterMemoryBlock implements MemoryBlock {
 
 	@Override
 	public void setVolatile(boolean v) {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public boolean isArtificial() {
+		return false;
+	}
+
+	@Override
+	public void setArtificial(boolean a) {
 		throw new UnsupportedOperationException();
 	}
 

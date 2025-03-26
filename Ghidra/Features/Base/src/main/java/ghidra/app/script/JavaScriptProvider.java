@@ -70,6 +70,11 @@ public class JavaScriptProvider extends GhidraScriptProvider {
 	}
 
 	@Override
+	public String getRuntimeEnvironmentName() {
+		return "Java";
+	}
+
+	@Override
 	public boolean deleteScript(ResourceFile sourceFile) {
 		try {
 			Bundle osgiBundle = getBundleForSource(sourceFile).getOSGiBundle();
@@ -87,7 +92,7 @@ public class JavaScriptProvider extends GhidraScriptProvider {
 	@Override
 	public GhidraScript getScriptInstance(ResourceFile sourceFile, PrintWriter writer)
 			throws GhidraScriptLoadException {
-		try {
+		try (OSGiParallelLock lock = new OSGiParallelLock()) {
 			Class<?> clazz = loadClass(sourceFile, writer);
 
 			if (GhidraScript.class.isAssignableFrom(clazz)) {

@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -67,6 +67,8 @@ public class FilterTextField extends JPanel {
 
 	private WeakSet<FilterListener> listeners = WeakDataStructureFactory.createCopyOnWriteWeakSet();
 	private WeakSet<Callback> enterListeners = WeakDataStructureFactory.createCopyOnWriteWeakSet();
+
+	private String accessibleNamePrefix;
 
 	/**
 	 * Constructs this text field with the given component.  <code>component</code> may be null, but
@@ -296,10 +298,36 @@ public class FilterTextField extends JPanel {
 		textField.requestFocus();
 	}
 
+	@Override
+	public boolean requestFocusInWindow() {
+		return textField.requestFocusInWindow();
+	}
+
 	private void fireFilterChanged(String text) {
 		for (FilterListener l : listeners) {
 			l.filterChanged(text);
 		}
+	}
+
+	/**
+	 * Sets the accessible name prefix for for the focusable components in the filter panel.
+	 * @param prefix the base name for these components. A suffix will be added to further
+	 * describe the sub component.
+	 */
+	public void setAccessibleNamePrefix(String prefix) {
+		this.accessibleNamePrefix = prefix;
+		String name = prefix + " filter text field";
+		textField.setName(name);
+		textField.getAccessibleContext().setAccessibleName(name);
+	}
+
+	/**
+	 * Returns the accessible name prefix set by a previous call to 
+	 * {@link #setAccessibleNamePrefix(String)}.  This will be null if not set.
+	 * @return the prefix
+	 */
+	public String getAccessibleNamePrefix() {
+		return accessibleNamePrefix;
 	}
 
 //==================================================================================================
@@ -374,33 +402,25 @@ public class FilterTextField extends JPanel {
 		});
 
 	}
+
 //==================================================================================================
 // Inner Classes
 //==================================================================================================
 
-	private class TraversalKeyListener implements KeyListener {
+	private class TraversalKeyListener extends KeyAdapter {
 		private final Component component;
 
 		private TraversalKeyListener(Component component) {
 			this.component = component;
-
 		}
 
 		@Override
 		public void keyPressed(KeyEvent e) {
-			// don't care
-		}
-
-		@Override
-		public void keyReleased(KeyEvent e) {
 			if (e.getKeyCode() == KeyEvent.VK_UP || e.getKeyCode() == KeyEvent.VK_DOWN) {
 				component.requestFocus();
+				KeyboardFocusManager kfm = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+				kfm.redispatchEvent(component, e);
 			}
-		}
-
-		@Override
-		public void keyTyped(KeyEvent e) {
-			// don't care
 		}
 	}
 
@@ -463,5 +483,4 @@ public class FilterTextField extends JPanel {
 			flashCount = 0;
 		}
 	}
-
 }

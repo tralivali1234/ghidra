@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,7 +18,12 @@ package ghidra.trace.database.time;
 import java.io.IOException;
 
 import db.DBRecord;
+import ghidra.trace.database.target.DBTraceObject;
 import ghidra.trace.model.Trace;
+import ghidra.trace.model.target.TraceObject;
+import ghidra.trace.model.target.TraceObjectValue;
+import ghidra.trace.model.target.iface.TraceObjectEventScope;
+import ghidra.trace.model.thread.TraceObjectThread;
 import ghidra.trace.model.thread.TraceThread;
 import ghidra.trace.model.time.TraceSnapshot;
 import ghidra.trace.model.time.schedule.TraceSchedule;
@@ -143,7 +148,26 @@ public class DBTraceSnapshot extends DBAnnotatedObject implements TraceSnapshot 
 	@Override
 	public TraceThread getEventThread() {
 		try (LockHold hold = LockHold.lock(manager.lock.readLock())) {
-			return eventThread;
+			if (eventThread != null) {
+				return eventThread;
+			}
+			// TODO: Can it be something other than root?
+			DBTraceObject root = manager.trace.getObjectManager().getRootObject();
+			if (root == null) {
+				return null;
+			}
+			if (!root.getSchema().getInterfaces().contains(TraceObjectEventScope.class)) {
+				return null;
+			}
+			TraceObjectValue eventAttr =
+				root.getAttribute(getKey(), TraceObjectEventScope.KEY_EVENT_THREAD);
+			if (eventAttr == null) {
+				return null;
+			}
+			if (!(eventAttr.getValue() instanceof TraceObject eventObj)) {
+				return null;
+			}
+			return eventObj.queryInterface(TraceObjectThread.class);
 		}
 	}
 

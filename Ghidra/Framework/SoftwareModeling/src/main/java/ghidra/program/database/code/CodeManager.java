@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,6 +20,7 @@ import java.util.*;
 
 import db.*;
 import db.util.ErrorHandler;
+import ghidra.framework.data.OpenMode;
 import ghidra.program.database.*;
 import ghidra.program.database.data.PointerTypedefInspector;
 import ghidra.program.database.data.ProgramDataTypeManager;
@@ -36,7 +37,8 @@ import ghidra.program.model.listing.*;
 import ghidra.program.model.mem.*;
 import ghidra.program.model.symbol.*;
 import ghidra.program.model.util.*;
-import ghidra.program.util.ChangeManager;
+import ghidra.program.util.CommentChangeRecord;
+import ghidra.program.util.ProgramEvent;
 import ghidra.util.*;
 import ghidra.util.exception.*;
 import ghidra.util.task.TaskMonitor;
@@ -85,7 +87,7 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	 * @throws IOException if a database io error occurs
 	 * @throws CancelledException if the user cancels the upgrade operation
 	 */
-	public CodeManager(DBHandle handle, AddressMap addrMap, int openMode, Lock lock,
+	public CodeManager(DBHandle handle, AddressMap addrMap, OpenMode openMode, Lock lock,
 			TaskMonitor monitor) throws VersionException, CancelledException, IOException {
 
 		dbHandle = handle;
@@ -114,10 +116,10 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	 * @throws IOException if a database io error occurs
 	 * @throws CancelledException if the user cancels the upgrade operation
 	 */
-	private void checkOldFallThroughMaps(DBHandle handle, int openMode, TaskMonitor monitor)
+	private void checkOldFallThroughMaps(DBHandle handle, OpenMode openMode, TaskMonitor monitor)
 			throws VersionException, CancelledException, IOException {
 
-		if (openMode != DBConstants.UPDATE) {
+		if (openMode != OpenMode.UPDATE) {
 			return;
 		}
 		LongPropertyMapDB oldFallThroughs =
@@ -138,10 +140,10 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 
 			ReferenceManager refMgr = program.getReferenceManager();
 
-			LongPropertyMapDB oldFallFroms = new LongPropertyMapDB(dbHandle, DBConstants.UPGRADE,
-				this, null, addrMap, "FallFroms", monitor);
+			LongPropertyMapDB oldFallFroms = new LongPropertyMapDB(dbHandle, OpenMode.UPGRADE, this,
+				null, addrMap, "FallFroms", monitor);
 
-			LongPropertyMapDB oldFallThroughs = new LongPropertyMapDB(dbHandle, DBConstants.UPGRADE,
+			LongPropertyMapDB oldFallThroughs = new LongPropertyMapDB(dbHandle, OpenMode.UPGRADE,
 				this, null, addrMap, "FallThroughs", monitor);
 
 			int cnt = oldFallThroughs.getSize();
@@ -155,11 +157,16 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 				while (addrIter.hasNext()) {
 					monitor.checkCancelled();
 					Address addr = addrIter.next();
+
+					Instruction instr = getInstructionAt(addr);
+					if (instr == null) {
+						continue;
+					}
+
 					try {
 						long offset = oldFallThroughs.getLong(addr);
 						Address toAddr = addr.getNewAddress(offset);
-						refMgr.addMemoryReference(addr, toAddr, RefType.FALL_THROUGH,
-							SourceType.USER_DEFINED, Reference.MNEMONIC);
+						instr.setFallThrough(toAddr);
 					}
 					catch (NoValueException e) {
 						// skip
@@ -177,7 +184,7 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 		}
 	}
 
-	private void initializeAdapters(int openMode, TaskMonitor monitor)
+	private void initializeAdapters(OpenMode openMode, TaskMonitor monitor)
 			throws VersionException, CancelledException, IOException {
 		VersionException versionExc = null;
 		try {
@@ -226,9 +233,9 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	}
 
 	@Override
-	public void programReady(int openMode, int currentRevision, TaskMonitor monitor)
+	public void programReady(OpenMode openMode, int currentRevision, TaskMonitor monitor)
 			throws IOException, CancelledException {
-		if (openMode == DBConstants.UPGRADE) {
+		if (openMode == OpenMode.UPGRADE) {
 			upgradeOldFallThroughMaps(monitor);
 		}
 	}
@@ -531,6 +538,16 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 						if (flowOverride != FlowOverride.NONE) {
 							lastInstruction.setFlowOverride(flowOverride);
 						}
+
+						try {
+							if (protoInstr.isLengthOverridden()) {
+								lastInstruction.setLengthOverride(protoInstr.getLength());
+							}
+						}
+						catch (CodeUnitInsertionException e) {
+							// unexpected - should have been caught previously
+							throw new RuntimeException(e);
+						}
 					}
 
 					if (errorAddr != null && conflictCodeUnit == null &&
@@ -555,8 +572,8 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 						}
 					}
 					set.addRange(block.getStartAddress(), maxAddr);
-					program.setChanged(ChangeManager.DOCR_CODE_ADDED, block.getStartAddress(),
-						maxAddr, null, null);
+					program.setChanged(ProgramEvent.CODE_ADDED, block.getStartAddress(), maxAddr,
+						null, null);
 				}
 			}
 
@@ -581,24 +598,37 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	 * @param prototype  instruction definition object
 	 * @param memBuf the MemBuffer to use to get the bytes from memory
 	 * @param context object that has the state of all the registers.
-	 * @return the new instruction
-	 * @exception CodeUnitInsertionException thrown if code unit
-	 *                  overlaps with an existing code unit
+	 * @param length instruction byte-length (must be in the range 0..prototype.getLength()).
+	 * If smaller than the prototype length it must have a value no greater than 7, otherwise
+	 * an error will be thrown.  A value of 0 or greater-than-or-equal the prototype length
+	 * will be ignored and not impose and override length.  The length value must be a multiple 
+	 * of the {@link Language#getInstructionAlignment() instruction alignment} .
+	 * @return the newly created instruction.  
+	 * @throws CodeUnitInsertionException thrown if the new Instruction would overlap and 
+	 * existing {@link CodeUnit} or the specified {@code length} is unsupported.
+	 * @throws IllegalArgumentException if a negative {@code length} is specified.
 	 */
 	public Instruction createCodeUnit(Address address, InstructionPrototype prototype,
-			MemBuffer memBuf, ProcessorContextView context) throws CodeUnitInsertionException {
+			MemBuffer memBuf, ProcessorContextView context, int length)
+			throws CodeUnitInsertionException {
 
 		lock.acquire();
 		creatingInstruction = true;
 		try {
-			Address endAddr = address.addNoWrap(prototype.getLength() - 1);
-
+			int forcedLengthOverride = InstructionDB.checkLengthOverride(length, prototype);
+			if (length == 0) {
+				length = prototype.getLength();
+			}
+			Address endAddr = address.addNoWrap(length - 1);
 			checkValidAddressRange(address, endAddr);
 
 			InstructionDB inst = addInstruction(address, endAddr, prototype, memBuf, context);
+			if (forcedLengthOverride != 0) {
+				inst.doSetLengthOverride(forcedLengthOverride);
+			}
 
 			// fire event
-			program.setChanged(ChangeManager.DOCR_CODE_ADDED, address, endAddr, null, inst);
+			program.setChanged(ProgramEvent.CODE_ADDED, address, endAddr, null, inst);
 
 			return inst;
 		}
@@ -694,6 +724,8 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	@Override
 	public void deleteAddressRange(Address start, Address end, TaskMonitor monitor)
 			throws CancelledException {
+
+		AddressRange.checkValidRange(start, end);
 
 		// Expand range to include any overlapping or delay-slotted instructions
 		CodeUnit cu = getCodeUnitContaining(start);
@@ -1208,6 +1240,20 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	}
 
 	/**
+	 * Returns the number of addresses that have associated comments.
+	 * @return the number of addresses that have associated comments
+	 */
+	public long getCommentAddressCount() {
+		try {
+			return commentAdapter.getRecordCount();
+		}
+		catch (IOException e) {
+			program.dbError(e);
+		}
+		return 0;
+	}
+
+	/**
 	 * Get a forward iterator over addresses that have comments of the given type.
 	 * @param commentType comment type defined in CodeUnit
 	 * @param set address set (null for all defined memory)
@@ -1370,29 +1416,48 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	}
 
 	/**
-	 * Returns the instruction whose min address is less than or equal to the specified address and 
+	 * Returns an instruction whose min address is less than or equal to the specified address and 
 	 * whose max address is greater than or equal to the specified address.
+	 * If {@code usePrototypeLength==true}
 	 * <pre>{@literal
-	 * instruction.minAddress() <= addr <= instruction.maxAddress()
+	 * instruction.getMinAddress() <= addr <= 
+	 *    instruction.getMinAddress().add(instruction.getPrototype().getLength() - 1)
 	 * }</pre>
-	 *
+	 * If {@code usePrototypeLength==false}
+	 * <pre>{@literal
+	 *    instruction.getMinAddress() <= addr <= instruction.getMaxAddress()
+	 * }</pre>
+	 * The use of the prototype length is required when guarding against memory modifications.  If
+	 * a length-override is present only one of the entangled instructions will be returned and is
+	 * intended to simply indicate the presence of a conflict.
 	 * @param address the address to be contained 
+	 * @param usePrototypeLength if actual prototype length should be considered when identifying a 
+	 * conflict (required when checking for memory modification conflicts), otherwise code unit
+	 * length is used.  These lengths can vary when a
+	 * {@link Instruction#setLengthOverride(int) length-override} is in affect for an instruction.
 	 * @return the instruction containing the specified address, or null if a 
 	 * instruction does not exist
 	 */
-	public Instruction getInstructionContaining(Address address) {
+	public Instruction getInstructionContaining(Address address, boolean usePrototypeLength) {
 		lock.acquire();
 		try {
 			Instruction instr = getInstructionAt(address);
-
 			if (instr != null) {
 				return instr;
 			}
 
 			instr = this.getInstructionBefore(address);
-
-			if (instr != null && instr.contains(address)) {
-				return instr;
+			if (instr != null) {
+				Address endAddr;
+				if (usePrototypeLength && instr.isLengthOverridden()) {
+					endAddr = instr.getMinAddress().add(instr.getParsedLength() - 1);
+				}
+				else {
+					endAddr = instr.getMaxAddress();
+				}
+				if (address.compareTo(endAddr) <= 0) {
+					return instr;
+				}
 			}
 			return null;
 		}
@@ -1639,8 +1704,14 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 						nextInstEndAddr = nextInstAddr;
 						int protoID = nextInstRec.getIntValue(InstDBAdapter.PROTO_ID_COL);
 						InstructionPrototype proto = protoMgr.getPrototype(protoID);
-						int len = proto != null ? proto.getLength()
-								: nextInstAddr.getAddressSpace().getAddressableUnitSize();
+						int len;
+						if (proto != null) {
+							len = InstructionDB.getLength(proto,
+								nextInstRec.getByteValue(InstDBAdapter.FLAGS_COL));
+						}
+						else {
+							len = nextInstAddr.getAddressSpace().getAddressableUnitSize();
+						}
 						if (len > 1) {
 							try {
 								nextInstEndAddr = nextInstAddr.addNoWrap(len - 1);
@@ -1730,7 +1801,7 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 		if (addr != AddressMap.INVALID_ADDRESS_KEY) {
 			lock.acquire();
 			try {
-				Instruction inst = getInstructionContaining(address);
+				Instruction inst = getInstructionContaining(address, false);
 				if (inst != null) {
 					return null;
 				}
@@ -1994,11 +2065,11 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 			if (dataType instanceof Composite || dataType instanceof Array ||
 				dataType instanceof Dynamic) {
 				compositeMgr.add(addr);
-				program.setChanged(ChangeManager.DOCR_COMPOSITE_ADDED, addr, endAddr, null, null);
+				program.setChanged(ProgramEvent.COMPOSITE_ADDED, addr, endAddr, null, null);
 			}
 
 			// fire event
-			program.setChanged(ChangeManager.DOCR_CODE_ADDED, addr, endAddr, null, data);
+			program.setChanged(ProgramEvent.CODE_ADDED, addr, endAddr, null, data);
 
 			addDataReferences(data, new ArrayList<Address>());
 
@@ -2037,17 +2108,12 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	 * for 0 or all f's.
 	 * @param data the data to add references for.
 	 * @param longSegmentAddressList used internally to make sure that, for 64 bit addresses, we
-	 * don't pollute the the addressMap segment table when creating arrays of pointers on arbitrary
+	 * don't pollute the addressMap segment table when creating arrays of pointers on arbitrary
 	 * data.
 	 */
 	private void addDataReferences(Data data, List<Address> longSegmentAddressList) {
-		Memory mem = program.getMemory();
-		MemoryBlock block = mem.getBlock(data.getAddress());
-		if (block == null || !block.isInitialized()) {
-			return;
-		}
 		DataType dt = data.getDataType();
-		if (Address.class.equals(dt.getValueClass(null))) {
+		if (Address.class.equals(dt.getValueClass(data))) {
 			Object obj = data.getValue();
 			if (obj instanceof Address) {
 				// creates a reference unless the value is 0 or all f's
@@ -2145,11 +2211,14 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 
 	/**
 	 * Clears all comments in the given range (inclusive).
+	 * The specified start and end addresses must form a valid range within
+	 * a single {@link AddressSpace}.
 	 *
 	 * @param start the start address of the range to clear
 	 * @param end the end address of the range to clear
 	 */
 	public void clearComments(Address start, Address end) {
+		AddressRange.checkValidRange(start, end);
 		lock.acquire();
 		try {
 			try {
@@ -2164,7 +2233,7 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 				boolean commentRemoved = commentAdapter.deleteRecords(start, end);
 				if (commentRemoved) {
 					// fire event
-					program.setChanged(ChangeManager.DOCR_CODE_REMOVED, start, end, null, null);
+					program.setChanged(ProgramEvent.CODE_REMOVED, start, end, null, null);
 				}
 			}
 			catch (IOException e) {
@@ -2178,6 +2247,8 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 
 	/**
 	 * Clears the properties in the given range (inclusive).
+	 * The specified start and end addresses must form a valid range within
+	 * a single {@link AddressSpace}.
 	 *
 	 * @param start the start address of the range to clear
 	 * @param end the end address of the range to clear
@@ -2240,6 +2311,9 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	/**
 	 * Remove code units, symbols, equates, and references to code units in the given range 
 	 * (inclusive).  Comments and comment history will be retained.
+	 * The specified start and end addresses must form a valid range within
+	 * a single {@link AddressSpace}.
+	 * 
 	 * @param start the start address of the range to clear
 	 * @param end the end address of the range to clear
 	 * @param clearContext if true all context-register values will be cleared over range
@@ -2248,6 +2322,7 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	 */
 	public void clearCodeUnits(Address start, Address end, boolean clearContext,
 			TaskMonitor monitor) throws CancelledException {
+		AddressRange.checkValidRange(start, end);
 		lock.acquire();
 		try {
 			// Expand range to include any overlapping or delay-slotted instructions
@@ -2274,7 +2349,7 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 				}
 			}
 
-			program.setChanged(ChangeManager.DOCR_CODE_REMOVED, start, end, cu, null);
+			program.setChanged(ProgramEvent.CODE_REMOVED, start, end, cu, null);
 		}
 		finally {
 			lock.release();
@@ -2287,10 +2362,10 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	 * @param monitor the task monitor
 	 */
 	public void clearAll(boolean clearContext, TaskMonitor monitor) {
-		Address minAddr = program.getMinAddress();
-		Address maxAddr = program.getMaxAddress();
 		try {
-			clearCodeUnits(minAddr, maxAddr, clearContext, monitor);
+			for (AddressRange range : program.getMemory().getAddressRanges()) {
+				clearCodeUnits(range.getMinAddress(), range.getMaxAddress(), clearContext, monitor);
+			}
 		}
 		catch (CancelledException e) {
 			// nothing to do
@@ -2522,23 +2597,24 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	}
 
 	/**
-	 * Check if any instruction intersects the specified address range
+	 * Check if any instruction intersects the specified address range.
+	 * The specified start and end addresses must form a valid range within
+	 * a single {@link AddressSpace}.
+	 * 
 	 * @param start start of range
 	 * @param end end of range
 	 * @throws ContextChangeException if there is a context register change conflict
 	 */
 	public void checkContextWrite(Address start, Address end) throws ContextChangeException {
+		AddressRange.checkValidRange(start, end);
 		lock.acquire();
 		try {
-			if (!start.getAddressSpace().equals(end.getAddressSpace())) {
-				throw new IllegalArgumentException();
-			}
 			if (!contextLockingEnabled || creatingInstruction ||
 				!program.getMemory().contains(start, end)) {
 				return;
 			}
 			boolean fail = false;
-			if (getInstructionContaining(start) != null) {
+			if (getInstructionContaining(start, false) != null) {
 				fail = true;
 			}
 			else {
@@ -2574,7 +2650,7 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 		if (!program.getMemory().contains(start, end)) {
 			return false;
 		}
-		if (getInstructionContaining(start) != null) {
+		if (getInstructionContaining(start, false) != null) {
 			return false;
 		}
 		if (getDefinedDataContaining(start) != null) {
@@ -2624,11 +2700,11 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 
 	/**
 	 * Removes any data objects that have dataTypes matching the given dataType ids.
-	 * @param dataTypeIDs the list of ids of dataTypes that have been deleted.
+	 * @param dataTypeIDs the set of {@link DataType} IDs that have been deleted.
 	 * @param monitor the task monitor.
 	 * @throws CancelledException if cancelled
 	 */
-	public void clearData(long[] dataTypeIDs, TaskMonitor monitor) throws CancelledException {
+	public void clearData(Set<Long> dataTypeIDs, TaskMonitor monitor) throws CancelledException {
 		lock.acquire();
 		try {
 			List<Address> addrs = new ArrayList<>();
@@ -2902,8 +2978,13 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 				if (flowType == null) {
 					flowType = RefType.INVALID;
 				}
+				// Only remove jump reference if the function flowtype says it has a fallthrough
+				//   Removing the branch to next address if instruction has no fallthrough causes
+				//   flow following issues, for example creating a function body.
 				boolean isFallthrough =
-					(flowType.isJump() && flowAddr.equals(inst.getMaxAddress().next()));
+					(flowType.isJump() && flowAddr.equals(inst.getMaxAddress().next())) &&
+						inst.hasFallthrough();
+
 				if (!isFallthrough) {
 					mnemonicPrimaryRef = addDefaultMemoryReferenceIfMissing(inst,
 						Reference.MNEMONIC, flowAddr, flowType, oldRefList, mnemonicPrimaryRef);
@@ -3168,13 +3249,21 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	 * @param newFallThroughRef new fallthrough reference or null if removed
 	 */
 	public void fallThroughChanged(Address fromAddr, Reference newFallThroughRef) {
+		if (newFallThroughRef != null &&
+			newFallThroughRef.getReferenceType() != RefType.FALL_THROUGH) {
+			throw new IllegalArgumentException("invalid reftype");
+		}
 		lock.acquire();
 		try {
 			InstructionDB instr = getInstructionAt(addrMap.getKey(fromAddr, false));
-			// TODO: Should prevent this if instruction is null or isInDelaySlot
-			if (instr != null) {
-				instr.fallThroughChanged(newFallThroughRef);
+			if (instr == null) {
+				// Do not allow fallthrough ref without instruction
+				if (newFallThroughRef != null) {
+					refManager.delete(newFallThroughRef);
+				}
+				return;
 			}
+			instr.fallThroughChanged(newFallThroughRef);
 		}
 		finally {
 			lock.release();
@@ -3207,6 +3296,30 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 			if (commentRec != null) {
 				return commentRec.getString(commentType);
 			}
+		}
+		catch (IOException e) {
+			dbError(e);
+		}
+		return null;
+	}
+
+	/**
+	 * Returns all the comments at the given address.
+	 * @param address the address to get all comments for
+	 * @return all the comments at the given address
+	 */
+	public CodeUnitComments getAllComments(Address address) {
+		try {
+			long addr = addrMap.getKey(address, false);
+			DBRecord commentRec = getCommentAdapter().getRecord(addr);
+			CommentType[] types = CommentType.values();
+			String[] comments = new String[types.length];
+
+			for (CommentType type : types) {
+				int index = type.ordinal();
+				comments[index] = commentRec.getString(index);
+			}
+			return new CodeUnitComments(comments);
 		}
 		catch (IOException e) {
 			dbError(e);
@@ -3263,28 +3376,8 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 	}
 
 	void sendNotification(Address address, int commentType, String oldValue, String newValue) {
-		int eventType;
-		switch (commentType) {
-			case CodeUnit.PLATE_COMMENT:
-				eventType = ChangeManager.DOCR_PLATE_COMMENT_CHANGED;
-				break;
-			case CodeUnit.PRE_COMMENT:
-				eventType = ChangeManager.DOCR_PRE_COMMENT_CHANGED;
-				break;
-			case CodeUnit.POST_COMMENT:
-				eventType = ChangeManager.DOCR_POST_COMMENT_CHANGED;
-				break;
-			case CodeUnit.REPEATABLE_COMMENT:
-				eventType = ChangeManager.DOCR_REPEATABLE_COMMENT_CHANGED;
-				break;
-			case CodeUnit.EOL_COMMENT:
-			default:
-				eventType = ChangeManager.DOCR_EOL_COMMENT_CHANGED;
-		}
 		createCommentHistoryRecord(address, commentType, oldValue, newValue);
-
-		program.setChanged(eventType, address, address, oldValue, newValue);
-
+		program.setChanged(new CommentChangeRecord(commentType, address, oldValue, newValue));
 	}
 
 	void createCommentHistoryRecord(Address address, int commentType, String oldComment,
@@ -3397,18 +3490,19 @@ public class CodeManager implements ErrorHandler, ManagerDB {
 		return "";
 	}
 
-	public void replaceDataTypes(long oldDataTypeID, long newDataTypeID) {
+	public void replaceDataTypes(Map<Long, Long> dataTypeReplacementMap) {
 		lock.acquire();
 		try {
 			RecordIterator it = dataAdapter.getRecords();
 			while (it.hasNext()) {
 				DBRecord rec = it.next();
 				long id = rec.getLongValue(DataDBAdapter.DATA_TYPE_ID_COL);
-				if (id == oldDataTypeID) {
-					rec.setLongValue(DataDBAdapter.DATA_TYPE_ID_COL, newDataTypeID);
+				Long replacementId = dataTypeReplacementMap.get(id);
+				if (replacementId != null) {
+					rec.setLongValue(DataDBAdapter.DATA_TYPE_ID_COL, replacementId);
 					dataAdapter.putRecord(rec);
 					Address addr = addrMap.decodeAddress(rec.getKey());
-					program.setChanged(ChangeManager.DOCR_CODE_REPLACED, addr, addr, null, null);
+					program.setChanged(ProgramEvent.CODE_REPLACED, addr, addr, null, null);
 				}
 			}
 		}

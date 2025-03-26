@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -71,7 +71,7 @@ public class FormatManager implements OptionsChangeListener {
 	TemplateSimplifier templateSimplifier;
 
 	// NOTE:  Unused custom format code was removed.  The custom format code last existed in
-	// commit #204e7892bf2f110ebb05ca4beee3fe5b397f88c9.  
+	// commit #204e7892bf2f110ebb05ca4beee3fe5b397f88c9.
 
 	/**
 	 * Constructs a new FormatManager.
@@ -100,7 +100,7 @@ public class FormatManager implements OptionsChangeListener {
 	private void getArrayDisplayOptions(Options options) {
 		options.registerOption(ARRAY_DISPLAY_OPTIONS, OptionType.CUSTOM_TYPE,
 			new ArrayElementWrappedOption(), null, ARRAY_DISPLAY_DESCRIPTION,
-			new ArrayElementPropertyEditor());
+			() -> new ArrayElementPropertyEditor());
 		CustomOption option = options.getCustomOption(ARRAY_DISPLAY_OPTIONS, null);
 		if (option instanceof ArrayElementWrappedOption) {
 			ArrayElementWrappedOption arrayOption = (ArrayElementWrappedOption) option;
@@ -159,7 +159,9 @@ public class FormatManager implements OptionsChangeListener {
 	 * @param listener the listener to be added
 	 */
 	public void addFormatModelListener(FormatModelListener listener) {
-		formatListeners.add(listener);
+		if (listener != null) {
+			formatListeners.add(listener);
+		}
 	}
 
 	/**
@@ -174,7 +176,7 @@ public class FormatManager implements OptionsChangeListener {
 
 	/**
 	 * Returns the total number of model in the format manager.
-	 * @return the total number of model in the format manager 
+	 * @return the total number of model in the format manager
 	 */
 	public int getNumModels() {
 		return NUM_MODELS;
@@ -200,7 +202,7 @@ public class FormatManager implements OptionsChangeListener {
 
 	/**
 	 * Returns the format model for the plate field.
-	 * @return the format model for the plate field 
+	 * @return the format model for the plate field
 	 */
 	public FieldFormatModel getPlateFormat() {
 		return models[FieldFormatModel.PLATE];
@@ -279,7 +281,7 @@ public class FormatManager implements OptionsChangeListener {
 
 	/**
 	 * Returns the Options used for field specific properties.
-	 * @return the Options used for field specific properties 
+	 * @return the Options used for field specific properties
 	 */
 	public ToolOptions getFieldOptions() {
 		return fieldOptions;
@@ -589,6 +591,22 @@ public class FormatManager implements OptionsChangeListener {
 		rowElem.addContent(colElem);
 
 		root.addContent(rowElem);
+
+		rowElem = new Element("ROW");
+
+		colElem = new Element("FIELD");
+		colElem.setAttribute("WIDTH", "200");
+		colElem.setAttribute("ENABLED", "true");
+		rowElem.addContent(colElem);
+
+		colElem = new Element("FIELD");
+		colElem.setAttribute("NAME", "Source Map");
+		colElem.setAttribute("WIDTH", "440");
+		colElem.setAttribute("ENABLED", "true");
+		rowElem.addContent(colElem);
+
+		root.addContent(rowElem);
+
 		rowElem = new Element("ROW");
 
 		colElem = new Element("FIELD");
@@ -847,7 +865,7 @@ public class FormatManager implements OptionsChangeListener {
 	}
 
 	/**
-	 * Gets all {@link ListingHighlightProvider}s installed on this FormatManager via the 
+	 * Gets all {@link ListingHighlightProvider}s installed on this FormatManager via the
 	 * {@link #addHighlightProvider(ListingHighlightProvider)}.
 	 * 
 	 * @return all {@link ListingHighlightProvider}s installed on this FormatManager.
@@ -930,12 +948,12 @@ public class FormatManager implements OptionsChangeListener {
 		public Highlight[] createHighlights(String text, ListingField field, int cursorTextOffset) {
 
 			//
-			// Gather and use all other registered providers.  
-			// 
+			// Gather and use all other registered providers.
+			//
 			// Note: we loop backwards here as a hacky method to make sure that the middle-mouse
-			//       highlighter runs last and is thus painted above other highlights.  This 
-			//       works because the middle-mouse highlighter is installed before any other 
-			//       highlighters.			
+			//       highlighter runs last and is thus painted above other highlights.  This
+			//       works because the middle-mouse highlighter is installed before any other
+			//       highlighters.
 			List<Highlight> list = new ArrayList<>();
 			int size = highlightProviders.size();
 			for (int i = size - 1; i >= 0; i--) {

@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,6 +20,7 @@ package ghidra.program.model.listing;
 import java.util.ConcurrentModificationException;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.lang.InstructionPrototype;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.mem.MemBuffer;
 import ghidra.program.model.mem.MemoryAccessException;
@@ -38,25 +39,36 @@ public interface CodeUnit extends MemBuffer, PropertySet {
 	public final static int MNEMONIC = -1;
 
 	public static final int NO_COMMENT = -1;
+
 	/**
 	 * comment type for end of line
+	 * @deprecated use {@link CommentType#EOL} 
 	 */
+	@Deprecated
 	public static final int EOL_COMMENT = 0;
 	/**
 	 * comment type that goes before a code unit
+	 * @deprecated use {@link CommentType#PRE}
 	 */
+	@Deprecated
 	public static final int PRE_COMMENT = 1;
 	/**
 	 * comment type that follows after a code unit
+	 * @deprecated use {@link CommentType#POST} 
 	 */
+	@Deprecated
 	public static final int POST_COMMENT = 2;
 	/**
 	 * Property name for plate comment type
+	 * @deprecated use {@link CommentType#POST} 
 	 */
+	@Deprecated
 	public static final int PLATE_COMMENT = 3;
 	/**
 	 * Property name for repeatable comment type
+	 * @deprecated use {@link CommentType#REPEATABLE} 
 	 */
+	@Deprecated
 	public static final int REPEATABLE_COMMENT = 4;
 
 //	/**
@@ -134,8 +146,21 @@ public interface CodeUnit extends MemBuffer, PropertySet {
 	 * that type exists for this codeunit
 	 * @throws IllegalArgumentException if type is not one of the
 	 * three types of comments supported
+	 * @deprecated use {@link #getComment(CommentType)} instead
 	 */
+	@Deprecated
 	public String getComment(int commentType);
+
+	/**
+	 * Get the comment for the given type
+	 *
+	 * @param type which type of comment to retrieve
+	 * @return the comment string of the appropriate type or null if no comment of
+	 * that type exists for this code unit
+	 */
+	public default String getComment(CommentType type) {
+		return getComment(type.ordinal());
+	}
 
 	/**
 	 * Get the comment for the given type and parse it into an array of strings
@@ -148,8 +173,23 @@ public interface CodeUnit extends MemBuffer, PropertySet {
 	 * is returned.
 	 * @throws IllegalArgumentException if type is not one of the
 	 * three types of comments supported
+	 * @deprecated use {@link #getCommentAsArray(CommentType)} instead
 	 */
+	@Deprecated
 	public String[] getCommentAsArray(int commentType);
+
+	/**
+	 * Get the comment for the given type and parse it into an array of strings
+	 * such that each line is its own string.
+	 *
+	 * @param type the comment type to retrieve
+	 * @return an array of strings where each item in the array is a line of text
+	 * in the comment.  If there is no comment of the requested type, an empty array
+	 * is returned.
+	 */
+	public default String[] getCommentAsArray(CommentType type) {
+		return getCommentAsArray(type.ordinal());
+	}
 
 	/**
 	 * Set the comment for the given comment type.  Passing <code>null</code> clears the comment
@@ -160,8 +200,20 @@ public interface CodeUnit extends MemBuffer, PropertySet {
 	 * 
 	 * @throws IllegalArgumentException if type is not one of the
 	 * three types of comments supported
+	 * @deprecated use {@link #setComment(CommentType, String)} instead
 	 */
+	@Deprecated
 	public void setComment(int commentType, String comment);
+
+	/**
+	 * Set the comment for the given comment type.  Passing <code>null</code> clears the comment
+	 *
+	 * @param type of comment to set
+	 * @param comment comment for code unit; null clears the comment
+	 */
+	public default void setComment(CommentType type, String comment) {
+		setComment(type.ordinal(), comment);
+	}
 
 	/**
 	 * Set the comment (with each line in its own string) for the given comment type
@@ -174,20 +226,23 @@ public interface CodeUnit extends MemBuffer, PropertySet {
 	 */
 	public void setCommentAsArray(int commentType, String[] comment);
 
-	/**
-	 * Return true if the given CodeUnit follows
-	 * directly after this code unit.
-	 * @param codeUnit the codeUnit being tested to see if it follows this codeUnit.
-	 */
-	public boolean isSuccessor(CodeUnit codeUnit);
+	public default void setCommentAsArray(CommentType type, String[] comment) {
+		setCommentAsArray(type.ordinal(), comment);
+	}
 
 	/**
-	 * Get length of this code unit.
+	 * Get length of this code unit.  
+	 * NOTE: If an {@link Instruction#isLengthOverridden() instruction length-override} is
+	 * set this method will return the reduced length.
+	 * @return code unit length
 	 */
 	public int getLength();
 
 	/**
 	 * Get the bytes that make up this code unit.
+	 * NOTE: If an {@link Instruction#isLengthOverridden() instruction length-override} is
+	 * set this method will not return all bytes associated with the 
+	 * {@link InstructionPrototype instruction prototype}.
 	 * @return an array of bytes that are in memory at the codeunits address.  The
 	 * array length is the same as the codeUnits length
 	 * @throws MemoryAccessException if the full number of bytes could not be read.

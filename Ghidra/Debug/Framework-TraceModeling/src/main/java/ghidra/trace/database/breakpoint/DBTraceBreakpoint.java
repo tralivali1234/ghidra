@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -27,11 +27,11 @@ import ghidra.trace.database.map.DBTraceAddressSnapRangePropertyMapTree;
 import ghidra.trace.database.map.DBTraceAddressSnapRangePropertyMapTree.AbstractDBTraceAddressSnapRangePropertyMapData;
 import ghidra.trace.database.thread.DBTraceThreadManager;
 import ghidra.trace.model.Lifespan;
-import ghidra.trace.model.Trace.TraceBreakpointChangeType;
 import ghidra.trace.model.breakpoint.TraceBreakpoint;
 import ghidra.trace.model.breakpoint.TraceBreakpointKind;
 import ghidra.trace.model.thread.TraceThread;
 import ghidra.trace.util.TraceChangeRecord;
+import ghidra.trace.util.TraceEvents;
 import ghidra.util.LockHold;
 import ghidra.util.Msg;
 import ghidra.util.database.DBCachedObjectStore;
@@ -188,25 +188,25 @@ public class DBTraceBreakpoint
 	}
 
 	@Override
-	public void setName(String name) {
+	public void setName(long snap, String name) {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			this.name = name;
 			update(NAME_COLUMN);
 		}
-		space.trace.setChanged(new TraceChangeRecord<>(TraceBreakpointChangeType.CHANGED,
-			space, this));
+		space.trace
+				.setChanged(new TraceChangeRecord<>(TraceEvents.BREAKPOINT_CHANGED, space, this));
 
 	}
 
 	@Override
-	public String getName() {
+	public String getName(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return name;
 		}
 	}
 
 	@Override
-	public Set<TraceThread> getThreads() {
+	public Set<TraceThread> getThreads(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			if (threadKeys.length == 0) {
 				return Set.of();
@@ -227,28 +227,28 @@ public class DBTraceBreakpoint
 	}
 
 	@Override
-	public AddressRange getRange() {
+	public AddressRange getRange(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return range;
 		}
 	}
 
 	@Override
-	public Address getMinAddress() {
+	public Address getMinAddress(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return range.getMinAddress();
 		}
 	}
 
 	@Override
-	public Address getMaxAddress() {
+	public Address getMaxAddress(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return range.getMaxAddress();
 		}
 	}
 
 	@Override
-	public long getLength() {
+	public long getLength(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return range.getLength();
 		}
@@ -261,7 +261,7 @@ public class DBTraceBreakpoint
 			oldLifespan = lifespan;
 			doSetLifespan(newLifespan);
 		}
-		space.trace.setChanged(new TraceChangeRecord<>(TraceBreakpointChangeType.LIFESPAN_CHANGED,
+		space.trace.setChanged(new TraceChangeRecord<>(TraceEvents.BREAKPOINT_LIFESPAN_CHANGED,
 			space, this, oldLifespan, newLifespan));
 	}
 
@@ -272,71 +272,10 @@ public class DBTraceBreakpoint
 		}
 	}
 
-	@Override
-	public long getPlacedSnap() {
-		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
-			return lifespan.lmin();
-		}
-	}
-
-	@Override
-	public void setClearedSnap(long clearedSnap) throws DuplicateNameException {
-		setLifespan(Lifespan.span(getPlacedSnap(), clearedSnap));
-	}
-
-	@Override
-	public long getClearedSnap() {
-		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
-			return lifespan.lmax();
-		}
-	}
-
 	protected DBTraceBreakpoint doCopy() {
 		DBTraceBreakpoint breakpoint = space.breakpointMapSpace.put(this, null);
 		breakpoint.set(path, name, threadKeys, flagsByte, comment);
 		return breakpoint;
-	}
-
-	@Override
-	public DBTraceBreakpoint splitAndSet(long snap, boolean en,
-			Collection<TraceBreakpointKind> kinds) {
-		DBTraceBreakpoint that;
-		Lifespan oldLifespan = null;
-		Lifespan newLifespan = null;
-		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
-			if (!lifespan.contains(snap)) {
-				throw new IllegalArgumentException("snap = " + snap);
-			}
-			if (flagsByte == computeFlagsByte(en, kinds)) {
-				return this;
-			}
-			if (snap == getPlacedSnap()) {
-				this.doSetFlags(en, kinds);
-				that = this;
-			}
-			else {
-				that = doCopy();
-				that.doSetLifespan(Lifespan.span(snap, getClearedSnap()));
-				that.doSetFlags(en, kinds);
-				oldLifespan = lifespan;
-				newLifespan = Lifespan.span(getPlacedSnap(), snap - 1);
-				this.doSetLifespan(newLifespan);
-			}
-		}
-		if (that == this) {
-			space.trace.setChanged(
-				new TraceChangeRecord<>(TraceBreakpointChangeType.CHANGED, space, this));
-		}
-		else {
-			// Yes, issue ADDED, before LIFESPAN_CHANGED, as noted in docs
-			space.trace.setChanged(
-				new TraceChangeRecord<>(TraceBreakpointChangeType.ADDED, space, that));
-			space.trace.setChanged(
-				new TraceChangeRecord<>(TraceBreakpointChangeType.LIFESPAN_CHANGED,
-					space, this, Objects.requireNonNull(oldLifespan),
-					Objects.requireNonNull(newLifespan)));
-		}
-		return that;
 	}
 
 	protected static byte computeFlagsByte(boolean enabled, Collection<TraceBreakpointKind> kinds) {
@@ -399,29 +338,29 @@ public class DBTraceBreakpoint
 	}
 
 	@Override
-	public void setEnabled(boolean enabled) {
+	public void setEnabled(long snap, boolean enabled) {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			doSetEnabled(enabled);
 		}
-		space.trace.setChanged(new TraceChangeRecord<>(TraceBreakpointChangeType.CHANGED,
-			space, this));
+		space.trace
+				.setChanged(new TraceChangeRecord<>(TraceEvents.BREAKPOINT_CHANGED, space, this));
 	}
 
 	@Override
 	public boolean isEnabled(long snap) {
-		// NB. Only object mode support per-snap enablement
+		// NB. Only object mode supports per-snap enablement
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return enabled;
 		}
 	}
 
 	@Override
-	public void setEmuEnabled(boolean enabled) {
+	public void setEmuEnabled(long snap, boolean enabled) {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			doSetEmuEnabled(enabled);
 		}
-		space.trace.setChanged(new TraceChangeRecord<>(TraceBreakpointChangeType.CHANGED,
-			space, this));
+		space.trace
+				.setChanged(new TraceChangeRecord<>(TraceEvents.BREAKPOINT_CHANGED, space, this));
 	}
 
 	@Override
@@ -433,40 +372,40 @@ public class DBTraceBreakpoint
 	}
 
 	@Override
-	public void setKinds(Collection<TraceBreakpointKind> kinds) {
+	public void setKinds(long snap, Collection<TraceBreakpointKind> kinds) {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			doSetKinds(kinds);
 		}
-		space.trace.setChanged(
-			new TraceChangeRecord<>(TraceBreakpointChangeType.CHANGED, space, this));
+		space.trace
+				.setChanged(new TraceChangeRecord<>(TraceEvents.BREAKPOINT_CHANGED, space, this));
 	}
 
 	@Override
-	public Set<TraceBreakpointKind> getKinds() {
+	public Set<TraceBreakpointKind> getKinds(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return kindsView;
 		}
 	}
 
 	@Override
-	public void setComment(String comment) {
+	public void setComment(long snap, String comment) {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			this.comment = comment;
 			update(COMMENT_COLUMN);
 		}
-		space.trace.setChanged(new TraceChangeRecord<>(TraceBreakpointChangeType.CHANGED,
-			space, this));
+		space.trace
+				.setChanged(new TraceChangeRecord<>(TraceEvents.BREAKPOINT_CHANGED, space, this));
 	}
 
 	@Override
-	public String getComment() {
+	public String getComment(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return comment;
 		}
 	}
 
 	@Override
-	public void setEmuSleigh(String emuSleigh) {
+	public void setEmuSleigh(long snap, String emuSleigh) {
 		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
 			if (emuSleigh == null || SleighUtils.UNCONDITIONAL_BREAK.equals(emuSleigh)) {
 				this.emuSleigh = null;
@@ -476,12 +415,12 @@ public class DBTraceBreakpoint
 			}
 			update(SLEIGH_COLUMN);
 		}
-		space.trace.setChanged(new TraceChangeRecord<>(TraceBreakpointChangeType.CHANGED,
-			space, this));
+		space.trace
+				.setChanged(new TraceChangeRecord<>(TraceEvents.BREAKPOINT_CHANGED, space, this));
 	}
 
 	@Override
-	public String getEmuSleigh() {
+	public String getEmuSleigh(long snap) {
 		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
 			return emuSleigh == null || emuSleigh.isBlank() ? SleighUtils.UNCONDITIONAL_BREAK
 					: emuSleigh;
@@ -491,5 +430,31 @@ public class DBTraceBreakpoint
 	@Override
 	public void delete() {
 		space.deleteBreakpoint(this);
+	}
+
+	@Override
+	public void remove(long snap) {
+		try (LockHold hold = LockHold.lock(space.lock.writeLock())) {
+			if (snap <= lifespan.lmin()) {
+				space.deleteBreakpoint(this);
+			}
+			else if (snap <= lifespan.lmax()) {
+				doSetLifespan(lifespan.withMax(snap - 1));
+			}
+		}
+	}
+
+	@Override
+	public boolean isValid(long snap) {
+		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
+			return lifespan.contains(snap);
+		}
+	}
+
+	@Override
+	public boolean isAlive(Lifespan span) {
+		try (LockHold hold = LockHold.lock(space.lock.readLock())) {
+			return lifespan.intersects(span);
+		}
 	}
 }
