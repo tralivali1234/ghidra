@@ -17,16 +17,21 @@ package ghidra.app.plugin.core.data;
 
 import static org.junit.Assert.*;
 
+import java.util.Date;
+
 import org.junit.*;
 
 import docking.action.DockingActionIf;
+import docking.widgets.DropDownSelectionTextField;
 import ghidra.app.plugin.core.codebrowser.CodeBrowserPlugin;
+import ghidra.app.util.datatype.DataTypeSelectionEditor;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.*;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Program;
 import ghidra.test.*;
+import ghidra.util.DateUtils;
 
 public class EditFieldDialogTest extends AbstractGhidraHeadedIntegrationTest {
 	private TestEnv env;
@@ -119,6 +124,29 @@ public class EditFieldDialogTest extends AbstractGhidraHeadedIntegrationTest {
 	}
 
 	@Test
+	public void testEditDefinedFieldDataTypeAndNameAndComment() {
+		goTo(0x104);
+		showFieldEditDialog();
+		DataTypeComponent dtc = structure.getComponent(4);
+		assertEquals("word", dtc.getDataType().getDisplayName());
+		assertEquals("word", getDataTypeText());
+
+		setDataType(new CharDataType());
+		setNameText("TestName");
+		setCommentText("Flux capacitor relay");
+
+		pressOk();
+
+		waitForTasks();
+		assertFalse(isDialogVisible());
+
+		dtc = structure.getComponent(4);
+		assertEquals("char", dtc.getDataType().getDisplayName());
+		assertEquals("TestName", dtc.getFieldName());
+		assertEquals("Flux capacitor relay", dtc.getComment());
+	}
+
+	@Test
 	public void testEditUndefinedFieldName() {
 		goTo(0x101);
 		showFieldEditDialog();
@@ -162,6 +190,65 @@ public class EditFieldDialogTest extends AbstractGhidraHeadedIntegrationTest {
 		assertEquals("byte", structure.getComponent(1).getDataType().getDisplayName());
 	}
 
+	@Test
+	public void testEditUndefinedDataType_ByTypingText() {
+		goTo(0x101);
+		showFieldEditDialog();
+		assertNull(structure.getComponent(1).getComment());
+		assertEquals("undefined", getDataTypeText());
+
+		DataTypeSelectionEditor editor = dialog.getDataTypeEditor();
+		DropDownSelectionTextField<DataType> textField = editor.getDropDownTextField();
+		setText(textField, "byte");
+
+		pressOk();
+		waitForTasks();
+		assertEquals("byte", structure.getComponent(1).getDataType().getDisplayName());
+	}
+
+	@Test
+	public void testAddAddressCheckbox() {
+		goTo(0x101);
+		showFieldEditDialog();
+		assertEquals("", getCommentText());
+		pressButtonByText(dialog.getComponent(), "Add Current Address");
+		assertEquals("00000101", getCommentText());
+
+		pressOk();
+		waitForTasks();
+		assertEquals("00000101", structure.getComponent(1).getComment());
+
+		showFieldEditDialog();
+		assertEquals("00000101", getCommentText());
+		pressButtonByText(dialog.getComponent(), "Add Current Address");
+		assertEquals("", getCommentText());
+
+		pressOk();
+		assertNull(structure.getComponent(1).getComment());
+	}
+
+	@Test
+	public void testAddDateCheckbox() {
+		String today = DateUtils.formatCompactDate(new Date());
+		goTo(0x101);
+		showFieldEditDialog();
+		assertEquals("", getCommentText());
+		pressButtonByText(dialog.getComponent(), "Add Today's Date");
+		assertEquals(today, getCommentText());
+
+		pressOk();
+		waitForTasks();
+		assertEquals(today, structure.getComponent(1).getComment());
+
+		showFieldEditDialog();
+		assertEquals(today, getCommentText());
+		pressButtonByText(dialog.getComponent(), "Add Today's Date");
+		assertEquals("", getCommentText());
+
+		pressOk();
+		assertNull(structure.getComponent(1).getComment());
+	}
+
 	private boolean isDialogVisible() {
 		return runSwing(() -> dialog.isVisible());
 	}
@@ -182,7 +269,7 @@ public class EditFieldDialogTest extends AbstractGhidraHeadedIntegrationTest {
 	}
 
 	private void pressOk() {
-		runSwing(() -> dialog.okCallback());
+		pressButtonByText(dialog, "OK");
 	}
 
 	private String getNameText() {
@@ -207,9 +294,5 @@ public class EditFieldDialogTest extends AbstractGhidraHeadedIntegrationTest {
 
 	private void setDataType(DataType dataType) {
 		runSwing(() -> dialog.setDataType(dataType));
-	}
-
-	private String getDialogStatusText() {
-		return runSwing(() -> dialog.getStatusText());
 	}
 }

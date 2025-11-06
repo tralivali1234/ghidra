@@ -4,9 +4,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,7 +15,6 @@
  */
 package ghidra.app.plugin.core.progmgr;
 
-import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 
 import javax.swing.*;
@@ -40,6 +39,7 @@ import ghidra.framework.plugintool.util.PluginStatus;
 import ghidra.program.model.listing.Program;
 import ghidra.util.HelpLocation;
 import ghidra.util.bean.opteditor.OptionsVetoException;
+import help.Help;
 
 /**
  * Plugin to show a "tab" for each open program; the selected tab is the activated program.
@@ -126,7 +126,8 @@ public class MultiTabPlugin extends Plugin implements DomainObjectListener, Opti
 			new MenuData(new String[] { ToolConstants.MENU_NAVIGATION, "Go To Program..." }, null,
 				ToolConstants.MENU_NAVIGATION_GROUP_WINDOWS, MenuData.NO_MNEMONIC, firstGroup));
 		goToProgramAction
-				.setKeyBindingData(new KeyBindingData(KeyEvent.VK_F7, InputEvent.CTRL_DOWN_MASK));
+				.setKeyBindingData(
+					new KeyBindingData(KeyEvent.VK_F7, DockingUtils.CONTROL_KEY_MODIFIER_MASK));
 
 		goToProgramAction.setEnabled(false);
 		goToProgramAction.setDescription(
@@ -176,7 +177,8 @@ public class MultiTabPlugin extends Plugin implements DomainObjectListener, Opti
 			new String[] { ToolConstants.MENU_NAVIGATION, "Go To Last Active Program" }, null,
 			ToolConstants.MENU_NAVIGATION_GROUP_WINDOWS, MenuData.NO_MNEMONIC, secondGroup));
 		goToLastActiveProgramAction
-				.setKeyBindingData(new KeyBindingData(KeyEvent.VK_F6, InputEvent.CTRL_DOWN_MASK));
+				.setKeyBindingData(
+					new KeyBindingData(KeyEvent.VK_F6, DockingUtils.CONTROL_KEY_MODIFIER_MASK));
 		goToLastActiveProgramAction.setEnabled(false);
 		goToLastActiveProgramAction
 				.setDescription("Activates the last program used before the current program");
@@ -262,6 +264,8 @@ public class MultiTabPlugin extends Plugin implements DomainObjectListener, Opti
 		tabPanel.setToolTipFunction(p -> getToolTip(p));
 		tabPanel.setSelectedTabConsumer(p -> programSelected(p));
 		tabPanel.setCloseTabConsumer(p -> progService.closeProgram(p, false));
+		Help.getHelpService()
+				.registerHelp(tabPanel, new HelpLocation("ProgramManagerPlugin", "Navigate_File"));
 
 		initOptions();
 

@@ -107,10 +107,11 @@ public class RTTIGccClassRecoverer extends RTTIClassRecoverer {
 
 	public RTTIGccClassRecoverer(Program program, ServiceProvider serviceProvider,
 			FlatProgramAPI api, boolean createBookmarks, boolean useShortTemplates,
-			boolean nameVfunctions, boolean isDwarfLoaded, TaskMonitor monitor) throws Exception {
+			boolean nameVfunctions, boolean makeVfunctionsThisCalls, boolean isDwarfLoaded,
+			TaskMonitor monitor) throws Exception {
 
 		super(program, serviceProvider, api, createBookmarks, useShortTemplates, nameVfunctions,
-			isDwarfLoaded, monitor);
+			makeVfunctionsThisCalls, isDwarfLoaded, monitor);
 
 		this.isDwarfLoaded = isDwarfLoaded;
 
@@ -211,6 +212,8 @@ public class RTTIGccClassRecoverer extends RTTIClassRecoverer {
 
 		Msg.debug(this, "Processing constructors and destructors");
 		processConstructorAndDestructors();
+
+		identifyPureVirtualFunction(recoveredClasses);
 
 		Msg.debug(this, "Creating vftable order maps");
 		createVftableOrderMap(recoveredClasses);
@@ -3437,7 +3440,9 @@ public class RTTIGccClassRecoverer extends RTTIClassRecoverer {
 
 				Function calledFunction =
 					extendedFlatAPI.getReferencedFunction(instruction.getMinAddress(), false);
-				if (calledFunction.getName().equals(expectedCalledFunctionName)) {
+
+				if (calledFunction != null &&
+					calledFunction.getName().equals(expectedCalledFunctionName)) {
 					return instruction.getAddress();
 				}
 			}

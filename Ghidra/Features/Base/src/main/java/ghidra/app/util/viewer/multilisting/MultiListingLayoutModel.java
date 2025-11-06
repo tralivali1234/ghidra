@@ -80,7 +80,7 @@ public class MultiListingLayoutModel implements ListingModelListener, FormatMode
 	/**
 	 * Returns the ListingLayoutModel for the i'th program.
 	 * @param index the index of program for which to return a listing model
-	 * @return the the ListingLayoutModel for the i'th program.
+	 * @return the ListingLayoutModel for the i'th program.
 	 */
 	public ListingModel getAlignedModel(int index) {
 		return alignedModels[index];
@@ -272,6 +272,21 @@ public class MultiListingLayoutModel implements ListingModelListener, FormatMode
 		}
 
 		@Override
+		public void setFunctionVariablesOpen(Address functionAddress, boolean open) {
+			models[modelID].setFunctionVariablesOpen(functionAddress, open);
+		}
+
+		@Override
+		public void setAllFunctionVariablesOpen(boolean open) {
+			models[modelID].setAllFunctionVariablesOpen(open);
+		}
+
+		@Override
+		public boolean areFunctionVariablesOpen(Address FunctionAddress) {
+			return models[modelID].areFunctionVariablesOpen(FunctionAddress);
+		}
+
+		@Override
 		public boolean openData(Data data) {
 			return models[modelID].openData(data);
 		}
@@ -337,6 +352,21 @@ public class MultiListingLayoutModel implements ListingModelListener, FormatMode
 			return models[modelID].copy();
 		}
 
+		@Override
+		public boolean isFunctionOpen(Address functionAddress) {
+			return models[modelID].isFunctionOpen(functionAddress);
+		}
+
+		@Override
+		public void setFunctionOpen(Address functionAddress, boolean b) {
+			models[modelID].setFunctionOpen(functionAddress, b);
+		}
+
+		@Override
+		public void setAllFunctionsOpen(boolean selected) {
+			models[modelID].setAllFunctionsOpen(selected);
+		}
+
 	}
 
 	@Override
@@ -370,7 +400,7 @@ public class MultiListingLayoutModel implements ListingModelListener, FormatMode
 	 * primary program and listingModel
 	 */
 	public void setAddressSet(AddressSetView view) {
-		primaryAddrSet = view;
+		primaryAddrSet = ImmutableAddressSet.asImmutable(view);
 		modelSizeChanged();
 	}
 }
