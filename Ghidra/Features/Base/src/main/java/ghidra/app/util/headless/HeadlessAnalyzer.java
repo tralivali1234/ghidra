@@ -30,6 +30,7 @@ import ghidra.GhidraJarApplicationLayout;
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.plugin.core.osgi.BundleHost;
 import ghidra.app.script.*;
+import ghidra.app.script.JythonStubScriptProvider.JythonStubException;
 import ghidra.app.util.headless.HeadlessScript.HeadlessContinuationOption;
 import ghidra.app.util.importer.ProgramLoader;
 import ghidra.app.util.opinion.*;
@@ -267,7 +268,7 @@ public class HeadlessAnalyzer {
 			throw new MalformedURLException("Unsupported repository URL: " + ghidraURL);
 		}
 
-		if (GhidraURL.isLocalProjectURL(ghidraURL)) {
+		if (GhidraURL.isLocalURL(ghidraURL)) {
 			Msg.error(this,
 				"Ghidra URL command form does not supported local project URLs (ghidra:/path...)");
 			return;
@@ -303,8 +304,8 @@ public class HeadlessAnalyzer {
 			}
 		}
 
-		List<String> parsedScriptPaths = parseScriptPaths(options.scriptPaths);
-		GhidraScriptUtil.initialize(new BundleHost(), parsedScriptPaths);
+		BundleHost bundleHost = GhidraScriptUtil.acquireBundleHostReference();
+		bundleHost.add(parseScriptPaths(options.scriptPaths), true, true);
 		try {
 			showConfiguredScriptPaths();
 			compileScripts();
@@ -365,7 +366,7 @@ public class HeadlessAnalyzer {
 			throw new IOException(e); // unexpected
 		}
 		finally {
-			GhidraScriptUtil.dispose();
+			GhidraScriptUtil.releaseBundleHostReference();
 		}
 	}
 
@@ -418,8 +419,8 @@ public class HeadlessAnalyzer {
 			}
 		}
 
-		List<String> parsedScriptPaths = parseScriptPaths(options.scriptPaths);
-		GhidraScriptUtil.initialize(new BundleHost(), parsedScriptPaths);
+		BundleHost bundleHost = GhidraScriptUtil.acquireBundleHostReference();
+		bundleHost.add(parseScriptPaths(options.scriptPaths), true, true);
 		try {
 			showConfiguredScriptPaths();
 			compileScripts();
@@ -471,7 +472,7 @@ public class HeadlessAnalyzer {
 			}
 		}
 		finally {
-			GhidraScriptUtil.dispose();
+			GhidraScriptUtil.releaseBundleHostReference();
 		}
 	}
 
@@ -693,20 +694,18 @@ public class HeadlessAnalyzer {
 		}
 	}
 
-	private List<String> parseScriptPaths(List<String> scriptPaths) {
+	private List<ResourceFile> parseScriptPaths(List<String> scriptPaths) {
 		if (scriptPaths == null) {
-			return null;
+			return List.of();
 		}
-		List<String> parsedScriptPaths = new ArrayList<>();
+		List<ResourceFile> parsedScriptPaths = new ArrayList<>();
 		for (String path : scriptPaths) {
 			ResourceFile pathFile = Path.fromPathString(path);
-			String absPath = pathFile.getAbsolutePath();
 			if (pathFile.exists()) {
-				parsedScriptPaths.add(absPath);
+				parsedScriptPaths.add(pathFile);
 			}
 			else {
-
-				Msg.warn(this, "REPORT: Could not find -scriptPath entry, skipping: " + absPath);
+				Msg.warn(this, "REPORT: Could not find -scriptPath entry, skipping: " + pathFile);
 			}
 		}
 		return parsedScriptPaths;
@@ -885,6 +884,14 @@ public class HeadlessAnalyzer {
 				scriptName = scriptPair.first;
 				String[] scriptArgs = scriptPair.second;
 
+				StringBuilder buf = new StringBuilder();
+				for (String arg : scriptArgs) {
+					buf.append("'");
+					buf.append(arg);
+					buf.append("' ");
+				}
+				Msg.info(this, "REPORT: Execute script: " + scriptName + " " + buf.toString());
+
 				// For .class files, there is no ResourceFile mapping. Need to load from the
 				// stored 'classLoaderForDotClassScripts'
 				if (scriptName.endsWith(".class")) {
@@ -951,6 +958,14 @@ public class HeadlessAnalyzer {
 					}
 				}
 			}
+		}
+		catch (JythonStubException e) {
+			// We want to effectively exit with an error code, but this class may be used as a 
+			// Ghidra library method in some scenarios, so System.exit(1) is too aggressive.
+			// Throwing an Error allows Ghidra to exit with an uncaught exception when run from
+			// the command line, but allows for the possibility of a library client to handle
+			// the problem in a way that better suits their application.
+			throw new Error(e);
 		}
 		catch (Exception exc) {
 			String logErrorMsg = "REPORT SCRIPT ERROR: " + scriptName + " : " + exc.getMessage();
@@ -1022,6 +1037,7 @@ public class HeadlessAnalyzer {
 
 		if (abortProcessing) {
 			Msg.info(this, "Processing aborted as a result of pre-script.");
+			mgr.dispose();
 			return !deleteProgram;
 		}
 
@@ -1052,6 +1068,7 @@ public class HeadlessAnalyzer {
 
 						// If no further scripts, just return the current program disposition
 						if (options.postScripts.isEmpty()) {
+							mgr.dispose();
 							return !deleteProgram;
 						}
 
@@ -1119,6 +1136,7 @@ public class HeadlessAnalyzer {
 
 		}
 
+		mgr.dispose();
 		return !deleteProgram;
 	}
 
@@ -1216,7 +1234,6 @@ public class HeadlessAnalyzer {
 
 			if (options.commit) {
 
-				AutoAnalysisManager.getAnalysisManager(program).dispose();
 				program.release(this);
 				program = null;
 
@@ -1249,7 +1266,6 @@ public class HeadlessAnalyzer {
 		finally {
 
 			if (program != null) {
-				AutoAnalysisManager.getAnalysisManager(program).dispose();
 				program.release(this);
 				program = null;
 			}
@@ -1409,7 +1425,7 @@ public class HeadlessAnalyzer {
 		return p;
 	}
 
-	private boolean checkOverwrite(Loaded<Program> loaded) throws IOException {
+	private boolean checkOverwrite(Loaded<? extends DomainObject> loaded) throws IOException {
 		DomainFolder folder = project.getProjectData().getFolder(loaded.getProjectFolderPath());
 		if (folder == null) {
 			return true;
@@ -1537,7 +1553,7 @@ public class HeadlessAnalyzer {
 
 		// Perform the load.
 		// Note that loading 1 file may result in more than 1 thing getting loaded.
-		LoadResults<Program> loadResults = null;
+		LoadResults<? extends DomainObject> loadResults = null;
 		try {
 			loadResults = ProgramLoader.builder()
 					.source(fsrl)
@@ -1548,37 +1564,40 @@ public class HeadlessAnalyzer {
 					.compiler(options.compilerSpec)
 					.loaders(options.loaderClass)
 					.loaderArgs(options.loaderArgs)
-					.load();
+					.loadAll();
 
 			Msg.info(this, "IMPORTING: Loaded " + (loadResults.size() - 1) + " additional files");
 
-			// Make sure we are allowed to save ALL programs to the project.  If not, save none and
-			// fail.
+			// Make sure we are allowed to save ALL domain objects to the project.
+			// If not, save none and fail.
 			if (!options.readOnly) {
-				for (Loaded<Program> loaded : loadResults) {
+				for (Loaded<? extends DomainObject> loaded : loadResults) {
 					if (!checkOverwrite(loaded)) {
 						return false;
 					}
 				}
 			}
 
-			// Check if there are defined memory blocks in the primary program.
-			// Abort if not (there is nothing to work with!).
-			Loaded<Program> primary = loadResults.getPrimary();
-			if (primary.check(p -> p.getMemory().getAllInitializedAddressSet().isEmpty())) {
-				Msg.error(this, "REPORT: Error: No memory blocks were defined for file " + fsrl);
-				return false;
-			}
-
-			// Analyze the primary program, and determine if we should save.
-			// TODO: Analyze non-primary programs (GP-2965).
-			Program primaryProgram = primary.getDomainObject(this);
-			boolean doSave;
+			boolean doSave = !options.readOnly;
+			Loaded<? extends DomainObject> primary = loadResults.getPrimary();
+			DomainObject primaryDomainObject = primary.getDomainObject(this);
 			try {
-				doSave = analyzeProgram(fsrl.toString(), primaryProgram) && !options.readOnly;
+				if (primaryDomainObject instanceof Program primaryProgram) {
+					// Check if there are defined memory blocks in the primary program.
+					// Abort if not (there is nothing to work with!).
+					if (primaryProgram.getMemory().getAllInitializedAddressSet().isEmpty()) {
+						Msg.error(this,
+							"REPORT: Error: No memory blocks were defined for file " + fsrl);
+						return false;
+					}
+
+					// Analyze the primary program, and determine if we should save.
+					// TODO: Analyze non-primary programs (GP-2965).
+					doSave = analyzeProgram(fsrl.toString(), primaryProgram) && doSave;
+				}
 			}
 			finally {
-				primaryProgram.release(this);
+				primaryDomainObject.release(this);
 			}
 
 			// The act of marking the program as temporary by a script will signal
@@ -1599,12 +1618,12 @@ public class HeadlessAnalyzer {
 			}
 
 			// Save
-			for (Loaded<Program> loaded : loadResults) {
-				if (!loaded.check(Program::isTemporary)) {
+			for (Loaded<? extends DomainObject> loaded : loadResults) {
+				if (!loaded.check(DomainObject::isTemporary)) {
 					try {
 						DomainFile domainFile = loaded.save(TaskMonitor.DUMMY);
-						Msg.info(this, String.format("REPORT: Save succeeded for: %s (%s)",
-							loaded, domainFile));
+						Msg.info(this, String.format("REPORT: Save succeeded for: %s (%s)", loaded,
+							domainFile));
 					}
 					catch (IOException e) {
 						Msg.info(this, "REPORT: Save failed for: " + loaded);
@@ -1624,11 +1643,8 @@ public class HeadlessAnalyzer {
 
 			// Commit changes
 			if (options.commit) {
-				for (Loaded<Program> loaded : loadResults) {
-					if (!loaded.check(Program::isTemporary)) {
-						if (loaded == primary) {
-							AutoAnalysisManager.getAnalysisManager(primaryProgram).dispose();
-						}
+				for (Loaded<? extends DomainObject> loaded : loadResults) {
+					if (!loaded.check(DomainObject::isTemporary)) {
 						loaded.close(); // we need to close before committing
 						commitProgram(loaded.getSavedDomainFile());
 					}
@@ -1802,10 +1818,7 @@ public class HeadlessAnalyzer {
 		try {
 			tempProject = new HeadlessProject(getProjectManager(), locator);
 		}
-		catch (NotOwnerException e) {
-			throw new IOException(e);
-		}
-		catch (LockException e) {
+		catch (NotFoundException | NotOwnerException | LockException e) {
 			throw new IOException(e);
 		}
 
@@ -1846,7 +1859,7 @@ public class HeadlessAnalyzer {
 	private static class HeadlessProject extends DefaultProject {
 
 		HeadlessProject(HeadlessGhidraProjectManager projectManager, ProjectLocator projectLocator)
-				throws NotOwnerException, LockException, IOException {
+				throws NotFoundException, NotOwnerException, LockException, IOException {
 			super(projectManager, projectLocator, false);
 			AppInfo.setActiveProject(this);
 		}

@@ -15,10 +15,11 @@
  */
 package ghidra.app.plugin.core.navigation.locationreferences;
 
-import static ghidra.app.plugin.core.navigation.locationreferences.LocationReferenceContext.*;
+import static docking.widgets.search.SearchLocationContext.*;
 
 import java.util.Objects;
 
+import docking.widgets.search.SearchLocationContext;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.symbol.DynamicReference;
 import ghidra.program.model.symbol.Reference;
@@ -34,8 +35,13 @@ public class LocationReference implements Comparable<LocationReference> {
 	private final boolean isOffcutReference;
 	private final Address locationOfUseAddress;
 	private final String refType;
-	private final LocationReferenceContext context;
+	private final SearchLocationContext context;
 	private final ProgramLocation location;
+
+	/**
+	 * Optional field name.
+	 */
+	private String fieldName;
 
 	/**
 	 * Optional reference object.  Some clients do not have actual references.
@@ -52,7 +58,7 @@ public class LocationReference implements Comparable<LocationReference> {
 	//       represents the 'from' address for a reference; for parameters and variables of a
 	//       function, this represents the address of that variable.
 	private LocationReference(Address address, ProgramLocation location, String refType,
-			LocationReferenceContext context, boolean isOffcut) {
+			SearchLocationContext context, boolean isOffcut) {
 		this.locationOfUseAddress = Objects.requireNonNull(address);
 		this.location = location;
 		this.refType = refType == null ? "" : refType;
@@ -66,24 +72,29 @@ public class LocationReference implements Comparable<LocationReference> {
 		this.reference = reference;
 	}
 
-	LocationReference(Address locationOfUseAddress, String refType, boolean isOffcutReference) {
-		this(locationOfUseAddress, null, refType, EMPTY_CONTEXT, isOffcutReference);
+	LocationReference(Reference reference, boolean isOffcutReference, String fieldName) {
+		this(reference.getFromAddress(), null, getRefType(reference), EMPTY_CONTEXT,
+			isOffcutReference);
+		this.reference = reference;
+		this.fieldName = fieldName;
 	}
 
 	LocationReference(Address locationOfUseAddress) {
 		this(locationOfUseAddress, null, null, EMPTY_CONTEXT, false);
 	}
 
-	LocationReference(Address locationOfUseAddress, String context) {
-		this(locationOfUseAddress, null, null, LocationReferenceContext.get(context), false);
+	LocationReference(Address locationOfUseAddress, SearchLocationContext context) {
+		this(locationOfUseAddress, null, null, SearchLocationContext.get(context), false);
 	}
 
-	LocationReference(Address locationOfUseAddress, LocationReferenceContext context) {
-		this(locationOfUseAddress, null, null, LocationReferenceContext.get(context), false);
+	LocationReference(Address locationOfUseAddress, SearchLocationContext context,
+			String fieldName) {
+		this(locationOfUseAddress, null, null, SearchLocationContext.get(context), false);
+		this.fieldName = fieldName;
 	}
 
 	LocationReference(Address locationOfUseAddress, String context, ProgramLocation location) {
-		this(locationOfUseAddress, location, null, LocationReferenceContext.get(context), false);
+		this(locationOfUseAddress, location, null, SearchLocationContext.get(context), false);
 	}
 
 	/**
@@ -128,7 +139,7 @@ public class LocationReference implements Comparable<LocationReference> {
 	 *
 	 * @return the context
 	 */
-	public LocationReferenceContext getContext() {
+	public SearchLocationContext getContext() {
 		return context;
 	}
 
@@ -147,6 +158,14 @@ public class LocationReference implements Comparable<LocationReference> {
 	 */
 	public Reference getReference() {
 		return reference;
+	}
+
+	/**
+	 * Returns the field name for this location reference or null if there is no field name.
+	 * @return the field name; may be null
+	 */
+	public String getFieldName() {
+		return fieldName;
 	}
 
 	/**

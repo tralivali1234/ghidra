@@ -46,6 +46,16 @@ public class LaunchProperties {
 	 */
 	public static String VMARGS_PLATFORM = "VMARGS_" + JavaFinder.getCurrentPlatform();
 
+	/**
+	 * The environment variables to use to launch (all platforms).
+	 */
+	public static String ENVVARS = "ENVVARS";
+
+	/**
+	 * The environment variables to use to launch (current platform only).
+	 */
+	public static String ENVVARS_PLATFORM = "ENVVARS_" + JavaFinder.getCurrentPlatform();
+
 	private Map<String, List<String>> propertyMap;
 	private File launchPropertiesFile;
 
@@ -133,6 +143,26 @@ public class LaunchProperties {
 	}
 
 	/**
+	 * Gets a {@link List} of environment variables to use for the launch for the current 
+	 * {@link Platform platform}.
+	 * 
+	 * @return A {@link List} of environment variables to use for the launch for the current
+	 *   {@link Platform}
+	 */
+	public List<String> getEnvVarList() {
+		List<String> ret = new ArrayList<>();
+		List<String> envVarList = propertyMap.get(ENVVARS);
+		if (envVarList != null) {
+			ret.addAll(envVarList);
+		}
+		List<String> envVarPlatformList = propertyMap.get(ENVVARS_PLATFORM);
+		if (envVarPlatformList != null) {
+			ret.addAll(envVarPlatformList);
+		}
+		return ret;
+	}
+
+	/**
 	 * Parses and gets the launch properties from the given launch properties file.
 	 * 
 	 * @param launchPropertiesFile The file to get the launch properties from.
@@ -190,13 +220,13 @@ public class LaunchProperties {
 			String key = entry.getKey();
 			String value = entry.getValue();
 			try {
-				text = text.replaceAll("\\$\\{" + key + "\\}", value.replace("\\", "\\\\"));
+				text = text.replace("${" + key + "}", value);
 			}
 			catch (IllegalArgumentException e) {
-				throw new ParseException(
-					"Error expanding environment variable in %s (env %s=%s) -- %s".formatted(text,
-						key, value, e.getMessage()),
-					0);
+				String msg =
+					String.format("Error expanding environment variable in %s (env %s=%s) -- %s",
+						text, key, value, e.getMessage());
+				throw new ParseException(msg, 0);
 			}
 		}
 		return text;

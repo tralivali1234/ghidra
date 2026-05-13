@@ -292,6 +292,7 @@ public:
   Varnode *newExtendedConstant(int4 s,uint8 *val,PcodeOp *op);	///< Create extended precision constant
   void adjustInputVarnodes(const Address &addr,int4 sz);
   void deleteVarnode(Varnode *vn) { vbank.destroy(vn); }	///< Delete the given varnode
+  void destroyVarnodeRecursive(Varnode *vn);			///< Destroy Varnode (if unused) and any PcodeOp that produced it
 
   Address findDisjointCover(Varnode *vn,int4 &sz);	///< Find range covering given Varnode and any intersecting Varnodes
 
@@ -528,11 +529,15 @@ public:
 
   bool moveRespectingCover(PcodeOp *op,PcodeOp *lastOp);	///< Move given op past \e lastOp respecting covers if possible
 
-  const ResolvedUnion *getUnionField(const Datatype *parent,const PcodeOp *op,int4 slot) const;
-  bool setUnionField(const Datatype *parent,const PcodeOp *op,int4 slot,const ResolvedUnion &resolve);
-  void forceFacingType(Datatype *parent,int4 fieldNum,PcodeOp *op,int4 slot);
-  int4 inheritResolution(Datatype *parent,const PcodeOp *op,int4 slot,PcodeOp *oldOp,int4 oldSlot);
-
+  const ResolvedUnion *getUnionField(const Datatype *unresType,const PcodeOp *op,int4 slot) const;
+  const ResolvedUnion *getAddressBasedUnionField(const Datatype *unresType,const Address &addr,int4 slot) const;
+  const ResolvedUnion *getUnionResolution(const Datatype *unresType,const PcodeOp *op,int4 slot) const;
+  bool setUnionField(const Datatype *unresType,const PcodeOp *op,int4 slot,const ResolvedUnion &resolve);
+  bool setAddressBasedUnionField(const Datatype *unresType,const Address &addr,int4 slot,const ResolvedUnion &resolve);
+  bool updateUnionField(const Datatype *unresType,const PcodeOp *op,int4 slot,Datatype *resType);
+  void forceFacingType(Datatype *unresType,int4 fieldNum,PcodeOp *op,int4 slot);
+  int4 inheritUnionField(Datatype *unresType,const PcodeOp *op,int4 slot,PcodeOp *oldOp,int4 oldSlot);
+  int4 inheritUnionFieldPtr(Datatype *unresPtr,const PcodeOp *op,int4 slot,PcodeOp *oldOp,int4 oldSlot);
   // Jumptable routines
   JumpTable *linkJumpTable(PcodeOp *op);		///< Link jump-table with a given BRANCHIND
   JumpTable *findJumpTable(const PcodeOp *op) const;	///< Find a jump-table associated with a given BRANCHIND

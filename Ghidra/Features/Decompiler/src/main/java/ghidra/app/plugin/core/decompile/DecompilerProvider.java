@@ -15,17 +15,20 @@
  */
 package ghidra.app.plugin.core.decompile;
 
+import java.awt.Graphics;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.math.BigInteger;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import javax.swing.Icon;
-import javax.swing.JComponent;
+import javax.swing.*;
 
 import docking.*;
 import docking.action.*;
+import docking.action.builder.ActionBuilder;
+import docking.action.builder.ToggleActionBuilder;
+import docking.actions.KeyBindingUtils;
 import docking.widgets.fieldpanel.support.FieldLocation;
 import docking.widgets.fieldpanel.support.ViewerPosition;
 import generic.theme.GIcon;
@@ -60,8 +63,6 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 		implements OptionsChangeListener, DecompilerCallbackHandler, DecompilerHighlightService,
 		DecompilerMarginService {
 
-	private static final String OPTIONS_TITLE = "Decompiler";
-
 	private static final Icon REFRESH_ICON = Icons.REFRESH_ICON;
 	private static final Icon C_SOURCE_ICON = new GIcon("icon.decompiler.action.provider");
 
@@ -78,6 +79,7 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 
 	private static final Icon TOGGLE_READ_ONLY_DISABLED_ICON =
 		new MultiIconBuilder(TOGGLE_READ_ONLY_ICON).addCenteredIcon(SLASH_ICON).build();
+	private static final Icon LOCK_DISPLAY_ICON = new GIcon("icon.decompiler.action.display.lock");
 
 	private DockingAction pcodeGraphAction;
 	private DockingAction astGraphAction;
@@ -102,11 +104,16 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 
 	private SwingUpdateManager redecompileUpdater;
 	private DecompilerProgramListener programListener;
-
+	private boolean lockDisplay;
 	// Follow-up work can be items that need to happen after a pending decompile is finished, such
 	// as updating highlights after a variable rename
 	private SwingUpdateManager followUpWorkUpdater;
 	private Queue<Callback> followUpWork = new ConcurrentLinkedQueue<>();
+	private OverlayMessagePainter overlayPainter = new OverlayMessagePainter();
+	private DockingAction refreshAction;
+
+	// only used by disconnected providers
+	private boolean allowOutgoingEvents = false;
 
 	private ServiceListener serviceListener = new ServiceListener() {
 
@@ -142,7 +149,14 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 		// TODO move the hl controller into the panel
 		highlightController = new LocationClangHighlightController();
 		decompilerPanel.setHighlightController(highlightController);
-		decorationPanel = new DecoratorPanel(decompilerPanel, isConnected);
+		decorationPanel = new DecoratorPanel(decompilerPanel, isConnected) {
+			@Override
+			public void paint(Graphics g) {
+				super.paint(g);
+				overlayPainter.paintOverlay(g, decompilerPanel.getViewContentBounds());
+			}
+
+		};
 
 		if (!isConnected) {
 			setTransient();
@@ -199,7 +213,7 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 	public void componentShown() {
 		if (program != null && currentLocation != null) {
 			ToolOptions fieldOptions = tool.getOptions(GhidraOptions.CATEGORY_BROWSER_FIELDS);
-			ToolOptions opt = tool.getOptions(OPTIONS_TITLE);
+			ToolOptions opt = tool.getOptions(DecompilePlugin.OPTIONS_TITLE);
 			decompilerOptions.grabFromToolAndProgram(fieldOptions, opt, program);
 			controller.setOptions(decompilerOptions);
 
@@ -313,7 +327,7 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 			return;
 		}
 		ToolOptions fieldOptions = tool.getOptions(GhidraOptions.CATEGORY_BROWSER_FIELDS);
-		ToolOptions opt = tool.getOptions(OPTIONS_TITLE);
+		ToolOptions opt = tool.getOptions(DecompilePlugin.OPTIONS_TITLE);
 
 		// Current values of toggle buttons
 		boolean decompilerEliminatesUnreachable = decompilerOptions.isEliminateUnreachable();
@@ -335,7 +349,28 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 		controller.setOptions(decompilerOptions);
 
 		if (currentLocation != null) {
-			controller.refreshDisplay(program, currentLocation, null);
+			if (lockDisplay) {
+				overlayPainter.setMessage(getOverlayRefreshMessage());
+			}
+			else {
+				controller.refreshDisplay(program, currentLocation, null);
+				overlayPainter.setMessage("");
+			}
+		}
+	}
+
+	private String getOverlayRefreshMessage() {
+		KeyStroke keyStroke = refreshAction.getKeyBinding();
+		if (keyStroke != null) {
+			String name = KeyBindingUtils.parseKeyStroke(keyStroke);
+			return name + " to refresh";
+		}
+		return "Refresh needed";
+	}
+
+	private void updateOverlayMessage() {
+		if (overlayPainter.isActive()) {
+			overlayPainter.setMessage(getOverlayRefreshMessage());
 		}
 	}
 
@@ -369,10 +404,12 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 			return;
 		}
 
-		if (options.getName().equals(OPTIONS_TITLE) ||
+		if (options.getName().equals(DecompilePlugin.OPTIONS_TITLE) ||
 			options.getName().equals(GhidraOptions.CATEGORY_BROWSER_FIELDS)) {
 			doRefresh(true);
 		}
+		updateOverlayMessage();
+
 	}
 
 //==================================================================================================
@@ -420,7 +457,7 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 		if (program != null) {
 			program.addListener(programListener);
 			ToolOptions fieldOptions = tool.getOptions(GhidraOptions.CATEGORY_BROWSER_FIELDS);
-			ToolOptions opt = tool.getOptions(OPTIONS_TITLE);
+			ToolOptions opt = tool.getOptions(DecompilePlugin.OPTIONS_TITLE);
 			decompilerOptions.grabFromToolAndProgram(fieldOptions, opt, program);
 		}
 
@@ -491,6 +528,7 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 	 */
 	void refresh() {
 		controller.refreshDisplay(program, currentLocation, null);
+		overlayPainter.setMessage("");
 	}
 
 	/**
@@ -725,11 +763,13 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 			ViewerPosition myViewPosition = controller.getDecompilerPanel().getViewerPosition();
 			newProvider.doSetProgram(program);
 
-			// Any change in the HighlightTokens should be delivered to the new panel
-			DecompilerPanel myPanel = getDecompilerPanel();
-			newProvider.setLocation(currentLocation, myPanel.getViewerPosition());
+			// initialize the new provider's cache and then set the location
+			DecompileData myDecompileData = controller.getDecompileData();
+			newProvider.controller.addToCache(myDecompileData);
+			newProvider.setLocation(currentLocation, myViewPosition);
 
 			// transfer any state after the new decompiler is initialized
+			DecompilerPanel myPanel = getDecompilerPanel();
 			DecompilerPanel newPanel = newProvider.getDecompilerPanel();
 			newProvider.doWhenNotBusy(() -> {
 				newPanel.setViewerPosition(myViewPosition);
@@ -753,21 +793,26 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 		Function function = controller.getDecompileData().getFunction();
 		String programName = (program != null) ? program.getDomainFile().getName() : "";
 		String title = "Decompiler";
+		String functionName = "No Function";
+		String tabText = "Decompiler";
 		String subTitle = "";
 		if (function != null) {
-			title = "Decompile: " + function.getName();
+			functionName = function.getName();
+			title = "Decompile: " + functionName;
 			subTitle = " (" + programName + ")";
 		}
 		if (!isConnected()) {
 			title = "[" + title + "]";
+			tabText = "[" + functionName + "]";
 		}
 		setTitle(title);
 		setSubTitle(subTitle);
+		setTabText(tabText);
 	}
 
 	private void initializeDecompilerOptions() {
 		ToolOptions fieldOptions = tool.getOptions(GhidraOptions.CATEGORY_BROWSER_FIELDS);
-		ToolOptions opt = tool.getOptions(OPTIONS_TITLE);
+		ToolOptions opt = tool.getOptions(DecompilePlugin.OPTIONS_TITLE);
 		HelpLocation helpLocation = new HelpLocation(HelpTopics.DECOMPILER, "GeneralOptions");
 		opt.setOptionsHelpLocation(helpLocation);
 		opt.getOptions("Analysis")
@@ -785,28 +830,35 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 	private void createActions(boolean isConnected) {
 		String owner = plugin.getName();
 
+		new ToggleActionBuilder("Lock Display", owner)
+				.toolBarIcon(LOCK_DISPLAY_ICON)
+				.description("Lock display for auto-updates, only update on manual refresh")
+				.helpLocation(new HelpLocation(HelpTopics.DECOMPILER, "LockDisplay"))
+				.selected(false)
+				.onAction(c -> toggleDisplayLock())
+				.buildAndInstallLocal(this);
+
+		if (!isConnected) {
+			new ToggleActionBuilder("Decompiler Outgoing Events", owner)
+					.toolBarIcon(Icons.NAVIGATE_ON_OUTGOING_EVENT_ICON)
+					.description("Send location and selection events")
+					.helpLocation(new HelpLocation(HelpTopics.DECOMPILER, "EventsOut"))
+					.selected(false)
+					.onAction(c -> toggleOutgoingEvents())
+					.buildAndInstallLocal(this);
+		}
+
 		SelectAllAction selectAllAction =
 			new SelectAllAction(owner, controller.getDecompilerPanel());
 
-		DockingAction refreshAction = new DockingAction("Refresh", owner) {
-			@Override
-			public void actionPerformed(ActionContext context) {
-				refresh();
-			}
-
-			@Override
-			public boolean isEnabledForContext(ActionContext context) {
-				DecompileData decompileData = controller.getDecompileData();
-				if (decompileData == null) {
-					return false;
-				}
-				return decompileData.hasDecompileResults();
-			}
-		};
-		refreshAction.setToolBarData(new ToolBarData(REFRESH_ICON, "A" /* first on toolbar */));
-		refreshAction.setDescription("Push at any time to trigger a re-decompile");
-		refreshAction
-				.setHelpLocation(new HelpLocation(HelpTopics.DECOMPILER, "ToolBarRedecompile")); // just use the default
+		refreshAction = new ActionBuilder("Refresh", owner)
+				.popupMenuPath("Refresh")
+				.popupMenuIcon(REFRESH_ICON)
+				.keyBinding("F5")
+				.helpLocation(new HelpLocation(HelpTopics.DECOMPILER, "ToolBarRedecompile"))
+				.description("Re-decompile and update the display")
+				.onAction(c -> refresh())
+				.buildAndInstallLocal(this);
 
 		displayUnreachableCodeToggle = new ToggleDockingAction("Toggle Unreachable Code", owner) {
 			@Override
@@ -946,6 +998,9 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 
 		RenameFieldAction renameFieldAction = new RenameFieldAction();
 		setGroupInfo(renameFieldAction, variableGroup, subGroupPosition++);
+
+		RenameBitFieldAction renameBitFieldAction = new RenameBitFieldAction();
+		setGroupInfo(renameBitFieldAction, variableGroup, subGroupPosition++);
 
 		ForceUnionAction forceUnionAction = new ForceUnionAction();
 		setGroupInfo(forceUnionAction, variableGroup, subGroupPosition++);
@@ -1112,6 +1167,8 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 		findReferencesToAddressAction.getPopupMenuData().setParentMenuGroup(referencesParentGroup);
 		addLocalAction(findReferencesToAddressAction);
 
+		setGroupInfo(refreshAction, "comment6", subGroupPosition++);
+
 		//
 		// Options
 		//
@@ -1129,6 +1186,7 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 		CloneDecompilerAction cloneDecompilerAction = new CloneDecompilerAction();
 		GoToNextBraceAction goToNextBraceAction = new GoToNextBraceAction();
 		GoToPreviousBraceAction goToPreviousBraceAction = new GoToPreviousBraceAction();
+		DisplayTypeCastsAction displayTypeCastsAction = new DisplayTypeCastsAction(plugin);
 
 		addLocalAction(refreshAction);
 		addLocalAction(displayUnreachableCodeToggle);
@@ -1144,6 +1202,7 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 		addLocalAction(renameLocalAction);
 		addLocalAction(renameGlobalAction);
 		addLocalAction(renameFieldAction);
+		addLocalAction(renameBitFieldAction);
 		addLocalAction(forceUnionAction);
 		addLocalAction(setSecondaryHighlightAction);
 		addLocalAction(setSecondaryHighlightColorChooserAction);
@@ -1178,6 +1237,7 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 		addLocalAction(renameLabelAction);
 		addLocalAction(removeLabelAction);
 		addLocalAction(debugFunctionAction);
+		addLocalAction(displayTypeCastsAction);
 		addLocalAction(convertAction);
 		addLocalAction(findAction);
 		addLocalAction(findReferencesAction);
@@ -1187,6 +1247,24 @@ public class DecompilerProvider extends NavigatableComponentProviderAdapter
 		addLocalAction(goToPreviousBraceAction);
 
 		graphServiceAdded();
+	}
+
+	private void toggleOutgoingEvents() {
+		allowOutgoingEvents = !allowOutgoingEvents;
+	}
+
+	boolean shouldSendEvents() {
+		if (isConnected()) {
+			return true;
+		}
+		return allowOutgoingEvents;
+	}
+
+	private void toggleDisplayLock() {
+		lockDisplay = !lockDisplay;
+		if (!lockDisplay) {
+			refresh();
+		}
 	}
 
 	/**

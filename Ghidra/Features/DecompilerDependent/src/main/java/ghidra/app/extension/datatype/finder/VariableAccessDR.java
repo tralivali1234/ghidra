@@ -18,8 +18,8 @@ package ghidra.app.extension.datatype.finder;
 import java.util.ArrayList;
 import java.util.List;
 
+import docking.widgets.search.SearchLocationContext;
 import ghidra.app.decompiler.*;
-import ghidra.app.plugin.core.navigation.locationreferences.LocationReferenceContext;
 import ghidra.app.services.DataTypeReference;
 import ghidra.app.services.FieldMatcher;
 import ghidra.program.model.address.Address;
@@ -64,7 +64,8 @@ public class VariableAccessDR extends DecompilerReference {
 		if (fields.isEmpty()) {
 			DecompilerVariable var = getMatch(dt, fieldMatcher, variable, null);
 			if (var != null) {
-				DataTypeReference ref = createReference(var);
+				String fieldName = null;
+				DataTypeReference ref = createReference(var, fieldName);
 				results.add(ref);
 			}
 			return;
@@ -87,17 +88,13 @@ public class VariableAccessDR extends DecompilerReference {
 			start = next;
 		}
 
-		//
-		// Handle the last variable by itself (for the case where we are matching just on the type,
-		// with no field name)
-		//
 		if (fieldMatcher.isIgnored()) {
 			return;
 		}
 
 		DecompilerVariable var = getMatch(dt, fieldMatcher, start, null);
 		if (var != null) {
-			DataTypeReference ref = createReference(var);
+			DataTypeReference ref = createReference(var, fieldMatcher.getFieldName());
 			results.add(ref);
 		}
 	}
@@ -237,27 +234,27 @@ public class VariableAccessDR extends DecompilerReference {
 		return matches;
 	}
 
-	protected DataTypeReference createReference(DecompilerVariable var) {
+	protected DataTypeReference createReference(DecompilerVariable var, String fieldName) {
 
 		DataType dataType = var.getDataType();
-		LocationReferenceContext context = getContext(var);
+		SearchLocationContext context = getContext(var);
 		Function function = var.getFunction();
 		Address address = getAddress(var);
-		return new DataTypeReference(dataType, null, function, address, context);
+		return new DataTypeReference(dataType, fieldName, function, address, context);
 	}
 
 	private DataTypeReference createReference(DecompilerVariable var, DecompilerVariable field) {
 		DataType dataType = var.getDataType();
-		LocationReferenceContext context = getContext(var);
+		SearchLocationContext context = getContext(var);
 		Function function = var.getFunction();
 		Address address = getAddress(var);
 		return new DataTypeReference(dataType, field.getName(), function, address, context);
 	}
 
 	@Override
-	protected LocationReferenceContext getContext(DecompilerVariable var) {
+	protected SearchLocationContext getContext(DecompilerVariable var) {
 		DecompilerVariable field = findFieldFor(var);
-		LocationReferenceContext context = super.getContext(field);
+		SearchLocationContext context = super.getContext(field);
 		return context;
 	}
 

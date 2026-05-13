@@ -102,6 +102,7 @@ data/typeinfo/golang/go1.22.0.json||GHIDRA||||END|
 data/typeinfo/golang/go1.23.0.json||GHIDRA||||END|
 data/typeinfo/golang/go1.24.0.json||GHIDRA||||END|
 data/typeinfo/golang/go1.25.0.json||GHIDRA||||END|
+data/typeinfo/golang/go1.26.0.json||GHIDRA||||END|
 data/typeinfo/golang/golang_1.15_anybit_any.gdt||GHIDRA||||END|
 data/typeinfo/golang/golang_1.16_anybit_any.gdt||GHIDRA||||END|
 data/typeinfo/golang/golang_1.17_anybit_any.gdt||GHIDRA||||END|
@@ -279,6 +280,8 @@ src/main/help/help/topics/CParserPlugin/images/UseOpenArchives.png||GHIDRA||||EN
 src/main/help/help/topics/CallTreePlugin/Call_Tree_Plugin.html||GHIDRA||||END|
 src/main/help/help/topics/CallTreePlugin/images/CallTreeWindow.png||GHIDRA||||END|
 src/main/help/help/topics/CallTreePlugin/images/depth-input.png||GHIDRA||reviewed||END|
+src/main/help/help/topics/Charsets/Charsets.htm||GHIDRA||||END|
+src/main/help/help/topics/Charsets/images/CharsetPickerDialog.png||GHIDRA||||END|
 src/main/help/help/topics/ClearPlugin/Clear.htm||GHIDRA||||END|
 src/main/help/help/topics/ClearPlugin/images/ClearFlow.png||GHIDRA||||END|
 src/main/help/help/topics/ClearPlugin/images/ClearWithOptions.png||GHIDRA||||END|
@@ -348,14 +351,18 @@ src/main/help/help/topics/DataTypeManagerPlugin/data_type_manager_description.ht
 src/main/help/help/topics/DataTypeManagerPlugin/data_type_manager_window.html||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/CommitDialog.png||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/DataTypeManager.png||GHIDRA||||END|
+src/main/help/help/topics/DataTypeManagerPlugin/images/DataTypeTreeWithAssociations.png||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/DisassociateDialog.png||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/EditPaths.png||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/FavoriteDts.png||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/FindDataTypes.png||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/FindDataTypesBySize.png||GHIDRA||||END|
+src/main/help/help/topics/DataTypeManagerPlugin/images/MergeConfirmationDialog.png||GHIDRA||||END|
+src/main/help/help/topics/DataTypeManagerPlugin/images/MergeErrorDialog.png||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/PreviewWindow.png||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/RevertDialog.png||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/SearchResults.png||GHIDRA||||END|
+src/main/help/help/topics/DataTypeManagerPlugin/images/StructureMergeDialog.png||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/UpdateDialog.png||GHIDRA||||END|
 src/main/help/help/topics/DataTypeManagerPlugin/images/lockoverlay.png||Nuvola Icons - LGPL 2.1|||Nuvola icon set|END|
 src/main/help/help/topics/DataTypePreviewPlugin/DataTypePreviewPlugin.html||GHIDRA||||END|
@@ -365,6 +372,8 @@ src/main/help/help/topics/DataWindowPlugin/images/DataWindow.png||GHIDRA||||END|
 src/main/help/help/topics/DataWindowPlugin/images/DataWindowFilter.png||GHIDRA||||END|
 src/main/help/help/topics/DbViewerPlugin/DbViewer.htm||GHIDRA||||END|
 src/main/help/help/topics/DbViewerPlugin/images/DatabaseViewer.png||GHIDRA||||END|
+src/main/help/help/topics/DefinedStringsPlugin/DefinedStringsPlugin.htm||GHIDRA||||END|
+src/main/help/help/topics/DefinedStringsPlugin/images/Defined_String_Table.png||GHIDRA||||END|
 src/main/help/help/topics/DisassembledViewPlugin/DisassembledViewPlugin.htm||GHIDRA||||END|
 src/main/help/help/topics/DisassembledViewPlugin/images/DisassembledViewPluginMain.png||GHIDRA||||END|
 src/main/help/help/topics/DisassemblerPlugin/Disassembly.htm||GHIDRA||||END|
@@ -695,9 +704,9 @@ src/main/help/help/topics/Search/images/SearchMemoryRegex.png||GHIDRA||||END|
 src/main/help/help/topics/Search/images/SearchText.png||GHIDRA||||END|
 src/main/help/help/topics/Search/images/StringSearchDialog.png||GHIDRA||||END|
 src/main/help/help/topics/Search/images/StringSearchResults.png||GHIDRA||||END|
-src/main/help/help/topics/SelectBlockPlugin/Select_Block_Help.html||GHIDRA||||END|
-src/main/help/help/topics/SelectBlockPlugin/images/Dialog.png||GHIDRA||||END|
-src/main/help/help/topics/SelectBlockPlugin/images/ToBadAddr.png||GHIDRA||||END|
+src/main/help/help/topics/SelectBytesPlugin/Select_Bytes_Help.html||GHIDRA||||END|
+src/main/help/help/topics/SelectBytesPlugin/images/Dialog.png||GHIDRA||||END|
+src/main/help/help/topics/SelectBytesPlugin/images/ToBadAddr.png||GHIDRA||||END|
 src/main/help/help/topics/Selection/Selecting.htm||GHIDRA||||END|
 src/main/help/help/topics/SetHighlightPlugin/Highlighting.htm||GHIDRA||||END|
 src/main/help/help/topics/ShowInstructionInfoPlugin/ShowInstructionInfo.htm||GHIDRA||||END|
@@ -758,8 +767,6 @@ src/main/help/help/topics/VersionControl/images/UndoHijack.png||GHIDRA||||END|
 src/main/help/help/topics/VersionControl/images/VersionHistory.png||GHIDRA||||END|
 src/main/help/help/topics/VersionControl/images/ViewCheckouts.png||GHIDRA||||END|
 src/main/help/help/topics/VersionControl/project_repository.htm||GHIDRA||||END|
-src/main/help/help/topics/ViewStringsPlugin/ViewStringsPlugin.htm||GHIDRA||||END|
-src/main/help/help/topics/ViewStringsPlugin/images/Defined_String_Table.png||GHIDRA||||END|
 src/main/java/ghidra/app/cmd/comments/package.html||GHIDRA||reviewed||END|
 src/main/java/ghidra/app/cmd/data/package.html||GHIDRA||||END|
 src/main/java/ghidra/app/cmd/disassemble/package.html||GHIDRA||||END|
@@ -823,6 +830,7 @@ src/main/resources/defaultTools/images/tar.png||Nuvola Icons - LGPL 2.1|||Nuvola
 src/main/resources/defaultTools/images/tools.png||Oxygen Icons - LGPL 3.0|||originally configure.png from tango|END|
 src/main/resources/defaultTools/images/video-x-generic.png||Tango Icons - Public Domain|||tango|END|
 src/main/resources/defaultTools/images/viewedCode.gif||GHIDRA||||END|
+src/main/resources/ghidra/app/plugin/core/analysis/rust/demangler/early-recursion-limit.txt||Apache License 2.0||||END|
 src/main/resources/ghidra/app/plugin/core/totd/tips.txt||GHIDRA||||END|
 src/main/resources/help/Dummy_HelpSet.hs||GHIDRA||reviewed||END|
 src/main/resources/help/empty.htm||GHIDRA||||END|
@@ -973,7 +981,6 @@ src/main/resources/images/hoverOff.gif||GHIDRA||||END|
 src/main/resources/images/hoverOn.gif||GHIDRA||||END|
 src/main/resources/images/icon_link.gif||FAMFAMFAM Mini Icons - Public Domain|||famfamfam mini icon set|END|
 src/main/resources/images/imported_bookmark.gif||GHIDRA||||END|
-src/main/resources/images/katomic.png||Nuvola Icons - LGPL 2.1|||Nuvola icon set|END|
 src/main/resources/images/key.png||FAMFAMFAM Icons - CC 2.5|||silk|END|
 src/main/resources/images/kmessedwords.png||Nuvola Icons - LGPL 2.1||||END|
 src/main/resources/images/label.png||GHIDRA||||END|
@@ -1054,7 +1061,6 @@ src/main/resources/images/small_minus.png||GHIDRA||||END|
 src/main/resources/images/small_plus.png||GHIDRA||||END|
 src/main/resources/images/stopNode.png||FAMFAMFAM Icons - CC 2.5|||famfamfam silk icon set|END|
 src/main/resources/images/sync_enabled.png||GHIDRA||||END|
-src/main/resources/images/table_delete.png||FAMFAMFAM Icons - CC 2.5|||famfamfam silk icon set|END|
 src/main/resources/images/table_go.png||FAMFAMFAM Icons - CC 2.5|||famfamfam silk icon set|END|
 src/main/resources/images/table_row_delete.png||FAMFAMFAM Icons - CC 2.5|||silk|END|
 src/main/resources/images/tag_blue.png||FAMFAMFAM Icons - CC 2.5|||famfamfam silk icon set|END|

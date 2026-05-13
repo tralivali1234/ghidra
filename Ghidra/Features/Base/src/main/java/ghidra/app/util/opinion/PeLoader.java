@@ -193,8 +193,10 @@ public class PeLoader extends AbstractPeDebugLoader {
 		List<Option> list = super.getDefaultOptions(provider, loadSpec, domainObject,
 			loadIntoProgram, mirrorFsLayout);
 		if (!loadIntoProgram) {
-			list.add(new Option(PARSE_CLI_HEADERS_OPTION_NAME, PARSE_CLI_HEADERS_OPTION_DEFAULT,
-				Boolean.class, Loader.COMMAND_LINE_ARG_PREFIX + "-parseCliHeaders"));
+			list.add(Option.newBoolean(PARSE_CLI_HEADERS_OPTION_NAME)
+					.value(PARSE_CLI_HEADERS_OPTION_DEFAULT)
+					.commandLineArgument(createArg("-parseCliHeaders"))
+					.build());
 		}
 		return list;
 	}
@@ -553,7 +555,7 @@ public class PeLoader extends AbstractPeDebugLoader {
 		long forwardedCount = Arrays.stream(exports).filter(ExportInfo::isForwarded).count();
 		if (forwardedCount > 0) {
 			try {
-				extAddr = AbstractProgramLoader.addExternalBlock(program,
+				extAddr = MemoryBlockUtils.addExternalBlock(program,
 					forwardedCount * program.getDefaultPointerSize(), log);
 			}
 			catch (Exception e) {
@@ -1160,8 +1162,8 @@ public class PeLoader extends AbstractPeDebugLoader {
 
 			SectionHeader dataSection = pe.getNTHeader().getFileHeader().getSectionHeader(".data");
 			if (dataSection != null) {
-				try (InputStream is = dataSection.getDataStream()) {
-					buildInfoPresent = GoBuildInfo.isPresent(is);
+				try (ByteProvider bp = dataSection.getDataByteProvider()) {
+					buildInfoPresent = GoBuildInfo.findGoBuildInfoOffset(bp, 512) != -1;
 				}
 				catch (IOException e) {
 					// fail

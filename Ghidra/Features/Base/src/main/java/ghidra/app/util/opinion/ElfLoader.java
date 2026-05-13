@@ -20,8 +20,10 @@ import java.util.*;
 
 import ghidra.app.util.Option;
 import ghidra.app.util.bin.ByteProvider;
-import ghidra.app.util.bin.format.elf.ElfException;
-import ghidra.app.util.bin.format.elf.ElfHeader;
+import ghidra.app.util.bin.format.elf.*;
+import ghidra.app.util.bin.format.golang.GoConstants;
+import ghidra.app.util.bin.format.golang.rtti.GoRttiMapper;
+import ghidra.app.util.bin.format.swift.SwiftUtils;
 import ghidra.framework.model.DomainObject;
 import ghidra.framework.model.ProjectData;
 import ghidra.framework.options.Options;
@@ -57,6 +59,22 @@ public class ElfLoader extends AbstractLibrarySupportLoader {
 		Options props = program.getOptions(Program.PROGRAM_INFO);
 		String oibStr = props.getString(ElfLoader.ELF_ORIGINAL_IMAGE_BASE_PROPERTY, null);
 		return (oibStr != null) ? NumericUtilities.parseHexLong(oibStr) : null;
+	}
+
+	/**
+	 * {@return true if the specified program was loaded via the ELF loader}
+	 * @param program {@link Program}
+	 */
+	public static boolean isElf(Program program) {
+		return isElf(program.getExecutableFormat());
+	}
+
+	/**
+	 * {@return true if the specified executable format string matches the ELF loader}
+	 * @param executableFormatString executable format string retrieved from a program's properties
+	 */
+	public static boolean isElf(String executableFormatString) {
+		return executableFormatString != null && ELF_NAME.equals(executableFormatString);
 	}
 
 	public ElfLoader() {
@@ -102,8 +120,13 @@ public class ElfLoader extends AbstractLibrarySupportLoader {
 		try {
 			ElfHeader elf = new ElfHeader(provider, null);
 
-			List<QueryResult> results =
-				QueryOpinionService.query(getName(), elf.getMachineName(), elf.getFlags());
+			Set<QueryResult> results = new HashSet<>();
+			String machine = elf.getMachineName();
+			String compiler = detectCompilerName(elf);
+			if (compiler != null) {
+				results.addAll(QueryOpinionService.query(getName(), machine, compiler));
+			}
+			results.addAll(QueryOpinionService.query(getName(), machine, elf.getFlags()));
 			for (QueryResult result : results) {
 				boolean add = true;
 				// Some languages are defined with sizes smaller than 32
@@ -169,5 +192,26 @@ public class ElfLoader extends AbstractLibrarySupportLoader {
 	@Override
 	public String getName() {
 		return ELF_NAME;
+	}
+
+	/**
+	 * Attempts to detect a more specific compiler from the ELF
+	 * 
+	 * @param elf The {@link ElfHeader}
+	 * @return The detected compiler name, or {@code null} if one couldn't be detected
+	 * @throws IOException if an IO-related error occurred
+	 */
+	private String detectCompilerName(ElfHeader elf) throws IOException {
+		elf.parseSectionHeaders();
+		List<String> sectionNames = Arrays.stream(elf.getSections())
+				.map(ElfSectionHeader::getNameAsString)
+				.toList();
+		if (SwiftUtils.isSwift(sectionNames)) {
+			return SwiftUtils.SWIFT_COMPILER;
+		}
+		if (GoRttiMapper.hasGolangSections(sectionNames)) {
+			return GoConstants.GOLANG_CSPEC_NAME;
+		}
+		return null;
 	}
 }

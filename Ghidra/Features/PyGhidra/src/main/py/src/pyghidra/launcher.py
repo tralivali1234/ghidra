@@ -29,7 +29,7 @@ import tempfile
 import threading
 from importlib.machinery import ModuleSpec
 from pathlib import Path
-from typing import List, NoReturn, Tuple, Union
+from typing import Generator, List, NoReturn, Tuple, Union
 
 import jpype
 from jpype import imports, _jpype
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 
 @contextlib.contextmanager
-def _silence_java_output(stdout=True, stderr=True):
+def _silence_java_output(stdout=True, stderr=True) -> Generator[None, None, None]:
     from java.io import OutputStream, PrintStream # type:ignore @UnresolvedImport
     from java.lang import System # type:ignore @UnresolvedImport
     out = System.out
@@ -314,7 +314,18 @@ class PyGhidraLauncher:
                 launch_support = self.install_dir / "support" / "LaunchSupport.jar"
             if not launch_support.exists():
                 raise ValueError(f"{launch_support} does not exist")
-            cmd = f'java -cp "{launch_support}" LaunchSupport "{self.install_dir}" -jdk_home -save'
+
+            # Check to see if java is on the PATH. If not, use JAVA_HOME.
+            # NOTE: shutils.which() is not enough...macOS puts a stub java on the PATH which
+            # will prevent that from working as expected, so you have to actually run it.
+            java_cmd = 'java'
+            if not shutil.which(java_cmd) or subprocess.run([java_cmd, "-version"], stderr=subprocess.DEVNULL).returncode != 0:
+                java_home_dir = os.environ.get('JAVA_HOME')
+                if java_home_dir and os.path.isdir(java_home_dir):
+                    java_cmd = java_home_dir + "/bin/java"
+                else:
+                    raise ValueError("Java was not found in PATH or JAVA_HOME...cannot run LaunchSupport")
+            cmd = f'"{java_cmd}" -cp "{launch_support}" LaunchSupport "{self.install_dir}" -jdk_home -save'
             home = subprocess.check_output(cmd, encoding="utf-8", shell=True)
             self._java_home = Path(home.rstrip())
         return self._java_home
@@ -396,7 +407,8 @@ class PyGhidraLauncher:
         Checks if the currently installed Ghidra version is supported.
         The launcher will report the problem and terminate if it is not supported.
         """
-        if Version(self.app_info.version) < Version(MINIMUM_GHIDRA_VERSION):
+        base_version = self.app_info.version.split('-')[0] # remove things like "-BETA"
+        if Version(base_version) < Version(MINIMUM_GHIDRA_VERSION):
             msg = f"Ghidra version {self.app_info.version} is not supported" + os.linesep + \
                   f"The minimum required version is {MINIMUM_GHIDRA_VERSION}"
             self._report_fatal_error("Unsupported Version", msg, ValueError(msg))
@@ -744,7 +756,7 @@ def _run_mac_app():
         return res
 
     CFRunLoopTimerCallback = CFUNCTYPE(None, c_void_p, c_void_p)
-    kCFRunLoopDefaultMode = c_void_p.in_dll(CoreFoundation, "kCFRunLoopDefaultMode")
+    kCFRunLoopDefaultMode = c_void_p.in_dll(CoreFoundation, "kCFRunLoopDefaultMode")  # @UndefinedVariable
     kCFRunLoopRunFinished = c_int32(1)
     NULL = c_void_p(0)
     INF_TIME = c_double(1.0e20)

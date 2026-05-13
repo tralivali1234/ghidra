@@ -32,9 +32,9 @@ import ghidra.pcode.emu.PcodeEmulator;
 import ghidra.pcode.emu.PcodeThread;
 import ghidra.pcode.exec.*;
 import ghidra.pcode.exec.PcodeExecutorStatePiece.Reason;
+import ghidra.pcode.exec.trace.TraceEmulationIntegration.TraceWriter;
 import ghidra.pcode.exec.trace.TraceEmulationIntegration.Writer;
-import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressRangeImpl;
+import ghidra.program.model.address.*;
 import ghidra.program.model.lang.*;
 import ghidra.trace.database.ToyDBTraceBuilder;
 import ghidra.trace.database.context.DBTraceRegisterContextManager;
@@ -53,6 +53,74 @@ public class BytesTracePcodeEmulatorTest extends AbstractTracePcodeEmulatorTest 
 
 	PcodeEmulator createEmulator(TracePlatform platform, Writer writer) {
 		return new PcodeEmulator(platform.getLanguage(), writer.callbacks());
+	}
+
+	@Test
+	public void testSetVarSize0() throws Throwable {
+		try (ToyDBTraceBuilder tb = new ToyDBTraceBuilder("Test", "x86:LE:64:default")) {
+			initTrace(tb, """
+					RIP = 0x00400000;
+					""",
+				List.of());
+
+			Writer writer = createWriter(tb.host, 0);
+			PcodeEmulator emu = createEmulator(tb.host, writer);
+
+			emu.getSharedState().setVar(tb.addr(0x00400000), 0, false, tb.arr());
+			TraceWriter tw = (TraceWriter) writer;
+			assertEquals(tb.set(), tw.memWritten);
+		}
+	}
+
+	@Test
+	public void testGetVarSize0Uninit() throws Throwable {
+		try (ToyDBTraceBuilder tb = new ToyDBTraceBuilder("Test", "x86:LE:64:default")) {
+			initTrace(tb, """
+					RIP = 0x00400000;
+					""",
+				List.of());
+
+			Writer writer = createWriter(tb.host, 0);
+			PcodeEmulator emu = createEmulator(tb.host, writer);
+			PcodeExecutorState<byte[]> state = emu.getSharedState();
+			Address addr = tb.addr(0x00400000);
+
+			byte[] result = state.getVar(addr, 0, false, Reason.EXECUTE_READ);
+			assertArrayEquals(new byte[0], result);
+
+			assertNull(state.getNextEntryInternal(addr.getAddressSpace(), 0));
+		}
+	}
+
+	@Test
+	public void testGetVarSize0Init() throws Throwable {
+		try (ToyDBTraceBuilder tb = new ToyDBTraceBuilder("Test", "x86:LE:64:default")) {
+			// Put some known data in a place likely to show in erroneous "uninitialized" set
+			initTrace(tb, """
+					RIP = 0x00400000;
+					*:8 RIP = 0xdeadbeefcafeface;
+					""",
+				List.of());
+
+			Writer writer = createWriter(tb.host, 0);
+			PcodeEmulator emu = createEmulator(tb.host, writer);
+			PcodeExecutorState<byte[]> state = emu.getSharedState();
+			Address addr = tb.addr(0x00400000);
+			state.setVar(addr, 4, false, tb.arr(1, 2, 3, 4));
+
+			var entry = state.getNextEntryInternal(addr.getAddressSpace(), 0);
+			assertEquals(0x00400000L, entry.getKey().longValue());
+			assertArrayEquals(tb.arr(1, 2, 3, 4), entry.getValue());
+			assertNull(state.getNextEntryInternal(addr.getAddressSpace(), 0x00400004));
+
+			byte[] result = state.getVar(addr, 0, false, Reason.EXECUTE_READ);
+			assertArrayEquals(tb.arr(), result);
+
+			entry = state.getNextEntryInternal(addr.getAddressSpace(), 0);
+			assertEquals(0x00400000L, entry.getKey().longValue());
+			assertArrayEquals(tb.arr(1, 2, 3, 4), entry.getValue());
+			assertNull(state.getNextEntryInternal(addr.getAddressSpace(), 0x00400004));
+		}
 	}
 
 	/**
@@ -310,6 +378,39 @@ public class BytesTracePcodeEmulatorTest extends AbstractTracePcodeEmulatorTest 
 				TraceSleighUtils.evaluate("r0", tb.trace, 1, thread, 0));
 			assertEquals(BigInteger.valueOf(861),
 				TraceSleighUtils.evaluate("r1", tb.trace, 1, thread, 0));
+		}
+	}
+
+	/**
+	 * This tests the inst_next2 symbol
+	 */
+	@Test
+	public void testSK() throws Throwable {
+		try (ToyDBTraceBuilder tb = new ToyDBTraceBuilder("Test", "Toy:BE:64:default")) {
+			TraceThread thread = initTrace(tb, """
+					pc = 0x00400000;
+					sp = 0x00110000;
+					""",
+				List.of(
+					"imm r0, #123", // decimal
+					"sk",
+					"imm r0, #911" // decimal
+				));
+
+			Writer writer = createWriter(tb.host, 0);
+			PcodeEmulator emu = createEmulator(tb.host, writer);
+			PcodeThread<byte[]> emuThread = emu.newThread(thread.getPath());
+			emuThread.stepInstruction(); // imm 123
+			emuThread.stepInstruction(); // sk
+
+			try (Transaction tx = tb.startTransaction()) {
+				writer.writeDown(1);
+			}
+
+			assertEquals(BigInteger.valueOf(0x00400006),
+				TraceSleighUtils.evaluate("pc", tb.trace, 1, thread, 0));
+			assertEquals(BigInteger.valueOf(123),
+				TraceSleighUtils.evaluate("r0", tb.trace, 1, thread, 0));
 		}
 	}
 
@@ -1054,6 +1155,29 @@ public class BytesTracePcodeEmulatorTest extends AbstractTracePcodeEmulatorTest 
 				TraceSleighUtils.evaluate("r1", tb.trace, 1, thread, 0));
 			assertEquals(BigInteger.valueOf(0xbeef), // r2 Affected
 				TraceSleighUtils.evaluate("r2", tb.trace, 1, thread, 0));
+		}
+	}
+
+	@Test
+	public void testReadUninit() throws Throwable {
+		try (ToyDBTraceBuilder tb = new ToyDBTraceBuilder("Test", "Toy:BE:64:default")) {
+			initTrace(tb, """
+					r0 = 0x00600000;
+					*:8 r0 = 0x1122334455667788;
+					""",
+				List.of());
+
+			Writer writer = createWriter(tb.host, 0);
+			PcodeEmulator emu = createEmulator(tb.host, writer);
+
+			AddressSpace space = emu.getLanguage().getDefaultDataSpace();
+
+			// Cause a gap in "known-but-uninitialized"
+			assertArrayEquals(bytes(0x33, 0x44, 0x55, 0x66),
+				emu.getSharedState().getVar(space, 0x00600002, 4, false, Reason.EXECUTE_READ));
+			// Now validate the read across that gap
+			assertArrayEquals(bytes(0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88),
+				emu.getSharedState().getVar(space, 0x00600000, 8, false, Reason.EXECUTE_READ));
 		}
 	}
 }

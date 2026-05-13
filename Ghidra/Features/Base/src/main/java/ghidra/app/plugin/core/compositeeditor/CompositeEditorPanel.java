@@ -247,6 +247,7 @@ public abstract class CompositeEditorPanel<T extends Composite, M extends Compos
 		}
 
 		table.getSelectionModel().setSelectionInterval(row, row);
+		showSelectedRow();
 	}
 
 	private int findRowForFieldName(String fieldName) {
@@ -578,7 +579,6 @@ public abstract class CompositeEditorPanel<T extends Composite, M extends Compos
 			}
 
 			model.setSelection(table.getSelectedRows());
-			showSelectedRow();
 		});
 
 		table.getColumnModel().getSelectionModel().addListSelectionListener(e -> {
@@ -1145,8 +1145,8 @@ public abstract class CompositeEditorPanel<T extends Composite, M extends Compos
 		@Override
 		public boolean stopCellEditing() {
 			try {
-				model.validateComponentName(table.getEditingRow(),
-					((JTextComponent) getComponent()).getText());
+				String newName = ((JTextComponent) getComponent()).getText();
+				model.validateComponentName(table.getEditingRow(), newName);
 				fireEditingStopped();
 				return true;
 			}

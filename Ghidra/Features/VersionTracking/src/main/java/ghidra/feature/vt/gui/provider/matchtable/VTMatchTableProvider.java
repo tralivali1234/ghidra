@@ -767,7 +767,9 @@ public class VTMatchTableProvider extends ComponentProviderAdapter
 				"should become ignored by applying a match.");
 
 		vtOptions.registerOption(USE_NAMESPACE_FUNCTIONS, DEFAULT_OPTION_FOR_NAMESPACE_FUNCTIONS,
-			null, "Apply the non-Global source namespace to the destination function.");
+			null, USE_NAMESPACE_TOOLTIP);
+		vtOptions.registerOption(USE_EMPTY_COMPOSITES, DEFAULT_OPTION_FOR_USE_EMPTY_STRUCTURES,
+			null, USE_EMPTY_COMPOSITES_TOOLTIP);
 
 		vtOptions.getOptions(APPLY_MARKUP_OPTIONS_NAME)
 				.registerOptionsEditor(() -> new ApplyMarkupPropertyEditor(controller));

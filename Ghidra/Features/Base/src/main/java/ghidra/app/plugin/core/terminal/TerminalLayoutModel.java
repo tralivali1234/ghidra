@@ -55,6 +55,9 @@ public class TerminalLayoutModel implements LayoutModel, VtHandler {
 
 	protected final CharsetDecoder decoder;
 
+	// For "repeat char"
+	protected byte lastChar;
+
 	// States for handling VT-style charsets
 	protected final Map<VtCharset.G, VtCharset> vtCharsets = new HashMap<>();
 	protected VtCharset.G curVtCharsetG = VtCharset.G.G0;
@@ -91,6 +94,7 @@ public class TerminalLayoutModel implements LayoutModel, VtHandler {
 	// Flags for what's been enabled
 	protected boolean showCursor;
 	protected boolean bracketedPaste;
+	protected boolean win32InputMode; // not implemented
 	protected boolean reportMousePress;
 	protected boolean reportMouseRelease;
 	protected boolean reportFocus;
@@ -136,6 +140,7 @@ public class TerminalLayoutModel implements LayoutModel, VtHandler {
 		buffer = bufPrimary;
 
 		bracketedPaste = false;
+		win32InputMode = false;
 		reportMousePress = false;
 		reportMouseRelease = false;
 		reportFocus = false;
@@ -265,9 +270,7 @@ public class TerminalLayoutModel implements LayoutModel, VtHandler {
 		return NumericUtilities.convertBytesToString(data, ":");
 	}
 
-	@Override
-	public void handleChar(byte b) throws Exception {
-		bb.put(b);
+	protected void doHandleCharBytes() {
 		bb.flip();
 		CoderResult result = decoder.decode(bb, cb, false);
 		if (result.isError()) {
@@ -293,6 +296,13 @@ public class TerminalLayoutModel implements LayoutModel, VtHandler {
 	}
 
 	@Override
+	public void handleChar(byte b) throws Exception {
+		bb.put(b);
+		lastChar = b;
+		doHandleCharBytes();
+	}
+
+	@Override
 	public void handleBell() {
 		DockingWindowManager.beep();
 	}
@@ -312,6 +322,28 @@ public class TerminalLayoutModel implements LayoutModel, VtHandler {
 		for (int i = 0; i < n; i++) {
 			buffer.tabBack();
 		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * <p>
+	 * It's unclear exactly what is repeated. Some documentation, including
+	 * http://rheuh.free.fr/docpack/C/ansi/ansi.html says Repeat Character or Control. Here, I only
+	 * handle characters. I tried repeating a Cursor Up control. I also tried repeating a new line.
+	 * Neither did what I expected when tested against the reference. That said, those control also
+	 * seemed to "forget" what the last character was. Nothing was repeated at all. I'll assume that
+	 * is undefined behavior. I'll not worry about "forgetting," as I'll assume the character to
+	 * repeat will always immediately precede this CSI.
+	 */
+	@Override
+	public void handleRepeatChar(int n) {
+		if (lastChar == 0) {
+			return;
+		}
+		for (int i = 0; i < n; i++) {
+			bb.put(lastChar);
+		}
+		doHandleCharBytes();
 	}
 
 	@Override
@@ -466,6 +498,11 @@ public class TerminalLayoutModel implements LayoutModel, VtHandler {
 	@Override
 	public void handleBracketedPasteMode(boolean en) {
 		this.bracketedPaste = en;
+	}
+	
+	@Override
+	public void handleWin32InputMode(boolean en) {
+		this.win32InputMode = en;
 	}
 
 	@Override

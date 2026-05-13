@@ -95,7 +95,7 @@ public abstract class AbstractVTMarkupItemTest extends AbstractGhidraHeadedInteg
 		builder.createFunction(entry);
 	}
 
-	private void createData(ProgramBuilder builder) throws Exception {
+	protected void createData(ProgramBuilder builder) throws Exception {
 		// "LoadCursorW", 00
 		builder.setBytes("0x010074e6", "4c 6f 61 64 43 75 72 73 6f 72 57 00");
 	}
@@ -339,7 +339,7 @@ public abstract class AbstractVTMarkupItemTest extends AbstractGhidraHeadedInteg
 		// verify we cannot unapply before we have applied
 		//
 		List<VTMarkupItem> markupItems = new ArrayList<>();
-		Address destinationAddress = addr();
+		Address destinationAddress = addr(session.getDestinationProgram());
 		markupItem.setDefaultDestinationAddress(destinationAddress, TEST_ADDRESS_SOURCE);
 		markupItems.add(markupItem);
 

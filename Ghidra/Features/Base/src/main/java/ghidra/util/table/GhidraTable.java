@@ -258,11 +258,16 @@ public class GhidraTable extends GTable {
 
 		int modelRow = getModelRow(row);
 		ProgramLocation loc = programModel.getProgramLocation(modelRow, modelColumn);
-		if (loc != null && loc.getAddress().isExternalAddress()) {
+		if (loc == null) {
+			return;
+		}
+
+		if (loc.getAddress().isExternalAddress()) {
 			goToService.goTo(loc.getAddress(), programModel.getProgram());
 			return;
 		}
-		Program program = programModel.getProgram();
+
+		Program program = loc.getProgram();
 		goToService.goTo(navigatable, loc, program);
 	}
 
@@ -281,6 +286,8 @@ public class GhidraTable extends GTable {
 	 * <p>
 	 * This method differs from {@link #navigate(int, int)} in that this method will not navigate if
 	 * {@link #navigateOnSelection} is <code>false</code>.
+	 * @param row the row
+	 * @param column the column
 	 */
 	protected void navigateOnCurrentSelection(int row, int column) {
 		if (!navigateOnSelection) {

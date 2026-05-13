@@ -27,7 +27,6 @@ import ghidra.program.model.address.*;
 import ghidra.program.model.lang.*;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.Memory;
-import ghidra.util.Msg;
 import ghidra.util.NumericUtilities;
 import ghidra.util.exception.CancelledException;
 
@@ -94,12 +93,7 @@ public class BinaryLoader extends AbstractProgramLoader {
 		long fileOffset = 0;
 		long origFileLength;
 		boolean isOverlay = false;
-		try {
-			origFileLength = provider.length();
-		}
-		catch (IOException e) {
-			return "Error determining length: " + e.getMessage();
-		}
+		origFileLength = provider.length();
 
 		for (Option option : options) {
 			String optName = option.getName();
@@ -352,13 +346,7 @@ public class BinaryLoader extends AbstractProgramLoader {
 	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec,
 			DomainObject domainObject, boolean loadIntoProgram, boolean mirrorFsLayout) {
 		long fileOffset = 0;
-		long origFileLength = -1;
-		try {
-			origFileLength = provider.length();
-		}
-		catch (IOException e) {
-			Msg.warn(this, "Error determining length", e);
-		}
+		long origFileLength = provider.length();
 		long length = origFileLength;
 		boolean isOverlay = false;
 		String blockName = "";
@@ -381,19 +369,29 @@ public class BinaryLoader extends AbstractProgramLoader {
 		List<Option> list = new ArrayList<Option>();
 
 		if (loadIntoProgram) {
-			list.add(new Option(OPTION_NAME_IS_OVERLAY, isOverlay));
+			list.add(Option.newBoolean(OPTION_NAME_IS_OVERLAY)
+					.value(isOverlay)
+					.build());
 		}
 		else {
 			isOverlay = false;
 		}
-		list.add(new Option(OPTION_NAME_BLOCK_NAME, blockName, String.class,
-			Loader.COMMAND_LINE_ARG_PREFIX + "-blockName"));
-		list.add(new Option(OPTION_NAME_BASE_ADDR, baseAddr, Address.class,
-			Loader.COMMAND_LINE_ARG_PREFIX + "-baseAddr"));
-		list.add(new Option(OPTION_NAME_FILE_OFFSET, new HexLong(fileOffset), HexLong.class,
-			Loader.COMMAND_LINE_ARG_PREFIX + "-fileOffset"));
-		list.add(new Option(OPTION_NAME_LEN, new HexLong(length), HexLong.class,
-			Loader.COMMAND_LINE_ARG_PREFIX + "-length"));
+		list.add(Option.newString(OPTION_NAME_BLOCK_NAME)
+				.value(blockName)
+				.commandLineArgument(createArg("-blockName"))
+				.build());
+		list.add(Option.newAddress(OPTION_NAME_BASE_ADDR)
+				.value(baseAddr)
+				.commandLineArgument(createArg("-baseAddr"))
+				.build());
+		list.add(Option.newHexLong(OPTION_NAME_FILE_OFFSET)
+				.value(new HexLong(fileOffset))
+				.commandLineArgument(createArg("-fileOffset"))
+				.build());
+		list.add(Option.newHexLong(OPTION_NAME_LEN)
+				.value(new HexLong(length))
+				.commandLineArgument(createArg("-length"))
+				.build());
 
 		list.addAll(super.getDefaultOptions(provider, loadSpec, domainObject, loadIntoProgram,
 			mirrorFsLayout));

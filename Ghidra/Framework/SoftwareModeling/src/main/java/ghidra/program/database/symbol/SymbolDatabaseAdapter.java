@@ -53,8 +53,9 @@ abstract class SymbolDatabaseAdapter {
 	static final int SYMBOL_EXTERNAL_PROG_ADDR_COL = 10;
 	static final int SYMBOL_COMMENT_COL = 11;
 	static final int SYMBOL_LIBPATH_COL = 12;
+	static final int SYMBOL_LIB_ORDINAL_COL = 13;
 
-	static final Schema SYMBOL_SCHEMA = SymbolDatabaseAdapterV4.V4_SYMBOL_SCHEMA;
+	static final Schema SYMBOL_SCHEMA = SymbolDatabaseAdapterV5.V5_SYMBOL_SCHEMA;
 
 	// Bits 0, 1 and 3 are used for the source of the symbol.
 	// NOTE: On the next V5 adapter revision the source type bits should be made contiguous
@@ -97,11 +98,11 @@ abstract class SymbolDatabaseAdapter {
 			throws VersionException, CancelledException, IOException {
 
 		if (openMode == OpenMode.CREATE) {
-			return new SymbolDatabaseAdapterV4(dbHandle, addrMap, true);
+			return new SymbolDatabaseAdapterV5(dbHandle, addrMap, true);
 		}
 
 		try {
-			SymbolDatabaseAdapter adapter = new SymbolDatabaseAdapterV4(dbHandle, addrMap, false);
+			SymbolDatabaseAdapter adapter = new SymbolDatabaseAdapterV5(dbHandle, addrMap, false);
 			return adapter;
 		}
 		catch (VersionException e) {
@@ -122,6 +123,13 @@ abstract class SymbolDatabaseAdapter {
 
 	private static SymbolDatabaseAdapter findReadOnlyAdapter(DBHandle handle, AddressMap addrMap)
 			throws VersionException {
+
+		try {
+			return new SymbolDatabaseAdapterV4(handle, addrMap.getOldAddressMap());
+		}
+		catch (VersionException e) {
+			// failed try older version
+		}
 
 		try {
 			return new SymbolDatabaseAdapterV3(handle, addrMap.getOldAddressMap());
@@ -169,7 +177,7 @@ abstract class SymbolDatabaseAdapter {
 
 			dbHandle.deleteTable(SYMBOL_TABLE_NAME);
 
-			SymbolDatabaseAdapter newAdapter = new SymbolDatabaseAdapterV4(dbHandle, addrMap, true);
+			SymbolDatabaseAdapter newAdapter = new SymbolDatabaseAdapterV5(dbHandle, addrMap, true);
 
 			copyTempToNewAdapter(tmpAdapter, newAdapter, monitor);
 			return newAdapter;
@@ -185,17 +193,17 @@ abstract class SymbolDatabaseAdapter {
 
 		AddressMap oldAddrMap = addrMap.getOldAddressMap();
 
-		long nextKey = 1; // only used for V0 upgrade if a record with key 0 is encountered	
+		long zeroIdRemap = -1; // only used for V0 upgrade if a record with key 0 is encountered	
 		if (oldAdapter instanceof SymbolDatabaseAdapterV0) {
 			// V0 is so old that there is not enough info in the current record to create new
 			// records. So store the current info in a temp database table and complete the upgrade
 			// when SymbolManager.programReady() is called. The missing info can be retrieved from
 			// other managers in the program at that point.
-			nextKey =
+			zeroIdRemap =
 				((SymbolDatabaseAdapterV0) oldAdapter).extractLocalSymbols(tmpHandle, monitor);
 		}
 
-		SymbolDatabaseAdapterV4 tmpAdapter = new SymbolDatabaseAdapterV4(tmpHandle, addrMap, true);
+		SymbolDatabaseAdapterV5 tmpAdapter = new SymbolDatabaseAdapterV5(tmpHandle, addrMap, true);
 		RecordIterator iter = oldAdapter.getSymbols();
 		while (iter.hasNext()) {
 			monitor.checkCancelled();
@@ -205,8 +213,9 @@ abstract class SymbolDatabaseAdapter {
 
 			// We don't allow 0 keys starting with V1, set its key to next available
 			// which we got from the call to extractLocalSymbols() above
-			if (rec.getKey() == 0) {
-				rec.setKey(Math.max(1, nextKey));
+			if (zeroIdRemap > 0 && rec.getKey() == 0) {
+				// NOTE: V0 did not have concept of parent relationship
+				rec.setKey(zeroIdRemap);
 			}
 
 			tmpAdapter.updateSymbolRecord(rec);

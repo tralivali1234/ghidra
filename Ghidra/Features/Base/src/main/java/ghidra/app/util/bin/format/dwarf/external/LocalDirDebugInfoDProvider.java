@@ -160,14 +160,22 @@ public class LocalDirDebugInfoDProvider implements DebugFileStorage {
 		performInitMaintIfNeeded();
 
 		File f = getCachePath(debugInfo);
-		return f.isFile() ? f : null;
+		if (f.isFile()) {
+			f.setLastModified(System.currentTimeMillis());
+			return f;
+		}
+		return null;
 	}
 
-	private File getBuildidDir(String buildId) {
-		return new File(rootDir, buildId);
+	private File getBuildidDir(String buildId) throws IOException {
+		File dir = new File(rootDir, buildId);
+		if (!rootDir.equals(dir.getParentFile())) {
+			throw new IOException("Bad buildid value: " + buildId);
+		}
+		return dir;
 	}
 
-	private File getCachePath(ExternalDebugInfo id) {
+	private File getCachePath(ExternalDebugInfo id) throws IOException {
 		String suffix = "";
 		if (id.getObjectType() == ObjectType.SOURCE) {
 			suffix = "-" + escapePath(Objects.requireNonNullElse(id.getExtra(), ""));
@@ -187,7 +195,7 @@ public class LocalDirDebugInfoDProvider implements DebugFileStorage {
 		performInitMaintIfNeeded();
 
 		File f = getCachePath(id);
-		File tmpF = new File(f.getParent(), ".tmp_" + f.getName());
+		File tmpF = new File(f.getParentFile(), ".tmp_" + f.getName());
 		FileUtilities.checkedMkdirs(f.getParentFile());
 		try (stream; FileOutputStream fos = new FileOutputStream(tmpF)) {
 			FSUtilities.streamCopy(stream.is(), fos, monitor);

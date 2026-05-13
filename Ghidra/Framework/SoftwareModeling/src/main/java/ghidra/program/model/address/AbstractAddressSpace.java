@@ -414,6 +414,26 @@ abstract class AbstractAddressSpace implements AddressSpace {
 		long resultOffset = NumericUtilities.bigIntegerToUnsignedLong(newOffset);
 		return getUncheckedAddress(resultOffset);
 	}
+	@Override
+	public Address subtractNoWrap(GenericAddress addr, BigInteger displacement)
+			throws AddressOverflowException {
+
+		if (displacement.equals(BigInteger.ZERO)) {
+			return addr;
+		}
+		testAddressSpace(addr);
+		BigInteger addrOff = addr.getOffsetAsBigInteger();
+		BigInteger maxOff = maxAddress.getOffsetAsBigInteger();
+		BigInteger minOff = minAddress.getOffsetAsBigInteger();
+		BigInteger newOffset = addrOff.subtract(displacement);
+		if (newOffset.compareTo(minOff) < 0 || newOffset.compareTo(maxOff) > 0) {
+			throw new AddressOverflowException(
+				"Address Overflow in add: " + addr + " + " + displacement);
+		}
+
+		long resultOffset = NumericUtilities.bigIntegerToUnsignedLong(newOffset);
+		return getUncheckedAddress(resultOffset);
+	}
 
 	@Override
 	public Address add(Address addr, long displacement) throws AddressOutOfBoundsException {
@@ -637,7 +657,7 @@ abstract class AbstractAddressSpace implements AddressSpace {
 
 	@Override
 	public boolean isMemorySpace() {
-		return type == TYPE_RAM || type == TYPE_CODE || type == TYPE_OTHER;
+		return type == TYPE_RAM || type == TYPE_CODE || type == TYPE_OTHER || type == TYPE_DELETED;
 	}
 
 	@Override
